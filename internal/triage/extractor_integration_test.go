@@ -44,6 +44,25 @@ func TestPdftotextExtractor_ScannedPDF(t *testing.T) {
 	}
 }
 
+func TestPdftotextExtractor_ScannedContentPDF(t *testing.T) {
+	// scanned_content.pdf est une image JPEG (contenu réel, rendu de
+	// native.pdf) intégrée sans aucune couche texte — contrairement à
+	// scanned.pdf (page vide), elle a du contenu visuel à transcrire, mais
+	// doit tout de même être détectée comme sans texte natif.
+	e := PdftotextExtractor{}
+
+	pages, err := e.ExtractPerPage(context.Background(), filepath.Join("..", "..", "testdata", "fixtures", "scanned_content.pdf"))
+	if err != nil {
+		t.Fatalf("ExtractPerPage() error = %v, want nil", err)
+	}
+	if len(pages) != 1 {
+		t.Fatalf("len(pages) = %d, want 1", len(pages))
+	}
+	if strings.TrimSpace(pages[0].Text) != "" {
+		t.Errorf("page text = %q, want empty (image only, no text layer)", pages[0].Text)
+	}
+}
+
 func TestPdftotextExtractor_MixedPDF(t *testing.T) {
 	e := PdftotextExtractor{}
 

@@ -124,8 +124,63 @@ pour les tests. **Aucun test ne doit nécessiter de GPU.**
     candidats évalués (vs Nanonets-OCR-s 60.7 sur OmniDocBench, Qwen2.5-VL-3B
     sans score direct sur ces deux benchmarks). RAM machine : 24 Go,
     largement suffisant pour cette quantization.
-  - Test end-to-end réel (llama.cpp + modèle téléchargé) : à faire, sous
-    réserve de confirmation avant le téléchargement (~6 Go).
+  - **Test end-to-end réel : fait et validé**, contre un vrai
+    `llama.cpp server` servant olmOCR-2-7B-1025 (Q6_K). Voir "Setup local
+    du VLM" ci-dessous pour reproduire.
+    - `native.pdf` (texte natif) : triage détecte `has_text_layer: true`,
+      0 page envoyée au VLM — comportement attendu, coûteux en inférence
+      évité.
+    - `scanned_content.pdf` (nouvelle fixture, cf. corpus) : triage
+      détecte `has_text_layer: false`, la page est rendue puis envoyée au
+      VLM réel, qui retourne une transcription exacte du contenu source
+      (`"Facture n. 2026-0042\nFournisseur: Acme SARL\nTotal: 123.45
+      EUR"`), avec `model`/`model_version`/`prompt` correctement
+      journalisés dans la sortie CLI.
+    - Point notable : `scanned.pdf` (page vide, utilisée pour les tests
+      de triage) fait dégénérer le VLM en génération répétitive sans
+      jamais atteindre de token de fin — une page blanche n'a rien à
+      décrire, ce n'est pas un bug du client HTTP. D'où l'ajout de
+      `scanned_content.pdf` (image réaliste, point d'arrêt naturel) pour
+      exercer le VLM correctement. Non bloquant pour la suite (les vrais
+      documents ont du contenu), mais à garder en tête si jamais une page
+      quasi-vide se présente en production : prévoir un timeout et
+      accepter l'échec (cohérent avec la stratégie retenue).
+
+### Corpus de fixtures (testdata/fixtures/, régénéré par
+scripts/gen_fixtures.py)
+- `native.pdf` — texte natif, 1 page.
+- `scanned.pdf` — 1 page vide, aucun texte ni image (triage uniquement).
+- `mixed.pdf` — 2 pages, texte natif + page vide.
+- `scanned_content.pdf` — 1 page, image JPEG (rendu de native.pdf) sans
+  texte natif ; simule une vraie page scannée avec du contenu à
+  transcrire. Dépend de `pdftoppm` + `sips` (macOS) au moment de la
+  génération uniquement — le fichier généré, lui, est indépendant de tout
+  outil.
+
+### Setup local du VLM (llama.cpp + olmOCR-2-7B-1025)
+```
+brew install llama.cpp   # fournit `llama-server`
+
+mkdir -p ~/models/olmocr2
+BASE="https://huggingface.co/lmstudio-community/olmOCR-2-7B-1025-GGUF/resolve/main"
+curl -L -o ~/models/olmocr2/olmOCR-2-7B-1025-Q6_K.gguf "$BASE/olmOCR-2-7B-1025-Q6_K.gguf"
+curl -L -o ~/models/olmocr2/mmproj-olmOCR-2-7B-1025-F16.gguf "$BASE/mmproj-olmOCR-2-7B-1025-F16.gguf"
+
+llama-server \
+  -m ~/models/olmocr2/olmOCR-2-7B-1025-Q6_K.gguf \
+  --mmproj ~/models/olmocr2/mmproj-olmOCR-2-7B-1025-F16.gguf \
+  --host 127.0.0.1 --port 8080 \
+  --ctx-size 8192 \
+  --image-min-tokens 1024   # recommandé par llama.cpp pour les Qwen-VL (précision du grounding)
+
+# puis, dans un autre terminal :
+jarvis parse --vlm-url http://127.0.0.1:8080/v1 --vlm-model olmOCR-2-7B-1025 --vlm-model-version Q6_K fichier.pdf
+```
+Les poids (~7 Go au total) sont dans `~/models/`, **hors du dépôt** (trop
+volumineux, et de toute façon non versionnables proprement).
+Performances observées sur le MacBook Air M3 (24 Go) : ~91 tokens/s en
+lecture du prompt, ~14.6 tokens/s en génération — une page avec du texte
+correctement dense se transcrit en 30-60s.
 - Jalon 4 (à venir) : registre de types de documents + structs Go +
   dérivation JSON Schema + étage Extraction avec fake LLM.
 
