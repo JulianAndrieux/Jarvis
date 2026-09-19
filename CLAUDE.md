@@ -215,12 +215,9 @@ tournant simultanément :
     (map[string]any, error)` dérive un JSON Schema par réflexion pure
     (aucune dépendance externe) : reconnaît `Field[T]` structurellement,
     gère struct/slice/pointeur(optionnel)/tags `json`+`desc`.
-  - **Point ouvert assumé, pas résolu silencieusement : le bbox n'est PAS
-    dans `Field[T]`.** Ni le texte de `internal/triage` (pdftotext texte
-    simple) ni le Markdown de `internal/vlm` ne portent de coordonnées
-    aujourd'hui. L'ajouter demande de faire évoluer ces deux étages
-    (`pdftotext -bbox` pour le texte natif ; stratégie à définir côté
-    VLM) — à traiter comme un jalon dédié si/quand nécessaire.
+  - Bbox : voir jalon 7 ci-dessous — pas fait à ce stade-ci de l'historique
+    (implémenté ensuite, jalons 1-6 sont restés dans l'ordre où ils ont
+    été livrés).
   - `internal/doctype` : `Registry` (générique, `Register[T]`), jeu de
     types **ouvert** (pas figé) — `Facture` enregistrée comme premier
     exemple ; ajouter "pièce d'identité", "correspondance", etc. ne
@@ -313,6 +310,44 @@ tournant simultanément :
     LLM, aucun vrai modèle requis) + démo manuelle inspectée à l'œil.
   - Pas d'index cross-documents (ex. SQLite) : hors scope de ce jalon,
     et de toute façon prévu côté Atlas phase 2 si besoin (cf. plus bas).
+- **Jalon 7 — bbox pour les pages à texte natif : fait (portée
+  partielle, assumée).**
+  - `internal/bbox` : port `Extractor.ExtractWords` avec `FakeExtractor`
+    (tests) et `PdftotextBBoxExtractor` (réel, via `pdftotext -bbox` —
+    XML poppler, mots positionnés en points PDF, indépendant du DPI de
+    rendu). `FindSnippetBBox(words, snippet)` (fonction pure) localise le
+    rectangle englobant d'un `source_snippet` : correspondance exacte
+    d'une séquence contiguë de mots normalisés en priorité, repli sur
+    l'enveloppe des tokens trouvés individuellement si la séquence exacte
+    échoue, `ok=false` si rien n'est trouvé (jamais de bbox inventé).
+  - `internal/extraction.AttachBBoxes(json, words)` enrichit le JSON déjà
+    produit par le LLM (ajoute `"bbox"` à chaque champ `schema.Field` dont
+    le snippet a été localisé) — n'est **pas** dans le JSON Schema envoyé
+    au LLM : le LLM ne connaît pas les coordonnées, seul le texte qu'il a
+    recopié permet de les retrouver après coup.
+  - `pipeline.Pipeline.BBox` (optionnel, `nil` = désactivé) : enrichit
+    uniquement les pages `SourceNative` (texte natif). Toute erreur
+    (extracteur indisponible, snippet introuvable) dégrade
+    silencieusement vers "pas de bbox" plutôt que de faire échouer le
+    pipeline — cohérent avec le principe "bonus de provenance, jamais
+    bloquant".
+  - CLI : câblé par défaut dans `jarvis process` (`PdftotextBBoxExtractor{}`).
+  - **Portée assumée, pas cachée : les pages passées par le VLM (scannées)
+    n'ont toujours pas de bbox.** Un mot positionné suppose une couche
+    texte native ; une page scannée n'en a pas par définition. Deux pistes
+    pour combler ce trou plus tard, ni l'une ni l'autre entreprise ici :
+    (a) une passe OCR dédiée (ex. Tesseract) sur le PNG déjà rendu pour
+    l'étage Parsing, uniquement pour obtenir des coordonnées de mots (le
+    VLM resterait la source du texte/Markdown) ; (b) un VLM "grounding"
+    capable de renvoyer des coordonnées dans sa sortie (peu fiable pour
+    la plupart des modèles document actuels, olmOCR-2 inclus). Décision à
+    prendre si le besoin se présente sur un vrai document scanné.
+  - Testé : unitaire (matching pur, fakes) et intégration (vrai
+    `pdftotext -bbox` sur les fixtures, y compris le cas page vide) +
+    bout en bout réel confirmé sur `native.pdf` via le test CLI existant
+    (`cmd/jarvis/process_store_integration_test.go`, avec un LLM stubé
+    mais un vrai `pdftotext`) : le bbox de `numero` est correctement
+    localisé et persisté dans `page-1.json`.
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion
@@ -339,8 +374,8 @@ tournant simultanément :
   explicitement le moment venu.
 
 ## Décisions en attente
-- Stratégie bbox (position pixel dans la page) pour la provenance —
-  voir jalon 4 ci-dessus.
+- Stratégie bbox pour les pages **scannées** (VLM) — voir jalon 7
+  ci-dessus. Résolu pour le texte natif ; pas pour les pages VLM.
 - Schéma de sortie exact des futurs types de documents au-delà de
   Facture (pièce d'identité, correspondance, document technique...) —
   le mécanisme (registre + dérivation) est en place, chaque nouveau type

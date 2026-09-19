@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/JulianAndrieux/Jarvis/internal/bbox"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/extraction"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
@@ -26,6 +27,13 @@ type Pipeline struct {
 
 	LLM                 llm.Client
 	ConfidenceThreshold float64 // valeur zéro -> extraction.DefaultConfidenceThreshold
+
+	// BBox est optionnel : nil désactive l'enrichissement bbox (pas
+	// d'erreur, le JSON d'extraction reste tel quel). Ne s'applique qu'aux
+	// pages dont le texte vient du triage (SourceNative) — les pages
+	// passées par le VLM n'ont pas de mots positionnés disponibles
+	// aujourd'hui (cf. CLAUDE.md).
+	BBox bbox.Extractor
 }
 
 // Result rassemble les résultats des trois étages pour un document, pour
@@ -68,6 +76,10 @@ func (p Pipeline) Run(ctx context.Context, reg doctype.Registration, path string
 	extractionResults, err := extractor.ExtractPages(ctx, reg, pageTexts)
 	if err != nil {
 		return Result{Path: path, Triage: triageResult, Parsing: parseResults}, fmt.Errorf("pipeline: extraction %s: %w", path, err)
+	}
+
+	if p.BBox != nil {
+		extractionResults = p.attachBBoxes(ctx, path, merged, extractionResults)
 	}
 
 	return Result{

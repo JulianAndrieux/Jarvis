@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/bbox"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
@@ -96,6 +97,10 @@ func runProcess(ctx context.Context, args []string, stdout io.Writer) error {
 	p := pipeline.Pipeline{
 		TextExtractor: triage.PdftotextExtractor{},
 		Renderer:      parsing.PdftoppmRenderer{},
+		// Enrichissement bbox best-effort sur les pages à texte natif
+		// (cf. internal/pipeline/bbox.go) : un échec ne fait jamais
+		// échouer le pipeline, le JSON reste valide sans "bbox".
+		BBox: bbox.PdftotextBBoxExtractor{},
 		VLM: vlm.HTTPClient{
 			BaseURL:      *vlmURL,
 			Model:        *vlmModel,

@@ -91,6 +91,25 @@ func TestRun_Process_OutDir_PersistsResults(t *testing.T) {
 		t.Errorf("extraction.model = %v, want llm-test", extraction["model"])
 	}
 
+	// La page est en texte natif et le snippet est recopié tel quel du
+	// texte source : le bbox doit avoir été localisé et attaché par le
+	// vrai PdftotextBBoxExtractor (pas un fake).
+	extractedJSON, ok := extraction["json"].(map[string]any)
+	if !ok {
+		t.Fatalf("extraction.json is not an object: %+v", extraction)
+	}
+	numero, ok := extractedJSON["numero"].(map[string]any)
+	if !ok {
+		t.Fatalf("extraction.json.numero is not an object: %+v", extractedJSON)
+	}
+	b, ok := numero["bbox"].(map[string]any)
+	if !ok {
+		t.Fatalf("numero.bbox missing, want it attached from the real bbox extractor: %+v", numero)
+	}
+	if b["x_min"].(float64) <= 0 || b["x_max"].(float64) <= b["x_min"].(float64) {
+		t.Errorf("numero.bbox looks invalid: %+v", b)
+	}
+
 	runLogBytes, err := os.ReadFile(filepath.Join(hashDir, "runs.jsonl"))
 	if err != nil {
 		t.Fatalf("read runs.jsonl: %v", err)
