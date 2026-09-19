@@ -1,0 +1,10 @@
+# Binaires buildés
+/bin/
+/jarvis
+
+# Go
+*.test
+*.out
+
+# macOS
+.DS_Store
