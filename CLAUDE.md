@@ -428,6 +428,71 @@ spécifique à `localhost`.
     `runs.jsonl` à côté de la tentative réussie — validation involontaire
     mais bienvenue du log de rejeu (jalon 6).
   - Setup et usage : voir "Interface web" ci-dessous.
+- **Jalon 9 — normes de code testées, migrations de structs persistées,
+  embedding comme mécanisme d'héritage : fait.**
+  - **Norme = un test.** Chaque règle d'architecture qu'on veut faire
+    respecter s'écrit comme une fonction `Test...` normale (`go test
+    ./...` les fait tourner avec le reste) plutôt que comme un outil ou
+    une CI séparée — cohérent avec "primitives, pas de dépendances
+    lourdes". Deux normes en place aujourd'hui, dans
+    `internal/store/schema_norm_test.go` :
+    1. `TestDocumentRecordSchema_ChangeRequiresMigration` /
+       `TestPageRecordSchema_ChangeRequiresMigration` — un fingerprint
+       (`reflect`, noms+types des champs exportés, embeddings aplatis
+       comme `encoding/json`) de la forme courante de chaque struct
+       persisté est comparé à une valeur enregistrée pour
+       `CurrentDocumentRecordVersion`/`CurrentPageRecordVersion`. Un
+       changement de forme sans bump de version fait échouer le test avec
+       un message qui dit précisément quoi faire (incrémenter la
+       constante, ajouter le fingerprint, enregistrer une Migration).
+       **Vérifié en conditions réelles** : un champ ajouté sans bump de
+       version pendant le développement a bien fait échouer le test avec
+       ce message, avant d'être retiré.
+    2. `TestDocumentRecord_EmbedsRecordMeta` /
+       `TestPageRecord_EmbedsRecordMeta` — vérifie que l'embedding décrit
+       ci-dessous n'a pas été défait par erreur.
+  - **Mécanisme de migration** (`internal/store/migration.go`) — répond
+    aussi à "lier des fonctions à une struct" : un registre
+    `map[int]Migration` par struct persisté (`documentMigrations`,
+    `pageMigrations`), chaque `Migration{Description, Apply}` associant
+    une version de départ à sa fonction de conversion.
+    `Description` est obligatoire (`TestMigrations_HaveNonEmptyDescriptions`)
+    — c'est le "quoi faire" en langage humain exigé par le brief.
+    `RecordMeta.SchemaVersion` (voir embedding) est, **par fichier**,
+    l'équivalent de ce que le brief décrit pour une base partagée
+    (stocker quel code/schéma a produit un enregistrement) — quand la
+    bascule Atlas (jalon séparé, toujours en attente) arrivera, le même
+    principe s'y transpose : une collection dédiée stockant la version de
+    schéma appliquée, migrée par un job explicite, pas à la volée.
+  - **Migration = acte de déploiement délibéré, jamais une lecture qui
+    triche.** `ReadDocumentRecord`/`ReadPageRecord` **refusent** un
+    enregistrement dont `schema_version` est en retard (erreur explicite
+    "lance `jarvis migrate` d'abord") plutôt que de le migrer en
+    silence. Seule la commande `jarvis migrate --out-dir DIR [--dry-run]`
+    réécrit les fichiers — décision explicite de l'utilisateur, cf.
+    échange sur ce jalon.
+  - **Héritage → embedding.** Go n'a pas d'héritage ; l'équivalent
+    idiomatique est la composition par embedding (promotion de champs,
+    pas de "super()" ni de dispatch polymorphe au-delà des interfaces).
+    `RecordMeta{SourceHash, SourcePath, DocType, ProcessedAt,
+    SchemaVersion}` est embeddée dans `DocumentRecord` et `PageRecord`,
+    qui dupliquaient ces cinq champs avant ce jalon. `encoding/json`
+    aplatit les champs d'un embedding anonyme sans tag propre : **le
+    format JSON sur disque n'a pas changé** (vérifié en écrivant puis
+    inspectant un enregistrement). Portée volontairement limitée à
+    `internal/store`, où la duplication existait réellement — pas de
+    base spéculative pour les futurs types de `internal/doctype` tant
+    qu'un vrai besoin ne s'est pas montré.
+  - Testé : unitaire pour chaque morceau (fingerprint, migration,
+    lecture, embedding) + preuve empirique que chaque norme échoue
+    vraiment sur une vraie violation (struct modifié sans bump de
+    version) avant d'être validée à l'état correct.
+  - **Ajouter une nouvelle norme plus tard** : une fonction `Test...`
+    dans le paquet concerné (pas de paquet `archtest` séparé tant qu'une
+    seule norme ne suffit pas à en justifier un), qui échoue avec un
+    message actionnable. Portée actuelle : uniquement les deux normes
+    ci-dessus (décision explicite de l'utilisateur) — pas de norme sur
+    les ports (ex. "chaque interface a un Fake") pour l'instant.
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion

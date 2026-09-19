@@ -9,10 +9,13 @@ import (
 
 func TestWriteRecords_CreatesDocumentAndPageFiles(t *testing.T) {
 	dir := t.TempDir()
-	doc := DocumentRecord{SourceHash: "ABC123", SourcePath: "doc.pdf", DocType: "facture", ProcessedAt: fixedTime, Pages: []int{1, 2}}
+	doc := DocumentRecord{
+		RecordMeta: RecordMeta{SourceHash: "ABC123", SourcePath: "doc.pdf", DocType: "facture", ProcessedAt: fixedTime},
+		Pages:      []int{1, 2},
+	}
 	pages := []PageRecord{
-		{SourceHash: "ABC123", Page: 1, Source: SourceNative},
-		{SourceHash: "ABC123", Page: 2, Source: SourceVLM},
+		{RecordMeta: RecordMeta{SourceHash: "ABC123"}, Page: 1, Source: SourceNative},
+		{RecordMeta: RecordMeta{SourceHash: "ABC123"}, Page: 2, Source: SourceVLM},
 	}
 
 	if err := WriteRecords(dir, doc, pages); err != nil {
@@ -50,12 +53,12 @@ func TestWriteRecords_CreatesDocumentAndPageFiles(t *testing.T) {
 
 func TestWriteRecords_RerunOverwritesPreviousResult(t *testing.T) {
 	dir := t.TempDir()
-	doc := DocumentRecord{SourceHash: "H", Pages: []int{1}}
+	doc := DocumentRecord{RecordMeta: RecordMeta{SourceHash: "H"}, Pages: []int{1}}
 
-	if err := WriteRecords(dir, doc, []PageRecord{{SourceHash: "H", Page: 1, Source: SourceNative}}); err != nil {
+	if err := WriteRecords(dir, doc, []PageRecord{{RecordMeta: RecordMeta{SourceHash: "H"}, Page: 1, Source: SourceNative}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteRecords(dir, doc, []PageRecord{{SourceHash: "H", Page: 1, Source: SourceVLM}}); err != nil {
+	if err := WriteRecords(dir, doc, []PageRecord{{RecordMeta: RecordMeta{SourceHash: "H"}, Page: 1, Source: SourceVLM}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -75,8 +78,8 @@ func TestWriteRecords_RerunOverwritesPreviousResult(t *testing.T) {
 
 func TestWriteRecords_OutputIsIndentedJSON(t *testing.T) {
 	dir := t.TempDir()
-	doc := DocumentRecord{SourceHash: "H", Pages: []int{1}}
-	if err := WriteRecords(dir, doc, []PageRecord{{SourceHash: "H", Page: 1}}); err != nil {
+	doc := DocumentRecord{RecordMeta: RecordMeta{SourceHash: "H"}, Pages: []int{1}}
+	if err := WriteRecords(dir, doc, []PageRecord{{RecordMeta: RecordMeta{SourceHash: "H"}, Page: 1}}); err != nil {
 		t.Fatal(err)
 	}
 

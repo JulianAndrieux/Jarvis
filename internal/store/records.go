@@ -22,13 +22,10 @@ const (
 // DocumentRecord résume le traitement d'un document entier. Écrit dans
 // <out-dir>/<hash>/document.json.
 type DocumentRecord struct {
-	SourceHash   string    `json:"source_hash"`
-	SourcePath   string    `json:"source_path"`
-	DocType      string    `json:"doc_type"`
-	ProcessedAt  time.Time `json:"processed_at"`
-	TriageScore  float64   `json:"triage_score"`
-	HasTextLayer bool      `json:"has_text_layer"`
-	Pages        []int     `json:"pages"`
+	RecordMeta
+	TriageScore  float64 `json:"triage_score"`
+	HasTextLayer bool    `json:"has_text_layer"`
+	Pages        []int   `json:"pages"`
 }
 
 // PageRecord est l'enregistrement complet d'une page : sa provenance
@@ -36,11 +33,8 @@ type DocumentRecord struct {
 // prompt utilisés à chaque étage. Écrit dans
 // <out-dir>/<hash>/page-<N>.json.
 type PageRecord struct {
-	SourceHash  string    `json:"source_hash"`
-	SourcePath  string    `json:"source_path"`
-	DocType     string    `json:"doc_type"`
-	Page        int       `json:"page"`
-	ProcessedAt time.Time `json:"processed_at"`
+	RecordMeta
+	Page int `json:"page"`
 
 	Source Source `json:"source,omitempty"`
 
@@ -88,11 +82,14 @@ func BuildRecords(sourceHash, sourcePath, docType string, processedAt time.Time,
 
 	for _, tp := range result.Triage.Pages {
 		rec := PageRecord{
-			SourceHash:  sourceHash,
-			SourcePath:  sourcePath,
-			DocType:     docType,
-			Page:        tp.Page,
-			ProcessedAt: processedAt,
+			RecordMeta: RecordMeta{
+				SourceHash:    sourceHash,
+				SourcePath:    sourcePath,
+				DocType:       docType,
+				ProcessedAt:   processedAt,
+				SchemaVersion: CurrentPageRecordVersion,
+			},
+			Page: tp.Page,
 		}
 
 		if tp.Usable {
@@ -132,10 +129,13 @@ func BuildRecords(sourceHash, sourcePath, docType string, processedAt time.Time,
 	sort.Ints(pageNumbers)
 
 	doc := DocumentRecord{
-		SourceHash:   sourceHash,
-		SourcePath:   sourcePath,
-		DocType:      docType,
-		ProcessedAt:  processedAt,
+		RecordMeta: RecordMeta{
+			SourceHash:    sourceHash,
+			SourcePath:    sourcePath,
+			DocType:       docType,
+			ProcessedAt:   processedAt,
+			SchemaVersion: CurrentDocumentRecordVersion,
+		},
 		TriageScore:  result.Triage.Score,
 		HasTextLayer: result.Triage.HasTextLayer,
 		Pages:        pageNumbers,

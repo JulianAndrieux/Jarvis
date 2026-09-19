@@ -20,6 +20,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runParse(ctx, args[1:], stdout)
 	case "process":
 		return runProcess(ctx, args[1:], stdout)
+	case "migrate":
+		return runMigrate(ctx, args[1:], stdout)
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage())
 		return nil
@@ -37,6 +39,7 @@ Usage:
   jarvis process --vlm-url URL --vlm-model NAME             Pipeline complet : triage -> parsing -> extraction
                  --llm-url URL --llm-model NAME
                  --doc-type NAME <fichier.pdf>
+  jarvis migrate --out-dir DIR [--dry-run]                  Migre les résultats persistés vers le schéma courant
   jarvis help                                               Affiche cette aide
 `
 }
