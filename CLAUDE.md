@@ -181,8 +181,42 @@ volumineux, et de toute façon non versionnables proprement).
 Performances observées sur le MacBook Air M3 (24 Go) : ~91 tokens/s en
 lecture du prompt, ~14.6 tokens/s en génération — une page avec du texte
 correctement dense se transcrit en 30-60s.
-- Jalon 4 (à venir) : registre de types de documents + structs Go +
-  dérivation JSON Schema + étage Extraction avec fake LLM.
+- **Jalon 4 — registre de types + dérivation JSON Schema + étage
+  Extraction (fake LLM) : fait.**
+  - `internal/schema` : `Field[T]{Value, Confidence, SourceSnippet}`
+    (générique) porte la provenance de chaque valeur extraite —
+    confiance + extrait source, comme exigé. `Derive(reflect.Type)
+    (map[string]any, error)` dérive un JSON Schema par réflexion pure
+    (aucune dépendance externe) : reconnaît `Field[T]` structurellement,
+    gère struct/slice/pointeur(optionnel)/tags `json`+`desc`.
+  - **Point ouvert assumé, pas résolu silencieusement : le bbox n'est PAS
+    dans `Field[T]`.** Ni le texte de `internal/triage` (pdftotext texte
+    simple) ni le Markdown de `internal/vlm` ne portent de coordonnées
+    aujourd'hui. L'ajouter demande de faire évoluer ces deux étages
+    (`pdftotext -bbox` pour le texte natif ; stratégie à définir côté
+    VLM) — à traiter comme un jalon dédié si/quand nécessaire.
+  - `internal/doctype` : `Registry` (générique, `Register[T]`), jeu de
+    types **ouvert** (pas figé) — `Facture` enregistrée comme premier
+    exemple ; ajouter "pièce d'identité", "correspondance", etc. ne
+    touche ni `internal/schema` ni `internal/extraction`.
+  - `internal/llm` : port `Client.Extract(ctx, ExtractRequest)
+    (ExtractResult, error)` avec `FakeClient` (même forme que
+    `internal/vlm.FakeClient`). Implémentation HTTP réelle (décodage
+    contraint par JSON Schema via llama.cpp) : jalon 5.
+  - `internal/extraction` : `LowConfidenceFields(json, seuil)` (fonction
+    pure, marche récursive sur le JSON décodé, chemins du type
+    `adresse.ville` / `lignes[1]`) + `Extractor.ExtractPages` (même
+    forme que `parsing.Parser.ParsePages` : échec par page = marquage
+    immédiat + continue, seule une annulation de contexte interrompt).
+    Confiance basse = `NeedsReview`, **pas** un échec — distinct de
+    `Failed` (erreur LLM ou JSON non conforme au schéma). Seuil par
+    défaut 0.7 (`DefaultConfidenceThreshold`).
+  - Pas de câblage CLI : comme pour le parsing au jalon 2, une commande
+    `jarvis extract` sans vrai LLM branché n'aurait rien de significatif
+    à faire. Arrivera au jalon 5.
+- Jalon 5 (à venir) : implémentation HTTP réelle du port LLM (llama.cpp
+  server, décodage contraint par JSON Schema), test end-to-end complet
+  (triage→parsing→extraction) sur le corpus, câblage CLI.
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion
@@ -208,5 +242,9 @@ correctement dense se transcrit en 30-60s.
   explicitement le moment venu.
 
 ## Décisions en attente
-- Schéma de sortie exact par type de document (dépend du registre de types
-  à concevoir, cf. jalon dédié).
+- Stratégie bbox (position pixel dans la page) pour la provenance —
+  voir jalon 4 ci-dessus.
+- Schéma de sortie exact des futurs types de documents au-delà de
+  Facture (pièce d'identité, correspondance, document technique...) —
+  le mécanisme (registre + dérivation) est en place, chaque nouveau type
+  s'ajoute au besoin.
