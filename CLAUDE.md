@@ -493,6 +493,78 @@ spécifique à `localhost`.
     message actionnable. Portée actuelle : uniquement les deux normes
     ci-dessus (décision explicite de l'utilisateur) — pas de norme sur
     les ports (ex. "chaque interface a un Fake") pour l'instant.
+- **Jalon 10 — corpus de factures synthétiques réalistes + validation
+  bout en bout : fait.** Toujours 100% synthétique (aucune vraie facture
+  d'aucune entreprise — ni légalement ni techniquement accessible ici),
+  mais pensé pour stresser le pipeline bien au-delà des fixtures
+  minimales des jalons précédents (3 lignes de texte).
+  - **Corpus** (`scripts/gen_fixtures.py`, généré dans
+    `testdata/fixtures/`) :
+    - `facture_multiligne.pdf` — page dense, tableau de lignes (4
+      articles, colonnes avec traits), trois montants proches (Total HT/
+      TVA/Total TTC).
+    - `facture_multipage.pdf` — 2 pages : numéro+fournisseur page 1,
+      tableau+total page 2, **aucun champ commun aux deux pages**
+      (délibéré, voir finding ci-dessous).
+    - `facture_scannee_realiste.pdf` — rendu image de
+      `facture_multiligne.pdf`, légèrement pivoté (~2.5°) via une
+      matrice de transformation PDF (`cm`) plutôt qu'un outil externe —
+      simule un scan pas parfaitement droit.
+    - `facture_ambigue.pdf` — 5 montants proches (sous-total, remise,
+      base TVA, TVA, total TTC) : teste la désambiguïsation.
+    - `facture_format_europeen.pdf` — montant au format `1 234,56 EUR`
+      (espace milliers, virgule décimale).
+  - **Tests déterministes ajoutés** (triage/bbox/parsing, aucun modèle
+    requis) : classification native/scanné correcte sur tout le corpus,
+    mots positionnés extraits sur la page dense avec `Total TTC` et
+    `Total HT` résolus à des positions distinctes, rendu PNG réussi sur
+    toutes les pages y compris la version pivotée. La séparation des
+    champs entre les deux pages de `facture_multipage.pdf` est vérifiée
+    explicitement (prémisse du finding ci-dessous).
+  - **Validation réelle** (les deux serveurs locaux, comme aux jalons
+    3/5/8) — trois findings, aucun caché :
+    1. **Désambiguïsation : correcte.** `facture_multiligne.pdf` →
+       `total_ttc = 215.64` (pas 179.70 ni 35.94). `facture_ambigue.pdf`
+       (5 montants candidats) → `total_ttc = 570.00`, le bon, avec
+       confiance 1.0.
+    2. **Champ absent de la page : correctement signalé, jamais
+       inventé.** Sur `facture_multipage.pdf` page 1 (pas de total),
+       `total_ttc` revient avec `confidence: 0`, `source_snippet: ""`,
+       `needs_review: true` — le mécanisme de confiance fonctionne
+       exactement comme conçu sur un vrai cas de champ manquant, pas
+       seulement en test unitaire.
+    3. **Limite architecturale confirmée : "un JSON par page" ne relie
+       pas les champs entre pages.** Sur ce document, le résultat page 1
+       a numéro+fournisseur mais pas le total ; le résultat page 2 (dont
+       l'extraction a échoué par ailleurs, cf. finding 4) aurait eu le
+       total mais pas le numéro/fournisseur. Aucun mécanisme actuel ne
+       fusionne les deux en un enregistrement Facture complet. Attendu
+       compte tenu de la décision jalon 1, mais maintenant observé sur
+       un cas réel plutôt que déduit en théorie — **décision à
+       reprendre si des documents réels ont ce problème** (options :
+       fusionner les extractions de toutes les pages d'un document avant
+       un unique appel LLM, ou agréger après coup les champs non-nuls
+       across pages).
+    4. **Qwen3-8B peut générer un nombre de tokens très élevé et très
+       variable avant de conclure, avec un schéma JSON contraint pourtant
+       minuscule (3 champs).** `facture_multiligne.pdf` : 636 tokens
+       générés, ~40s. `facture_ambigue.pdf` : 2614 tokens générés,
+       ~200s, pour arriver à la même réponse en 3 champs — a fait
+       expirer deux tentatives (90s puis 240s) avant d'aboutir avec un
+       timeout de 600s. Explication la plus probable : le "thinking
+       mode" de Qwen3 (activé par défaut dans son template de chat)
+       n'est pas désactivé par `internal/llm.HTTPClient`, et la
+       génération de raisonnement semble davantage s'étendre sur un
+       contenu ambigu (5 montants candidats) que sur un contenu
+       simplement dense (`facture_multiligne.pdf`, qui n'a qu'un seul
+       total plausible malgré 3 montants affichés). Non corrigé dans ce
+       jalon (pas demandé) — piste pour plus tard : désactiver le mode
+       réflexion (`enable_thinking: false` ou équivalent
+       `/no_think` selon ce que le template llama.cpp expose pour Qwen3)
+       dans `HTTPClient`, ou relever `--llm-timeout` par défaut pour
+       tolérer la variance observée.
+  - Serveurs arrêtés proprement après chaque run (aucun processus
+    résiduel).
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion
@@ -525,3 +597,10 @@ spécifique à `localhost`.
   Facture (pièce d'identité, correspondance, document technique...) —
   le mécanisme (registre + dérivation) est en place, chaque nouveau type
   s'ajoute au besoin.
+- Fusion des champs d'un document dont les valeurs sont réparties sur
+  plusieurs pages (cf. jalon 10, finding 3) — observé sur un cas réel,
+  pas de mécanisme aujourd'hui. À trancher si des documents réels
+  rencontrent ce problème.
+- Latence très variable de l'étage Extraction sur du contenu ambigu (cf.
+  jalon 10, finding 4) — probablement le "thinking mode" de Qwen3 non
+  désactivé. Piste proposée mais pas implémentée.

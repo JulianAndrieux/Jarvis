@@ -1,0 +1,85 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 7 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 7 0 R >> >> /MediaBox [0 0 612 792] /Contents 6 0 R >>
+endobj
+5 0 obj
+<< /Length 334 >>
+stream
+BT
+/F1 16 Tf
+1 0 0 1 72 740 Tm (GLOBAL TECH DISTRIBUTION) Tj
+/F1 9 Tf
+1 0 0 1 72 724 Tm (8 avenue des Champs, 69002 Lyon) Tj
+/F1 13 Tf
+1 0 0 1 72 690 Tm (Facture n. 2026-0271) Tj
+/F1 10 Tf
+1 0 0 1 72 674 Tm (Date: 02/04/2026) Tj
+1 0 0 1 72 658 Tm (Client: Martin & Associes) Tj
+1 0 0 1 72 600 Tm (Detail des articles en page 2.) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Length 877 >>
+stream
+0.6 w
+72 695 m 540 695 l S
+310 610 m 310 695 l S
+365 610 m 365 695 l S
+440 610 m 440 695 l S
+BT
+/F1 12 Tf
+1 0 0 1 72 740 Tm (Suite de la facture - detail des articles) Tj
+/F1 10 Tf
+1 0 0 1 76 700 Tm (Description) Tj
+1 0 0 1 314 700 Tm (Qte) Tj
+1 0 0 1 369 700 Tm (PU HT) Tj
+1 0 0 1 444 700 Tm (Total HT) Tj
+/F1 9 Tf
+1 0 0 1 76 680 Tm (Ordinateur portable 14 pouces) Tj
+1 0 0 1 320 680 Tm (5) Tj
+1 0 0 1 369 680 Tm (620.00) Tj
+1 0 0 1 444 680 Tm (3100.00) Tj
+1 0 0 1 76 664 Tm (Souris sans fil) Tj
+1 0 0 1 320 664 Tm (5) Tj
+1 0 0 1 369 664 Tm (18.00) Tj
+1 0 0 1 444 664 Tm (90.00) Tj
+1 0 0 1 76 648 Tm (Sacoche de transport) Tj
+1 0 0 1 320 648 Tm (5) Tj
+1 0 0 1 369 648 Tm (25.00) Tj
+1 0 0 1 444 648 Tm (125.00) Tj
+/F1 10 Tf
+1 0 0 1 380 590 Tm (Total HT: 3315.00 EUR) Tj
+1 0 0 1 380 575 Tm (TVA \(20%\): 663.00 EUR) Tj
+/F1 12 Tf
+1 0 0 1 380 558 Tm (Total TTC: 3978.00 EUR) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000373 00000 n 
+0000000758 00000 n 
+0000001686 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1756
+%%EOF
