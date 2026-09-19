@@ -106,8 +106,28 @@ pour les tests. **Aucun test ne doit nécessiter de GPU.**
   - Pas de câblage CLI pour cette étage : sans serveur VLM réel branché,
     une commande `jarvis parse` n'aurait rien de significatif à faire.
     Elle arrivera au jalon 3 avec l'implémentation HTTP.
-- Jalon 3 (à venir) : implémentation HTTP réelle du port VLM (llama.cpp
-  server), test end-to-end triage→parsing sur le corpus, câblage CLI.
+- **Jalon 3 — implémentation HTTP réelle du port VLM + câblage CLI : fait
+  côté code.** Reste le test end-to-end contre un vrai serveur (voir
+  ci-dessous).
+  - `internal/vlm.HTTPClient` : implémente `Client` contre une API chat
+    completions compatible OpenAI (le standard exposé par `llama.cpp
+    server`). Testé via `httptest`, aucun modèle/GPU requis.
+  - CLI : `jarvis parse --vlm-url URL --vlm-model NAME
+    [--vlm-model-version V] [--dpi N] [--vlm-timeout D] <fichier.pdf>` —
+    enchaîne triage puis, pour les pages sans texte fiable, rendu + VLM.
+    `--vlm-url`/`--vlm-model` sans défaut silencieux (délibéré, pour la
+    provenance).
+  - **Modèle VLM choisi (argumenté, cf. échange avec l'utilisateur) :
+    olmOCR-2-7B-1025 (AllenAI, fine-tune Qwen2.5-VL-7B), licence Apache
+    2.0, quantization GGUF Q6_K (~6.25 Go), servi via `llama.cpp server`.**
+    olmOCR-Bench ≈ 82.4, OmniDocBench ≈ 82.3 — meilleur score des 3
+    candidats évalués (vs Nanonets-OCR-s 60.7 sur OmniDocBench, Qwen2.5-VL-3B
+    sans score direct sur ces deux benchmarks). RAM machine : 24 Go,
+    largement suffisant pour cette quantization.
+  - Test end-to-end réel (llama.cpp + modèle téléchargé) : à faire, sous
+    réserve de confirmation avant le téléchargement (~6 Go).
+- Jalon 4 (à venir) : registre de types de documents + structs Go +
+  dérivation JSON Schema + étage Extraction avec fake LLM.
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion

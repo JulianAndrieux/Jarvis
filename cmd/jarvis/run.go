@@ -16,6 +16,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	switch args[0] {
 	case "triage":
 		return runTriage(ctx, args[1:], stdout)
+	case "parse":
+		return runParse(ctx, args[1:], stdout)
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage())
 		return nil
@@ -28,8 +30,9 @@ func usage() string {
 	return `jarvis - pipeline local d'extraction de données PDF
 
 Usage:
-  jarvis triage <fichier.pdf>   Détecte si le PDF a une couche texte exploitable
-  jarvis help                   Affiche cette aide
+  jarvis triage <fichier.pdf>                              Détecte si le PDF a une couche texte exploitable
+  jarvis parse --vlm-url URL --vlm-model NAME <fichier.pdf> Triage puis, pour les pages sans texte fiable, rendu + VLM -> Markdown
+  jarvis help                                               Affiche cette aide
 `
 }
 
