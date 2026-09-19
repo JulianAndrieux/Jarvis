@@ -13,6 +13,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
+	"github.com/JulianAndrieux/Jarvis/internal/store"
 	"github.com/JulianAndrieux/Jarvis/internal/triage"
 	"github.com/JulianAndrieux/Jarvis/internal/vlm"
 )
@@ -57,6 +58,7 @@ func runProcess(ctx context.Context, args []string, stdout io.Writer) error {
 	confidenceThreshold := fs.Float64("confidence-threshold", 0, "Seuil de confiance par champ (0 = défaut d'extraction.DefaultConfidenceThreshold)")
 	vlmTimeout := fs.Duration("vlm-timeout", 120*time.Second, "Timeout par appel VLM")
 	llmTimeout := fs.Duration("llm-timeout", 120*time.Second, "Timeout par appel LLM")
+	outDir := fs.String("out-dir", "", "Répertoire où persister les résultats (JSON par page + log de rejeu) ; vide = pas de persistance, stdout uniquement")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -115,7 +117,53 @@ func runProcess(ctx context.Context, args []string, stdout io.Writer) error {
 		return fmt.Errorf("process %s: %w", path, err)
 	}
 
+	if *outDir != "" {
+		if err := persistResult(*outDir, path, *docType, result); err != nil {
+			return fmt.Errorf("process %s: %w", path, err)
+		}
+	}
+
 	return json.NewEncoder(stdout).Encode(toProcessOutput(*docType, result))
+}
+
+// persistResult calcule le hash du document source et écrit les
+// enregistrements (document + pages) ainsi qu'une entrée de log de rejeu
+// sous outDir. N'est appelé qu'après un pipeline.Run réussi : un échec de
+// niveau document n'a pas de résultat cohérent à persister.
+func persistResult(outDir, path, docType string, result pipeline.Result) error {
+	hash, err := store.HashFile(path)
+	if err != nil {
+		return fmt.Errorf("persist: %w", err)
+	}
+
+	doc, pages := store.BuildRecords(hash, path, docType, time.Now().UTC(), result)
+	if err := store.WriteRecords(outDir, doc, pages); err != nil {
+		return fmt.Errorf("persist: %w", err)
+	}
+
+	entry := store.RunLogEntry{
+		Timestamp:  doc.ProcessedAt,
+		SourceHash: hash,
+		SourcePath: path,
+		DocType:    docType,
+		PagesTotal: len(pages),
+	}
+	for _, p := range pages {
+		if p.Extraction != nil && p.Extraction.NeedsReview {
+			entry.PagesNeedingReview++
+		}
+		pageFailed := (p.Parsing != nil && p.Parsing.Failed) ||
+			(p.Extraction != nil && p.Extraction.Failed) ||
+			(p.Source == "" && p.Extraction == nil)
+		if pageFailed {
+			entry.PagesFailed++
+		}
+	}
+
+	if err := store.AppendRunLog(outDir, hash, entry); err != nil {
+		return fmt.Errorf("persist: %w", err)
+	}
+	return nil
 }
 
 func toProcessOutput(docType string, r pipeline.Result) processOutput {

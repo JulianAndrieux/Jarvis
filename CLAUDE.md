@@ -286,13 +286,41 @@ tournant simultanément :
       original — validation que la chaîne complète fonctionne, pas
       seulement chaque étage isolément). ~82s.
   - Serveurs arrêtés proprement après le test (aucun processus résiduel).
+- **Jalon 6 — stockage définitif : fait.**
+  - `internal/store` :
+    - `HashFile(path)` — SHA-256 du document source (provenance).
+    - `BuildRecords(hash, path, docType, processedAt, pipeline.Result)`
+      (fonction pure) assemble un `DocumentRecord` (résumé) et un
+      `[]PageRecord` (un par page) à partir du résultat du pipeline —
+      chaque `PageRecord` porte sa source (native/vlm), le modèle et le
+      prompt de chaque étage traversé, le JSON extrait, et
+      `needs_review`/`failed`.
+    - `WriteRecords(dir, doc, pages)` écrit
+      `dir/<hash>/document.json` + `dir/<hash>/page-<N>.json` (JSON
+      indenté, lisible). Un rejeu du même document écrase ces fichiers —
+      c'est l'état courant, pas l'historique.
+    - `AppendRunLog(dir, hash, entry)` — **log de rejeu append-only**,
+      `dir/<hash>/runs.jsonl` : une ligne par exécution
+      (timestamp, pages totales/en revue/en échec), jamais écrasée,
+      pour garder trace des tentatives successives sur un même document
+      (utile si on rejoue avec un autre modèle/prompt).
+  - CLI : `jarvis process ... --out-dir DIR` (optionnel, vide par défaut
+    = comportement inchangé, stdout uniquement). Persistance faite
+    seulement après un `pipeline.Run` réussi — un échec de niveau
+    document n'a pas de résultat cohérent à écrire.
+  - Testé : unitaire (fonctions pures + écriture disque via `t.TempDir()`)
+    et intégration CLI (deux serveurs `httptest` en mémoire simulant VLM/
+    LLM, aucun vrai modèle requis) + démo manuelle inspectée à l'œil.
+  - Pas d'index cross-documents (ex. SQLite) : hors scope de ce jalon,
+    et de toute façon prévu côté Atlas phase 2 si besoin (cf. plus bas).
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion
   automatique au niveau document pour l'instant).
 - Stratégie d'échec d'étage : **échec immédiat**, pas de retry — le
   document/la page est marqué en échec et passe en revue humaine.
-- Stockage (phase 1) : **fichiers JSON sur disque**, un par page, + logs.
+- Stockage (phase 1) : **fichiers JSON sur disque**, un par page, + logs
+  — implémenté au jalon 6 (`internal/store`, flag `--out-dir`).
 
 - **Moteur de serving des modèles : llama.cpp server** (binaire natif,
   accélération Metal, API compatible OpenAI, JSON Schema via grammars).
