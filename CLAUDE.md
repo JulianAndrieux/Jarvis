@@ -56,7 +56,11 @@ port Go (interface) avec une implémentation HTTP et une implémentation fake
 pour les tests. **Aucun test ne doit nécessiter de GPU.**
 
 ## Non-goals
-- Pas d'interface web tant que la chaîne CLI ne donne pas de bons résultats.
+- ~~Pas d'interface web tant que la chaîne CLI ne donne pas de bons
+  résultats.~~ Levé : la CLI donne de bons résultats (jalons 1-7), une
+  interface web a été demandée et construite (`cmd/jarvisweb`, cf.
+  "Interface web" plus bas) sur le stack déjà prévu ici (net/http + chi +
+  templ + HTMX).
 - Pas de base vectorielle, pas de RAG — c'est un problème d'extraction, pas
   de recherche.
 - Choix de modèle toujours argumenté (licence, empreinte VRAM, scores
@@ -207,6 +211,37 @@ tournant simultanément :
   chargement à froid, ~20-30s).
 - Pipeline complet sur une page scannée (triage → VLM → LLM) : ~80s de
   bout en bout.
+
+### Interface web (cmd/jarvisweb)
+```
+# Une fois (regénère les templates après toute modif de .templ) :
+go install github.com/a-h/templ/cmd/templ@latest   # ajoute $(go env GOPATH)/bin au PATH
+make build-web
+
+# Les deux serveurs llama.cpp du setup ci-dessus doivent tourner
+# (VLM :8080, LLM :8081), puis :
+./bin/jarvisweb \
+  --vlm-url http://127.0.0.1:8080/v1 --vlm-model olmOCR-2-7B-1025 --vlm-model-version Q6_K \
+  --llm-url http://127.0.0.1:8081/v1 --llm-model qwen3-8b --llm-model-version Q5_K_M \
+  --out-dir ./data/results \
+  --addr 127.0.0.1:8090
+
+# Puis ouvrir http://127.0.0.1:8090 — upload d'un PDF, résultat affiché
+# dès qu'il est prêt (poll HTMX automatique, pas de rechargement manuel).
+```
+Flags utiles : `--upload-dir` (par défaut un répertoire temporaire système,
+nettoyé par l'OS), `--out-dir` (vide = pas de persistance, comme pour
+`jarvis process`), `--dpi`/`--vlm-timeout`/`--llm-timeout` (mêmes défauts
+que la CLI). `make run-web` lance tout avec les valeurs par défaut du
+setup ci-dessus.
+
+**Hébergement plus tard :** le binaire est un serveur `net/http` standard
+sans état persistant en dehors de `--upload-dir`/`--out-dir` (les jobs en
+mémoire ne survivent pas à un redémarrage, par choix — les résultats,
+eux, sont sur disque). Pour un déploiement distant, pointer `--vlm-url`/
+`--llm-url` vers les serveurs `llama.cpp` alors accessibles et exposer
+`--addr` derrière un reverse proxy (TLS, auth) — rien dans le code n'est
+spécifique à `localhost`.
 - **Jalon 4 — registre de types + dérivation JSON Schema + étage
   Extraction (fake LLM) : fait.**
   - `internal/schema` : `Field[T]{Value, Confidence, SourceSnippet}`
@@ -348,6 +383,51 @@ tournant simultanément :
     (`cmd/jarvis/process_store_integration_test.go`, avec un LLM stubé
     mais un vrai `pdftotext`) : le bbox de `numero` est correctement
     localisé et persisté dans `page-1.json`.
+- **Jalon 8 — interface web (`cmd/jarvisweb`) : fait, validé end-to-end.**
+  Stack tel que prévu dans ce document depuis le début : `net/http` +
+  `chi` + `templ` + `HTMX`. Tourne en local aujourd'hui, pensé pour être
+  hébergé tel quel plus tard (pas de dépendance à l'environnement local
+  au-delà des URLs VLM/LLM passées en flags).
+  - `internal/webapp` : `JobManager` suit les jobs en mémoire (perdus au
+    redémarrage — acceptable, les résultats eux sont sur disque via
+    `internal/store`). `Runner` est l'interface minimale
+    (`Run(ctx, reg, path) (pipeline.Result, error)`) — `pipeline.Pipeline`
+    la satisfait déjà par typage structurel, aucun adaptateur nécessaire.
+    Chaque soumission tourne dans sa propre goroutine ; `Get`/`Submit`
+    retournent des copies (jamais le pointeur interne) pour éviter tout
+    accès concurrent aux champs d'un job en cours de traitement — un vrai
+    data race a été détecté par `-race` et corrigé pendant le
+    développement (copie prise avant tout partage entre goroutines,
+    plutôt qu'après).
+  - `cmd/jarvisweb` : formulaire d'upload (`GET /`), soumission
+    (`POST /jobs`), suivi (`GET /jobs/{id}`). Poll HTMX : le fragment
+    "pending"/"running" se ré-interroge lui-même
+    (`hx-trigger="load delay:1.5s"` sur l'élément qu'il remplace via
+    `hx-swap="outerHTML"`) ; le fragment terminal (`done`/`failed`) ne
+    porte plus cet attribut, donc le polling s'arrête naturellement.
+    L'affichage des champs extraits est **générique** : chaque page est
+    aplatie en `FieldView` via `extraction.IsFieldNode` (exporté depuis
+    `internal/extraction`, déjà utilisé par `LowConfidenceFields` et
+    `AttachBBoxes` — pas une troisième implémentation de la même
+    détection), donc un nouveau type de document enregistré s'affiche
+    sans toucher au web.
+  - HTMX vendoré localement (`cmd/jarvisweb/static/htmx.min.js`, embarqué
+    dans le binaire via `//go:embed`) : aucun appel réseau au chargement
+    de la page, cohérent avec "tourne entièrement en local".
+  - Persistance optionnelle (`--out-dir`) : réutilise exactement
+    `internal/store` (mêmes `document.json`/`page-N.json`/`runs.jsonl`
+    que `jarvis process --out-dir`) via `JobManager.OnFinish`.
+  - Testé : `internal/webapp` unitaire (dont concurrence, `-race`) ;
+    `cmd/jarvisweb` unitaire (handlers via `httptest`, upload
+    multipart, polling jusqu'à l'état terminal, doc-type inconnu,
+    fichier manquant) ; **bout en bout réel** : serveur `jarvisweb`
+    lancé en local, upload de `native.pdf` par `curl -F`, poll jusqu'à
+    `status-done`, champs corrects affichés avec confiance/extrait
+    source/bbox, persistance sur disque vérifiée. Une première tentative
+    avec une mauvaise URL de serveur LLM a été observée dans
+    `runs.jsonl` à côté de la tentative réussie — validation involontaire
+    mais bienvenue du log de rejeu (jalon 6).
+  - Setup et usage : voir "Interface web" ci-dessous.
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion

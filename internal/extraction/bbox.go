@@ -33,7 +33,7 @@ func AttachBBoxes(raw json.RawMessage, words []bbox.Word) (json.RawMessage, erro
 func attachBBoxesWalk(node any, words []bbox.Word) {
 	switch v := node.(type) {
 	case map[string]any:
-		if isFieldNode(v) {
+		if IsFieldNode(v) {
 			snippet, _ := v["source_snippet"].(string)
 			if snippet == "" {
 				return

@@ -1,0 +1,20 @@
+package templates
+
+templ Index(docTypes []string) {
+	@Layout("Jarvis") {
+		<div class="card">
+			<form hx-post="/jobs" hx-target="#result" hx-swap="innerHTML" hx-encoding="multipart/form-data">
+				<label for="doc_type">Type de document</label>
+				<select name="doc_type" id="doc_type">
+					for _, dt := range docTypes {
+						<option value={ dt }>{ dt }</option>
+					}
+				</select>
+				<label for="file">Document (PDF)</label>
+				<input type="file" name="file" id="file" accept="application/pdf" required/>
+				<button type="submit">Traiter</button>
+			</form>
+		</div>
+		<div id="result"></div>
+	}
+}

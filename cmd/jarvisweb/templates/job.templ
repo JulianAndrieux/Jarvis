@@ -1,0 +1,116 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/JulianAndrieux/Jarvis/internal/webapp"
+)
+
+// FieldView est la vue d'un champ extrait (schema.Field aplati), prête à
+// afficher — construite par cmd/jarvisweb à partir du JSON brut, pour ne
+// coupler ni internal/extraction ni internal/schema à une préoccupation
+// d'affichage.
+type FieldView struct {
+	Name          string
+	Value         string
+	Confidence    float64
+	SourceSnippet string
+	BBox          string
+}
+
+// PageView est la vue d'une page traitée par l'étage Extraction.
+type PageView struct {
+	Page        int
+	Fields      []FieldView
+	NeedsReview bool
+	Failed      bool
+	Error       string
+}
+
+// ResultView est la vue complète d'un document traité.
+type ResultView struct {
+	DocType      string
+	TriageScore  float64
+	HasTextLayer bool
+	Pages        []PageView
+}
+
+func statusLabel(s webapp.Status) string {
+	switch s {
+	case webapp.StatusPending:
+		return "En attente"
+	case webapp.StatusRunning:
+		return "Traitement en cours"
+	case webapp.StatusDone:
+		return "Terminé"
+	case webapp.StatusFailed:
+		return "Échec"
+	default:
+		return string(s)
+	}
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "oui"
+	}
+	return "non"
+}
+
+func rowClass(f FieldView) string {
+	if f.Confidence < 0.7 {
+		return "needs-review"
+	}
+	return ""
+}
+
+templ JobFragment(job webapp.Job, view ResultView) {
+	if job.Status == webapp.StatusPending || job.Status == webapp.StatusRunning {
+		<div id={ "job-" + job.ID } class="card" hx-get={ "/jobs/" + job.ID } hx-trigger="load delay:1.5s" hx-swap="outerHTML">
+			<p class={ "status-" + string(job.Status) }>
+				<span class="spinner"></span>
+				{ statusLabel(job.Status) } — { job.Filename }
+			</p>
+		</div>
+	} else if job.Status == webapp.StatusFailed {
+		<div id={ "job-" + job.ID } class="card">
+			<p class="status-failed">Échec — { job.Filename }</p>
+			<div class="error-box">{ job.Err }</div>
+		</div>
+	} else {
+		<div id={ "job-" + job.ID } class="card">
+			<p class="status-done">Terminé — { job.Filename } ({ view.DocType })</p>
+			<p class="muted">
+				Triage : score { fmt.Sprintf("%.2f", view.TriageScore) }, couche texte native { yesNo(view.HasTextLayer) }
+			</p>
+			for _, page := range view.Pages {
+				<h3>Page { fmt.Sprint(page.Page) }</h3>
+				if page.Failed {
+					<div class="error-box">{ page.Error }</div>
+				} else {
+					if page.NeedsReview {
+						<p class="status-pending">⚠ un ou plusieurs champs sous le seuil de confiance — à revoir</p>
+					}
+					<table>
+						<tr>
+							<th>Champ</th>
+							<th>Valeur</th>
+							<th>Confiance</th>
+							<th>Extrait source</th>
+							<th>Position (pts)</th>
+						</tr>
+						for _, f := range page.Fields {
+							<tr class={ rowClass(f) }>
+								<td>{ f.Name }</td>
+								<td>{ f.Value }</td>
+								<td class="confidence">{ fmt.Sprintf("%.2f", f.Confidence) }</td>
+								<td class="muted">{ f.SourceSnippet }</td>
+								<td class="muted">{ f.BBox }</td>
+							</tr>
+						}
+					</table>
+				}
+			}
+		</div>
+	}
+}

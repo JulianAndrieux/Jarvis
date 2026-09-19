@@ -37,7 +37,7 @@ func LowConfidenceFields(raw json.RawMessage, threshold float64) ([]string, erro
 func walkFields(path string, node any, threshold float64, low *[]string) {
 	switch v := node.(type) {
 	case map[string]any:
-		if isFieldNode(v) {
+		if IsFieldNode(v) {
 			confidence, _ := v["confidence"].(float64)
 			if confidence < threshold {
 				*low = append(*low, path)
@@ -54,7 +54,11 @@ func walkFields(path string, node any, threshold float64, low *[]string) {
 	}
 }
 
-func isFieldNode(m map[string]any) bool {
+// IsFieldNode signale si m est un objet JSON au format schema.Field
+// (value/confidence/source_snippet). Exporté pour être réutilisé par
+// d'autres consommateurs du JSON produit par l'étage Extraction (ex.
+// l'affichage web), sans dupliquer cette détection.
+func IsFieldNode(m map[string]any) bool {
 	_, hasValue := m["value"]
 	_, hasConfidence := m["confidence"]
 	_, hasSnippet := m["source_snippet"]
