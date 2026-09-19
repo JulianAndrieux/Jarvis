@@ -157,10 +157,11 @@ scripts/gen_fixtures.py)
   génération uniquement — le fichier généré, lui, est indépendant de tout
   outil.
 
-### Setup local du VLM (llama.cpp + olmOCR-2-7B-1025)
+### Setup local complet (llama.cpp + olmOCR-2-7B-1025 + Qwen3-8B)
 ```
 brew install llama.cpp   # fournit `llama-server`
 
+# --- VLM (étage Parsing) ---
 mkdir -p ~/models/olmocr2
 BASE="https://huggingface.co/lmstudio-community/olmOCR-2-7B-1025-GGUF/resolve/main"
 curl -L -o ~/models/olmocr2/olmOCR-2-7B-1025-Q6_K.gguf "$BASE/olmOCR-2-7B-1025-Q6_K.gguf"
@@ -173,14 +174,39 @@ llama-server \
   --ctx-size 8192 \
   --image-min-tokens 1024   # recommandé par llama.cpp pour les Qwen-VL (précision du grounding)
 
-# puis, dans un autre terminal :
-jarvis parse --vlm-url http://127.0.0.1:8080/v1 --vlm-model olmOCR-2-7B-1025 --vlm-model-version Q6_K fichier.pdf
+# --- LLM (étage Extraction), dans un second terminal, port différent ---
+mkdir -p ~/models/qwen3-8b
+curl -L -o ~/models/qwen3-8b/Qwen3-8B-Q5_K_M.gguf \
+  "https://huggingface.co/unsloth/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q5_K_M.gguf"
+
+llama-server \
+  -m ~/models/qwen3-8b/Qwen3-8B-Q5_K_M.gguf \
+  --host 127.0.0.1 --port 8081 \
+  --ctx-size 8192
+
+# --- Pipeline complet, dans un troisième terminal ---
+jarvis process \
+  --vlm-url http://127.0.0.1:8080/v1 --vlm-model olmOCR-2-7B-1025 --vlm-model-version Q6_K \
+  --llm-url http://127.0.0.1:8081/v1 --llm-model qwen3-8b --llm-model-version Q5_K_M \
+  --doc-type facture \
+  fichier.pdf
+
+# Étages isolés, toujours disponibles si besoin :
+jarvis triage fichier.pdf
+jarvis parse --vlm-url http://127.0.0.1:8080/v1 --vlm-model olmOCR-2-7B-1025 fichier.pdf
 ```
-Les poids (~7 Go au total) sont dans `~/models/`, **hors du dépôt** (trop
-volumineux, et de toute façon non versionnables proprement).
-Performances observées sur le MacBook Air M3 (24 Go) : ~91 tokens/s en
-lecture du prompt, ~14.6 tokens/s en génération — une page avec du texte
-correctement dense se transcrit en 30-60s.
+Les poids (~13 Go au total pour les deux modèles) sont dans `~/models/`,
+**hors du dépôt** (trop volumineux, non versionnables proprement).
+
+Performances observées sur le MacBook Air M3 (24 Go), les deux serveurs
+tournant simultanément :
+- VLM (olmOCR-2-7B, Q6_K) : ~91 tokens/s en lecture de prompt, ~14.6
+  tokens/s en génération.
+- LLM (Qwen3-8B, Q5_K_M) : extraction JSON contrainte en quelques
+  secondes une fois le modèle chargé (le premier appel inclut le
+  chargement à froid, ~20-30s).
+- Pipeline complet sur une page scannée (triage → VLM → LLM) : ~80s de
+  bout en bout.
 - **Jalon 4 — registre de types + dérivation JSON Schema + étage
   Extraction (fake LLM) : fait.**
   - `internal/schema` : `Field[T]{Value, Confidence, SourceSnippet}`
@@ -214,9 +240,52 @@ correctement dense se transcrit en 30-60s.
   - Pas de câblage CLI : comme pour le parsing au jalon 2, une commande
     `jarvis extract` sans vrai LLM branché n'aurait rien de significatif
     à faire. Arrivera au jalon 5.
-- Jalon 5 (à venir) : implémentation HTTP réelle du port LLM (llama.cpp
-  server, décodage contraint par JSON Schema), test end-to-end complet
-  (triage→parsing→extraction) sur le corpus, câblage CLI.
+- **Jalon 5 — implémentation HTTP réelle du port LLM + pipeline complet +
+  câblage CLI : fait, validé end-to-end.**
+  - `internal/llm.HTTPClient` : implémente `Client` contre l'API chat
+    completions compatible OpenAI, avec `response_format: {"type":
+    "json_schema", "json_schema": {...}}` (décodage contraint par le
+    schéma dérivé de `internal/schema`) — extension supportée par
+    llama.cpp server, confirmée empiriquement avant implémentation.
+    Testé via `httptest`, aucun modèle/GPU requis.
+  - **`internal/pipeline` (nouveau)** : comble un manque identifié au
+    jalon 2 (le triage ne conservait que des stats, pas le texte).
+    `Merge()` (fonction pure) combine le texte natif des pages "usable"
+    et le Markdown VLM des autres pages en une liste unique triée par
+    page ; une page non-usable dont le parsing VLM a échoué est exclue
+    (pas de fallback silencieux). `Pipeline.Run()` enchaîne
+    Triage → Parsing → Extraction en réutilisant tel quel chaque étage
+    existant (aucun étage n'a eu besoin d'être modifié).
+  - CLI : `jarvis process --vlm-url URL --vlm-model NAME --llm-url URL
+    --llm-model NAME --doc-type NAME <fichier.pdf>` — pipeline complet,
+    JSON sur stdout. Toujours pas de défaut silencieux sur les
+    URLs/noms de modèle/doc-type.
+  - **Modèle LLM d'extraction choisi (argumenté) : Qwen3-8B (Apache 2.0,
+    GGUF Q5_K_M, ~5.85 Go), servi par une seconde instance
+    `llama.cpp server` (port distinct du VLM).** Comparé à
+    Qwen2.5-7B-Instruct (même famille que le VLM mais légèrement en
+    retrait sur IFEval face à Llama3.1-8B) et Hermes-2-Pro-Mistral-7B
+    (spécifiquement tuné JSON/function-calling, 81% JSON eval, mais base
+    Mistral-7B-v0.1 plus datée, contexte 8192). Argument retenu : le
+    décodage étant de toute façon contraint par notre JSON Schema (la
+    validité JSON est garantie structurellement, pas besoin qu'un modèle
+    soit "bon en JSON mode"), la qualité de raisonnement pour extraire
+    les bonnes valeurs prime — d'où Qwen3-8B, génération la plus récente
+    des trois.
+  - **Test end-to-end réel : fait.** Les deux serveurs (`llama-server`
+    VLM sur :8080, `llama-server` LLM sur :8081) tournent simultanément —
+    ~13 Go de poids cumulés, confortable sur les 24 Go de la machine.
+    - `native.pdf` : triage détecte le texte natif, `parsing: []` (VLM
+      jamais appelé), extraction retourne les 3 champs de `Facture` avec
+      confiance 1.0 et `source_snippet` exact, `needs_review: false`.
+      ~59s (dominé par le chargement à froid du modèle LLM au premier
+      appel).
+    - `scanned_content.pdf` : triage détecte l'absence de texte, VLM
+      transcrit fidèlement la page, extraction retourne les mêmes 3
+      champs corrects à partir du Markdown VLM (pas du texte source
+      original — validation que la chaîne complète fonctionne, pas
+      seulement chaque étage isolément). ~82s.
+  - Serveurs arrêtés proprement après le test (aucun processus résiduel).
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion

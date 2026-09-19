@@ -90,6 +90,15 @@ func runParse(ctx context.Context, args []string, stdout io.Writer) error {
 }
 
 func toParseOutput(path string, triageResult triage.Result, results []parsing.PageResult) parseOutput {
+	return parseOutput{
+		Path:         path,
+		TriageScore:  triageResult.Score,
+		HasTextLayer: triageResult.HasTextLayer,
+		Pages:        toParsePageOutputs(results),
+	}
+}
+
+func toParsePageOutputs(results []parsing.PageResult) []parsePageOutput {
 	pages := make([]parsePageOutput, len(results))
 	for i, r := range results {
 		pages[i] = parsePageOutput{
@@ -102,10 +111,5 @@ func toParseOutput(path string, triageResult triage.Result, results []parsing.Pa
 			Error:        r.Error,
 		}
 	}
-	return parseOutput{
-		Path:         path,
-		TriageScore:  triageResult.Score,
-		HasTextLayer: triageResult.HasTextLayer,
-		Pages:        pages,
-	}
+	return pages
 }

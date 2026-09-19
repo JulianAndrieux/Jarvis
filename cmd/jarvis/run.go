@@ -18,6 +18,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runTriage(ctx, args[1:], stdout)
 	case "parse":
 		return runParse(ctx, args[1:], stdout)
+	case "process":
+		return runProcess(ctx, args[1:], stdout)
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage())
 		return nil
@@ -32,6 +34,9 @@ func usage() string {
 Usage:
   jarvis triage <fichier.pdf>                              Détecte si le PDF a une couche texte exploitable
   jarvis parse --vlm-url URL --vlm-model NAME <fichier.pdf> Triage puis, pour les pages sans texte fiable, rendu + VLM -> Markdown
+  jarvis process --vlm-url URL --vlm-model NAME             Pipeline complet : triage -> parsing -> extraction
+                 --llm-url URL --llm-model NAME
+                 --doc-type NAME <fichier.pdf>
   jarvis help                                               Affiche cette aide
 `
 }
