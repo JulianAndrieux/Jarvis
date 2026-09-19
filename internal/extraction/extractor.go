@@ -14,6 +14,16 @@ import (
 // lequel un champ extrait est marqué pour revue humaine.
 const DefaultConfidenceThreshold = 0.7
 
+// ResolveConfidenceThreshold retombe sur DefaultConfidenceThreshold pour
+// une valeur zéro. Partagée par Extractor.ExtractPages et MergePages pour
+// ne pas dupliquer la règle "0 = défaut".
+func ResolveConfidenceThreshold(t float64) float64 {
+	if t == 0 {
+		return DefaultConfidenceThreshold
+	}
+	return t
+}
+
 // DefaultPromptTemplate est le prompt envoyé au LLM quand
 // Extractor.PromptTemplate n'est pas renseigné. %s est remplacé par
 // doctype.Registration.Description.
@@ -55,10 +65,7 @@ type Extractor struct {
 // (LLM ou JSON non conforme) sont capturés dans Result.Failed/Error sans
 // interrompre les autres pages.
 func (e Extractor) ExtractPages(ctx context.Context, reg doctype.Registration, pages []triage.PageText) ([]Result, error) {
-	threshold := e.ConfidenceThreshold
-	if threshold == 0 {
-		threshold = DefaultConfidenceThreshold
-	}
+	threshold := ResolveConfidenceThreshold(e.ConfidenceThreshold)
 
 	promptTemplate := e.PromptTemplate
 	if promptTemplate == "" {

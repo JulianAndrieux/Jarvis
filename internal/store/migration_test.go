@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -67,8 +68,30 @@ func TestMigrateDocumentJSON_MissingVersion_UpgradesToCurrent(t *testing.T) {
 	}
 }
 
+func TestMigrateDocumentJSON_V1ToV2_PreservesContent(t *testing.T) {
+	// v1 n'avait pas MergedExtraction : vérifie que la migration 1->2
+	// (purement additive) ne perd aucune donnée existante.
+	raw := json.RawMessage(`{"source_hash":"H","schema_version":1,"pages":[1,2],"triage_score":1,"has_text_layer":true}`)
+
+	got, err := MigrateDocumentJSON(raw)
+	if err != nil {
+		t.Fatalf("MigrateDocumentJSON() error = %v, want nil", err)
+	}
+
+	var rec DocumentRecord
+	if err := json.Unmarshal(got, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec.SchemaVersion != CurrentDocumentRecordVersion || rec.SourceHash != "H" || len(rec.Pages) != 2 {
+		t.Errorf("record = %+v, want SchemaVersion=%d SourceHash=H Pages=[1 2]", rec, CurrentDocumentRecordVersion)
+	}
+	if rec.MergedExtraction != nil {
+		t.Errorf("MergedExtraction = %+v, want nil (absent from the v1 source)", rec.MergedExtraction)
+	}
+}
+
 func TestMigrateDocumentJSON_AlreadyCurrent_PreservesContent(t *testing.T) {
-	raw := json.RawMessage(`{"source_hash":"H","schema_version":1,"pages":[1,2]}`)
+	raw := json.RawMessage(fmt.Sprintf(`{"source_hash":"H","schema_version":%d,"pages":[1,2]}`, CurrentDocumentRecordVersion))
 
 	got, err := MigrateDocumentJSON(raw)
 	if err != nil {

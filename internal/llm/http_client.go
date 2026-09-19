@@ -28,13 +28,20 @@ type HTTPClient struct {
 	ModelVersion string
 	// HTTP est le client HTTP utilisé ; nil retombe sur http.DefaultClient.
 	HTTP *http.Client
+	// DisableThinking ajoute "/no_think" au message envoyé — convention du
+	// template de chat Qwen3 pour désactiver le mode "réflexion", qui peut
+	// sinon générer un nombre de tokens très élevé et variable avant de
+	// conclure (observé : 2614 tokens/~200s sur un cas ambigu contre 156
+	// tokens/~10s avec /no_think, même réponse correcte — voir CLAUDE.md).
+	// Sans effet connu sur d'autres familles de modèles.
+	DisableThinking bool
 }
 
 func (c HTTPClient) Extract(ctx context.Context, req ExtractRequest) (ExtractResult, error) {
 	reqBody := chatCompletionRequest{
 		Model: c.Model,
 		Messages: []chatMessage{
-			{Role: "user", Content: buildExtractionMessage(req)},
+			{Role: "user", Content: buildExtractionMessage(req, c.DisableThinking)},
 		},
 		Temperature: 0,
 		ResponseFormat: &responseFormat{
@@ -99,8 +106,12 @@ func (c HTTPClient) Extract(ctx context.Context, req ExtractRequest) (ExtractRes
 	}, nil
 }
 
-func buildExtractionMessage(req ExtractRequest) string {
-	return fmt.Sprintf("%s\n\n---\nTexte source (page %d) :\n%s", req.Prompt, req.Page, req.Text)
+func buildExtractionMessage(req ExtractRequest, disableThinking bool) string {
+	msg := fmt.Sprintf("%s\n\n---\nTexte source (page %d) :\n%s", req.Prompt, req.Page, req.Text)
+	if disableThinking {
+		msg += "\n\n/no_think"
+	}
+	return msg
 }
 
 // Sous-ensemble du format de requête/réponse "chat completions" compatible

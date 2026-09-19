@@ -20,14 +20,24 @@ type Migration struct {
 // qui "lie des fonctions à une struct" : chaque changement de forme de
 // DocumentRecord/PageRecord s'accompagne d'une entrée ici, à la clé de la
 // version de départ.
-//
-// La seule entrée aujourd'hui (0 -> 1) correspond à l'introduction même de
-// RecordMeta.SchemaVersion : les enregistrements écrits avant ce
-// mécanisme n'ont pas de champ schema_version (donc recordVersion les
-// traite comme version 0) et n'ont besoin d'aucune autre conversion.
 var documentMigrations = map[int]Migration{
+	// 0 -> 1 : introduction même de RecordMeta.SchemaVersion. Les
+	// enregistrements écrits avant ce mécanisme n'ont pas de champ
+	// schema_version (donc recordVersion les traite comme version 0) et
+	// n'ont besoin d'aucune autre conversion.
 	0: {
 		Description: "Introduction de schema_version (RecordMeta). Aucune autre transformation : les enregistrements existants n'avaient pas ce champ, il est simplement ajouté.",
+		Apply:       identityMigration,
+	},
+	// 1 -> 2 : ajout de MergedExtraction (jalon 11, finding 3 du jalon
+	// 10 : les champs d'un document dont les valeurs sont réparties sur
+	// plusieurs pages n'étaient reliés par aucun enregistrement unique).
+	// Purement additif : un enregistrement v1 n'a pas la clé
+	// "merged_extraction", ce qui décode naturellement en nil (le champ
+	// est *PageExtraction, omitempty) — aucune transformation de données
+	// existantes n'est nécessaire, seule la version doit avancer.
+	1: {
+		Description: "Ajout de MergedExtraction (fusion des extractions de toutes les pages, meilleure confiance par champ — voir extraction.MergePages). Aucune autre transformation : absent d'un enregistrement v1, le champ décode simplement à nil.",
 		Apply:       identityMigration,
 	},
 }

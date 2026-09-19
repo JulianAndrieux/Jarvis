@@ -84,6 +84,48 @@ func TestHTTPClient_Extract_Success(t *testing.T) {
 	}
 }
 
+func TestHTTPClient_Extract_DisableThinking_AppendsNoThink(t *testing.T) {
+	var gotReq chatCompletionRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotReq)
+		_ = json.NewEncoder(w).Encode(chatCompletionResponse{
+			Choices: []chatCompletionChoice{{Message: chatMessage{Content: `{}`}}},
+		})
+	}))
+	defer srv.Close()
+
+	c := HTTPClient{BaseURL: srv.URL, Model: "m", DisableThinking: true}
+	req := ExtractRequest{Page: 1, Text: "x", Schema: json.RawMessage(`{}`), Prompt: "p"}
+	if _, err := c.Extract(context.Background(), req); err != nil {
+		t.Fatalf("Extract() error = %v, want nil", err)
+	}
+
+	if !strings.Contains(gotReq.Messages[0].Content, "/no_think") {
+		t.Errorf("message content = %q, want it to contain /no_think", gotReq.Messages[0].Content)
+	}
+}
+
+func TestHTTPClient_Extract_ThinkingEnabledByDefault_NoSuffix(t *testing.T) {
+	var gotReq chatCompletionRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotReq)
+		_ = json.NewEncoder(w).Encode(chatCompletionResponse{
+			Choices: []chatCompletionChoice{{Message: chatMessage{Content: `{}`}}},
+		})
+	}))
+	defer srv.Close()
+
+	c := HTTPClient{BaseURL: srv.URL, Model: "m"} // DisableThinking non renseigné (false)
+	req := ExtractRequest{Page: 1, Text: "x", Schema: json.RawMessage(`{}`), Prompt: "p"}
+	if _, err := c.Extract(context.Background(), req); err != nil {
+		t.Fatalf("Extract() error = %v, want nil", err)
+	}
+
+	if strings.Contains(gotReq.Messages[0].Content, "/no_think") {
+		t.Errorf("message content = %q, want no /no_think suffix by default", gotReq.Messages[0].Content)
+	}
+}
+
 func TestHTTPClient_Extract_ServerErrorStatus_ReturnsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

@@ -565,6 +565,45 @@ spécifique à `localhost`.
        tolérer la variance observée.
   - Serveurs arrêtés proprement après chaque run (aucun processus
     résiduel).
+- **Jalon 11 — correctifs des findings 3 et 4 du jalon 10 : fait, validé
+  end-to-end sur les fixtures qui avaient révélé les problèmes.**
+  - **Finding 4 (latence Qwen3) — confirmé et corrigé.** La piste notée
+    au jalon 10 (`/no_think`) a été vérifiée empiriquement avant
+    implémentation : même requête, même réponse correcte, 2614 tokens/
+    ~200s → 156 tokens/~10s. `llm.HTTPClient.DisableThinking bool`
+    (mécanisme générique, off par défaut, testé isolément) ; activé par
+    défaut dans `cmd/jarvis`/`cmd/jarvisweb` puisque Qwen3 est le modèle
+    d'extraction retenu. `--llm-timeout` par défaut relevé 120s → 180s
+    en filet de sécurité (le vrai correctif reste `/no_think`).
+    **Revalidé sur `facture_ambigue.pdf` via `jarvis process` réel :
+    ~12s au lieu d'un timeout après 600s, même réponse (570.00).**
+  - **Finding 3 (champs éclatés entre pages) — corrigé par fusion
+    post-extraction (option retenue par l'utilisateur).** `un JSON par
+    page` reste inchangé ; `extraction.MergePages(results, threshold)`
+    ajoute une vue agrégée : pour chaque champ (`schema.Field`, y
+    compris imbriqué, via `IsFieldNode`), garde la valeur à la
+    confiance la plus haute à travers les pages. `pipeline.Result.
+    Merged` (nouveau champ, calculé dans `Pipeline.Run`) ; surfacé dans
+    la sortie `jarvis process` (`"merged"`) et dans l'UI web (section
+    "Résumé document" avant le détail par page). Persisté dans
+    `store.DocumentRecord.MergedExtraction` — **premier vrai exercice du
+    mécanisme de migration du jalon 9**, pas seulement testé en
+    isolation : `CurrentDocumentRecordVersion` 1 → 2, fingerprint mis à
+    jour, `Migration` enregistrée (purement additive : un enregistrement
+    v1 n'a pas la clé `merged_extraction`, elle décode simplement à nil).
+    Le test de norme a échoué comme prévu avant la mise à jour du
+    fingerprint, confirmant qu'il détecte vraiment les changements non
+    accompagnés. **Revalidé sur `facture_multipage.pdf` via `jarvis
+    process` réel : `merged.json` a désormais les 3 champs (numéro +
+    fournisseur de la page 1, total de la page 2), `needs_review:
+    false`.**
+  - Option non retenue documentée pour mémoire : un seul appel LLM par
+    document (texte concaténé) aurait réglé le problème plus
+    directement mais serait revenu sur la décision "un JSON par page"
+    et risquait le dépassement de contexte sur un document long.
+  - Testé : unitaire pour chaque morceau (DisableThinking, MergePages y
+    compris récursif sur des champs imbriqués, persistance,
+    fingerprint/migration) + les deux revalidations réelles ci-dessus.
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion
@@ -597,10 +636,5 @@ spécifique à `localhost`.
   Facture (pièce d'identité, correspondance, document technique...) —
   le mécanisme (registre + dérivation) est en place, chaque nouveau type
   s'ajoute au besoin.
-- Fusion des champs d'un document dont les valeurs sont réparties sur
-  plusieurs pages (cf. jalon 10, finding 3) — observé sur un cas réel,
-  pas de mécanisme aujourd'hui. À trancher si des documents réels
-  rencontrent ce problème.
-- Latence très variable de l'étage Extraction sur du contenu ambigu (cf.
-  jalon 10, finding 4) — probablement le "thinking mode" de Qwen3 non
-  désactivé. Piste proposée mais pas implémentée.
+Les findings 3 et 4 du jalon 10 (fusion multi-pages, latence Qwen3) sont
+résolus — voir jalon 11.

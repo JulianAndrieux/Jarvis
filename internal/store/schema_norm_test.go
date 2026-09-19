@@ -49,6 +49,7 @@ func structFingerprint(t reflect.Type) string {
 //     (migration.go) avec une Description qui explique la conversion.
 var documentRecordFingerprints = map[int]string{
 	1: "SourceHash:string;SourcePath:string;DocType:string;ProcessedAt:time.Time;SchemaVersion:int;TriageScore:float64;HasTextLayer:bool;Pages:[]int;",
+	2: "SourceHash:string;SourcePath:string;DocType:string;ProcessedAt:time.Time;SchemaVersion:int;TriageScore:float64;HasTextLayer:bool;Pages:[]int;MergedExtraction:*store.PageExtraction;",
 }
 
 var pageRecordFingerprints = map[int]string{

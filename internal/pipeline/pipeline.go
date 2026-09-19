@@ -43,6 +43,13 @@ type Result struct {
 	Triage     triage.Result
 	Parsing    []parsing.PageResult
 	Extraction []extraction.Result
+	// Merged est la fusion de Extraction en un enregistrement par
+	// document (meilleure confiance par champ à travers les pages) — voir
+	// extraction.MergePages. Répond à la limite "un JSON par page" quand
+	// les champs d'un document sont répartis sur plusieurs pages (cf.
+	// CLAUDE.md, jalon 10 finding 3 / jalon 11). Extraction reste la
+	// source de vérité par page ; Merged est une vue additionnelle.
+	Merged extraction.MergedResult
 }
 
 // Run exécute le pipeline complet sur path, pour le type de document reg.
@@ -87,5 +94,6 @@ func (p Pipeline) Run(ctx context.Context, reg doctype.Registration, path string
 		Triage:     triageResult,
 		Parsing:    parseResults,
 		Extraction: extractionResults,
+		Merged:     extraction.MergePages(extractionResults, p.ConfidenceThreshold),
 	}, nil
 }

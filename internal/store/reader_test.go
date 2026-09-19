@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func writeRawFile(t *testing.T, path, content string) {
 func TestReadDocumentRecord_CurrentVersion_Succeeds(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "document.json")
-	writeRawFile(t, path, `{"source_hash":"H","schema_version":1,"pages":[1]}`)
+	writeRawFile(t, path, fmt.Sprintf(`{"source_hash":"H","schema_version":%d,"pages":[1]}`, CurrentDocumentRecordVersion))
 
 	got, err := ReadDocumentRecord(path)
 	if err != nil {
@@ -63,7 +64,7 @@ func TestReadDocumentRecord_MalformedJSON_ReturnsError(t *testing.T) {
 func TestReadPageRecord_CurrentVersion_Succeeds(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "page-1.json")
-	writeRawFile(t, path, `{"source_hash":"H","schema_version":1,"page":1,"source":"native"}`)
+	writeRawFile(t, path, fmt.Sprintf(`{"source_hash":"H","schema_version":%d,"page":1,"source":"native"}`, CurrentPageRecordVersion))
 
 	got, err := ReadPageRecord(path)
 	if err != nil {

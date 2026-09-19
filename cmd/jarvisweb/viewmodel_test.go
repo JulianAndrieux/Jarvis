@@ -45,6 +45,25 @@ func TestBuildResultView_FlattensFieldsAndSortsByPage(t *testing.T) {
 	}
 }
 
+func TestBuildResultView_IncludesMergedSummary(t *testing.T) {
+	mergedJSON := json.RawMessage(`{"numero":{"value":"2026-0271","confidence":1,"source_snippet":"F-1"}}`)
+	job := webapp.Job{
+		DocType: "facture",
+		Result: &pipeline.Result{
+			Merged: extraction.MergedResult{JSON: mergedJSON, NeedsReview: true},
+		},
+	}
+
+	got := buildResultView(job)
+
+	if !got.Merged.NeedsReview {
+		t.Error("Merged.NeedsReview = false, want true")
+	}
+	if len(got.Merged.Fields) != 1 || got.Merged.Fields[0].Value != "2026-0271" {
+		t.Errorf("Merged.Fields = %+v, want [{numero 2026-0271 ...}]", got.Merged.Fields)
+	}
+}
+
 func TestBuildResultView_FailedPage_NoFields(t *testing.T) {
 	job := webapp.Job{
 		Result: &pipeline.Result{

@@ -34,11 +34,21 @@ func buildResultView(job webapp.Job) templates.ResultView {
 	}
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Page < pages[j].Page })
 
+	merged := templates.PageView{
+		NeedsReview: result.Merged.NeedsReview,
+		Failed:      result.Merged.Failed,
+		Error:       result.Merged.Error,
+	}
+	if !result.Merged.Failed && len(result.Merged.JSON) > 0 {
+		merged.Fields = flattenExtractionJSON(result.Merged.JSON)
+	}
+
 	return templates.ResultView{
 		DocType:      job.DocType,
 		TriageScore:  result.Triage.Score,
 		HasTextLayer: result.Triage.HasTextLayer,
 		Pages:        pages,
+		Merged:       merged,
 	}
 }
 

@@ -27,6 +27,10 @@ type processOutput struct {
 	Triage     processTriageOutput    `json:"triage"`
 	Parsing    []parsePageOutput      `json:"parsing"`
 	Extraction []extractionPageOutput `json:"extraction"`
+	// Merged fusionne Extraction en un enregistrement par document
+	// (meilleure confiance par champ à travers les pages) — voir
+	// extraction.MergePages et CLAUDE.md, jalon 11.
+	Merged mergedExtractionOutput `json:"merged"`
 }
 
 type processTriageOutput struct {
@@ -36,6 +40,17 @@ type processTriageOutput struct {
 
 type extractionPageOutput struct {
 	Page                int             `json:"page"`
+	JSON                json.RawMessage `json:"json,omitempty"`
+	Model               string          `json:"model"`
+	ModelVersion        string          `json:"model_version"`
+	Prompt              string          `json:"prompt"`
+	NeedsReview         bool            `json:"needs_review"`
+	LowConfidenceFields []string        `json:"low_confidence_fields,omitempty"`
+	Failed              bool            `json:"failed"`
+	Error               string          `json:"error,omitempty"`
+}
+
+type mergedExtractionOutput struct {
 	JSON                json.RawMessage `json:"json,omitempty"`
 	Model               string          `json:"model"`
 	ModelVersion        string          `json:"model_version"`
@@ -58,7 +73,7 @@ func runProcess(ctx context.Context, args []string, stdout io.Writer) error {
 	dpi := fs.Int("dpi", 200, "Résolution de rendu des pages (DPI)")
 	confidenceThreshold := fs.Float64("confidence-threshold", 0, "Seuil de confiance par champ (0 = défaut d'extraction.DefaultConfidenceThreshold)")
 	vlmTimeout := fs.Duration("vlm-timeout", 120*time.Second, "Timeout par appel VLM")
-	llmTimeout := fs.Duration("llm-timeout", 120*time.Second, "Timeout par appel LLM")
+	llmTimeout := fs.Duration("llm-timeout", 180*time.Second, "Timeout par appel LLM")
 	outDir := fs.String("out-dir", "", "Répertoire où persister les résultats (JSON par page + log de rejeu) ; vide = pas de persistance, stdout uniquement")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -113,6 +128,12 @@ func runProcess(ctx context.Context, args []string, stdout io.Writer) error {
 			Model:        *llmModel,
 			ModelVersion: *llmVersion,
 			HTTP:         &http.Client{Timeout: *llmTimeout},
+			// Qwen3 (le modèle d'extraction actuel) peut sinon générer un
+			// nombre de tokens très variable avant de conclure sur du
+			// contenu ambigu — voir CLAUDE.md, jalon 10 finding 4 / jalon
+			// 11. Ce client HTTP reste générique (le champ existe, off par
+			// défaut) ; c'est un choix d'application propre à ce modèle.
+			DisableThinking: true,
 		},
 		ConfidenceThreshold: *confidenceThreshold,
 	}
@@ -196,5 +217,15 @@ func toProcessOutput(docType string, r pipeline.Result) processOutput {
 		},
 		Parsing:    toParsePageOutputs(r.Parsing),
 		Extraction: extractionPages,
+		Merged: mergedExtractionOutput{
+			JSON:                r.Merged.JSON,
+			Model:               r.Merged.Model.Name,
+			ModelVersion:        r.Merged.Model.Version,
+			Prompt:              r.Merged.Prompt,
+			NeedsReview:         r.Merged.NeedsReview,
+			LowConfidenceFields: r.Merged.LowConfidenceFields,
+			Failed:              r.Merged.Failed,
+			Error:               r.Merged.Error,
+		},
 	}
 }

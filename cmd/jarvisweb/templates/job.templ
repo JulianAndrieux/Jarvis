@@ -33,6 +33,11 @@ type ResultView struct {
 	TriageScore  float64
 	HasTextLayer bool
 	Pages        []PageView
+	// Merged est la fusion de toutes les pages en un enregistrement par
+	// document (meilleure confiance par champ) — voir
+	// extraction.MergePages. Réutilise PageView (même forme d'affichage),
+	// son champ Page n'est pas significatif ici.
+	Merged PageView
 }
 
 func statusLabel(s webapp.Status) string {
@@ -83,6 +88,35 @@ templ JobFragment(job webapp.Job, view ResultView) {
 			<p class="muted">
 				Triage : score { fmt.Sprintf("%.2f", view.TriageScore) }, couche texte native { yesNo(view.HasTextLayer) }
 			</p>
+			<div class="merged-summary">
+				<h3>Résumé document (fusion de toutes les pages)</h3>
+				if view.Merged.Failed {
+					<div class="error-box">{ view.Merged.Error }</div>
+				} else {
+					if view.Merged.NeedsReview {
+						<p class="status-pending">⚠ un ou plusieurs champs sous le seuil de confiance — à revoir</p>
+					}
+					<table>
+						<tr>
+							<th>Champ</th>
+							<th>Valeur</th>
+							<th>Confiance</th>
+							<th>Extrait source</th>
+							<th>Position (pts)</th>
+						</tr>
+						for _, f := range view.Merged.Fields {
+							<tr class={ rowClass(f) }>
+								<td>{ f.Name }</td>
+								<td>{ f.Value }</td>
+								<td class="confidence">{ fmt.Sprintf("%.2f", f.Confidence) }</td>
+								<td class="muted">{ f.SourceSnippet }</td>
+								<td class="muted">{ f.BBox }</td>
+							</tr>
+						}
+					</table>
+				}
+			</div>
+			<p class="muted">Détail par page :</p>
 			for _, page := range view.Pages {
 				<h3>Page { fmt.Sprint(page.Page) }</h3>
 				if page.Failed {

@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/JulianAndrieux/Jarvis/internal/store"
 )
 
 func writeMigrateFixture(t *testing.T, dir, hash string, files map[string]string) string {
@@ -65,8 +68,8 @@ func TestRunMigrate_MigratesOutdatedRecords(t *testing.T) {
 	if err := json.Unmarshal(docBytes, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc["schema_version"] != float64(1) {
-		t.Errorf("document.json schema_version = %v, want 1", doc["schema_version"])
+	if doc["schema_version"] != float64(store.CurrentDocumentRecordVersion) {
+		t.Errorf("document.json schema_version = %v, want %d", doc["schema_version"], store.CurrentDocumentRecordVersion)
 	}
 	if doc["triage_score"] != float64(1) || doc["pages"] == nil {
 		t.Errorf("document.json lost business data after migration: %+v", doc)
@@ -80,8 +83,8 @@ func TestRunMigrate_MigratesOutdatedRecords(t *testing.T) {
 	if err := json.Unmarshal(pageBytes, &page); err != nil {
 		t.Fatal(err)
 	}
-	if page["schema_version"] != float64(1) || page["source"] != "native" {
-		t.Errorf("page-1.json = %+v, want schema_version=1 source=native", page)
+	if page["schema_version"] != float64(store.CurrentPageRecordVersion) || page["source"] != "native" {
+		t.Errorf("page-1.json = %+v, want schema_version=%d source=native", page, store.CurrentPageRecordVersion)
 	}
 
 	// runs.jsonl n'est pas un enregistrement à migrer : doit rester
@@ -125,7 +128,7 @@ func TestRunMigrate_DryRun_DoesNotWriteFiles(t *testing.T) {
 func TestRunMigrate_AlreadyCurrent_ReportsNothingToDo(t *testing.T) {
 	dir := t.TempDir()
 	writeMigrateFixture(t, dir, "HASH1", map[string]string{
-		"document.json": `{"source_hash":"HASH1","schema_version":1,"pages":[1]}`,
+		"document.json": fmt.Sprintf(`{"source_hash":"HASH1","schema_version":%d,"pages":[1]}`, store.CurrentDocumentRecordVersion),
 	})
 
 	var stdout, stderr bytes.Buffer

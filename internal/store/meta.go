@@ -34,6 +34,6 @@ type RecordMeta struct {
 // TestPageRecordSchema_ChangeRequiresMigration font échouer la suite de
 // tests si ces trois étapes ne sont pas faites ensemble.
 const (
-	CurrentDocumentRecordVersion = 1
+	CurrentDocumentRecordVersion = 2
 	CurrentPageRecordVersion     = 1
 )

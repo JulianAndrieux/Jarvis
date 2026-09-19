@@ -26,6 +26,11 @@ type DocumentRecord struct {
 	TriageScore  float64 `json:"triage_score"`
 	HasTextLayer bool    `json:"has_text_layer"`
 	Pages        []int   `json:"pages"`
+	// MergedExtraction fusionne l'extraction de toutes les pages du
+	// document (meilleure confiance par champ) — voir
+	// extraction.MergePages et CLAUDE.md, jalon 11. nil si aucune page
+	// n'a été extraite (document sans contenu exploitable).
+	MergedExtraction *PageExtraction `json:"merged_extraction,omitempty"`
 }
 
 // PageRecord est l'enregistrement complet d'une page : sa provenance
@@ -128,6 +133,21 @@ func BuildRecords(sourceHash, sourcePath, docType string, processedAt time.Time,
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Page < pages[j].Page })
 	sort.Ints(pageNumbers)
 
+	var mergedExtraction *PageExtraction
+	if len(result.Extraction) > 0 {
+		m := result.Merged
+		mergedExtraction = &PageExtraction{
+			JSON:                m.JSON,
+			Model:               m.Model.Name,
+			ModelVersion:        m.Model.Version,
+			Prompt:              m.Prompt,
+			NeedsReview:         m.NeedsReview,
+			LowConfidenceFields: m.LowConfidenceFields,
+			Failed:              m.Failed,
+			Error:               m.Error,
+		}
+	}
+
 	doc := DocumentRecord{
 		RecordMeta: RecordMeta{
 			SourceHash:    sourceHash,
@@ -136,9 +156,10 @@ func BuildRecords(sourceHash, sourcePath, docType string, processedAt time.Time,
 			ProcessedAt:   processedAt,
 			SchemaVersion: CurrentDocumentRecordVersion,
 		},
-		TriageScore:  result.Triage.Score,
-		HasTextLayer: result.Triage.HasTextLayer,
-		Pages:        pageNumbers,
+		TriageScore:      result.Triage.Score,
+		HasTextLayer:     result.Triage.HasTextLayer,
+		Pages:            pageNumbers,
+		MergedExtraction: mergedExtraction,
 	}
 
 	return doc, pages

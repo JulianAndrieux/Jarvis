@@ -40,7 +40,7 @@ func main() {
 	llmVersion := flag.String("llm-model-version", "", "Version/quantization du modèle LLM")
 	dpi := flag.Int("dpi", 200, "Résolution de rendu des pages (DPI)")
 	vlmTimeout := flag.Duration("vlm-timeout", 120*time.Second, "Timeout par appel VLM")
-	llmTimeout := flag.Duration("llm-timeout", 120*time.Second, "Timeout par appel LLM")
+	llmTimeout := flag.Duration("llm-timeout", 180*time.Second, "Timeout par appel LLM")
 	uploadDir := flag.String("upload-dir", "", "Répertoire de stockage des documents uploadés (vide = répertoire temporaire du système)")
 	outDir := flag.String("out-dir", "", "Répertoire de persistance des résultats (JSON par page + log de rejeu) ; vide = pas de persistance")
 	flag.Parse()
@@ -81,6 +81,10 @@ func main() {
 			Model:        *llmModel,
 			ModelVersion: *llmVersion,
 			HTTP:         &http.Client{Timeout: *llmTimeout},
+			// Voir cmd/jarvis/process.go et CLAUDE.md (jalon 10 finding 4
+			// / jalon 11) : Qwen3 peut sinon générer un nombre de tokens
+			// très variable sur du contenu ambigu.
+			DisableThinking: true,
 		},
 	}
 

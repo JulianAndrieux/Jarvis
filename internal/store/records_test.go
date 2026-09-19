@@ -160,6 +160,52 @@ func TestBuildRecords_MultiplePages_SortedByPageNumber(t *testing.T) {
 	}
 }
 
+func TestBuildRecords_MergedExtractionPopulated(t *testing.T) {
+	mergedJSON := json.RawMessage(`{"numero":{"value":"2026-0271","confidence":1,"source_snippet":"..."}}`)
+	result := pipeline.Result{
+		Path: "doc.pdf",
+		Triage: triage.Result{
+			Pages: []triage.PageResult{{Page: 1, Usable: true}, {Page: 2, Usable: true}},
+		},
+		Extraction: []extraction.Result{
+			{Page: 1, JSON: json.RawMessage(`{}`)},
+			{Page: 2, JSON: json.RawMessage(`{}`)},
+		},
+		Merged: extraction.MergedResult{
+			JSON:                mergedJSON,
+			Model:               llm.ModelInfo{Name: "qwen3-8b", Version: "Q5"},
+			Prompt:              "p",
+			NeedsReview:         true,
+			LowConfidenceFields: []string{"total_ttc"},
+		},
+	}
+
+	doc, _ := BuildRecords("H", "doc.pdf", "facture", fixedTime, result)
+
+	if doc.MergedExtraction == nil {
+		t.Fatal("MergedExtraction is nil, want it populated")
+	}
+	if string(doc.MergedExtraction.JSON) != string(mergedJSON) {
+		t.Errorf("MergedExtraction.JSON = %s, want %s", doc.MergedExtraction.JSON, mergedJSON)
+	}
+	if doc.MergedExtraction.Model != "qwen3-8b" || doc.MergedExtraction.ModelVersion != "Q5" {
+		t.Errorf("MergedExtraction model = %+v, want qwen3-8b/Q5", doc.MergedExtraction)
+	}
+	if !doc.MergedExtraction.NeedsReview || len(doc.MergedExtraction.LowConfidenceFields) != 1 {
+		t.Errorf("MergedExtraction = %+v, want NeedsReview=true LowConfidenceFields=[total_ttc]", doc.MergedExtraction)
+	}
+}
+
+func TestBuildRecords_NoExtraction_MergedExtractionNil(t *testing.T) {
+	result := pipeline.Result{Path: "doc.pdf"}
+
+	doc, _ := BuildRecords("H", "doc.pdf", "facture", fixedTime, result)
+
+	if doc.MergedExtraction != nil {
+		t.Errorf("MergedExtraction = %+v, want nil when no page was ever extracted", doc.MergedExtraction)
+	}
+}
+
 func TestBuildRecords_ProcessedAtStamped(t *testing.T) {
 	result := pipeline.Result{Path: "doc.pdf"}
 	doc, _ := BuildRecords("H", "doc.pdf", "facture", fixedTime, result)
