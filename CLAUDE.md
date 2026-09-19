@@ -85,8 +85,29 @@ pour les tests. **Aucun test ne doit nécessiter de GPU.**
     façon déterministe par `scripts/gen_fixtures.py`.
   - `make test` (unitaire, aucun binaire externe requis) et
     `make test-integration` (nécessite `pdftotext`) passent tous les deux.
-- Jalon 2 (à venir) : ports modèles (interfaces + fakes) + étage Parsing
-  avec fake VLM.
+- **Jalon 2 — ports modèles + étage Parsing (fake VLM) : fait.**
+  - `internal/vlm` : port `Client` (`ParsePage(ctx, PageImage) (ParseResult, error)`)
+    avec `FakeClient` (résultats préconfigurés par page, enregistre les
+    appels reçus pour les assertions de test). `ParseResult` porte déjà
+    `Model` (nom+version) et `Prompt`, pour la reproductibilité — même en
+    fake, le contrat est là. Implémentation HTTP réelle (llama.cpp) :
+    jalon 3.
+  - `internal/parsing` : port `Renderer` (rendu PNG d'une page) avec
+    `FakeRenderer` (tests unitaires) et `PdftoppmRenderer` (impl réelle via
+    `pdftoppm -singlefile`, testée sous tag `integration`).
+    `PagesNeedingParsing(triage.Result) []int` relie triage → parsing
+    (pages non "usable"). `Parser.ParsePages` orchestre rendu + VLM par
+    page : un échec (rendu ou VLM) marque la page `Failed` avec son
+    `Error` et n'interrompt pas les autres pages (conforme à la stratégie
+    d'échec retenue) ; seule une erreur de niveau document (contexte
+    annulé) interrompt le traitement.
+  - DPI par défaut : 200 (imposé par le brief), configurable via
+    `Parser.DPI`.
+  - Pas de câblage CLI pour cette étage : sans serveur VLM réel branché,
+    une commande `jarvis parse` n'aurait rien de significatif à faire.
+    Elle arrivera au jalon 3 avec l'implémentation HTTP.
+- Jalon 3 (à venir) : implémentation HTTP réelle du port VLM (llama.cpp
+  server), test end-to-end triage→parsing sur le corpus, câblage CLI.
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion
