@@ -669,6 +669,78 @@ spécifique à `localhost`.
     immédiatement avec un message explicite plutôt qu'un timeout
     silencieux ou un crash.
 
+## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
+développement
+Demandé explicitement par l'utilisateur en parallèle du jalon 12 : "une
+page en local qui me permet de naviguer dans le code et dans les tests
+en mode Smalltalk / Glamorous Toolkit" — navigateur de classes (types,
+héritage, méthodes) + page de tests par catégorie, exécutables
+localement. **Sa page de contrôle de la qualité de code et de
+l'architecture logicielle**, distincte du pipeline d'extraction PDF
+lui-même : aucun modèle VLM/LLM requis, aucune donnée du pipeline
+touchée, pure analyse statique + exécution de `go test`.
+- `internal/codemap` : `Analyze(dir string, patterns ...string)
+  (*Model, error)` via `go/packages` + `go/types` (aucun code du module
+  analysé n'est exécuté). Construit, pour chaque type déclaré de chaque
+  package chargé : ses champs, ses méthodes **déclarées directement**
+  (pas les méthodes promues par embedding — se retrouvent en suivant
+  `Embeds`, exactement comme dans un vrai navigateur de classes),
+  `Embeds`/`EmbeddedBy` (l'équivalent Go de "superclasses"/
+  "sous-classes", cf. jalon 9) et `Implements`/`ImplementedBy` (calculé
+  par `types.Implements` sur toutes les paires type-concret/interface du
+  jeu chargé, valeur et pointeur).
+- `internal/testmap` : `Discover(moduleDir string) ([]Category, error)`
+  — parcourt les `*_test.go` (`go/parser`, pas de type-checking,
+  suffisant pour repérer des fonctions `TestXxx(*testing.T)`), une
+  catégorie par package. Marque chaque test unitaire/integration selon
+  la contrainte de build de son fichier. **Piège rencontré et corrigé** :
+  `ast.CommentGroup.Text()` retire silencieusement les commentaires-
+  directives (`//go:build ...`) de son résultat — il faut lire
+  `cg.List[i].Text` (le commentaire brut) pour les détecter, pas
+  `cg.Text()`. Détecté par un test qui échouait vraiment
+  (`TestDiscover_FindsKnownTestsInRealModule`), pas trouvé par relecture.
+- `internal/testrunner` : `Run(ctx, Options) ([]PackageResult, error)`
+  exécute `go test -json` (format sondé empiriquement avant d'écrire le
+  parseur) et agrège les événements JSONL en résultats structurés par
+  package puis par test (statut, durée, sortie complète en cas
+  d'échec). Un échec de test n'est pas une erreur de `Run` (distingué
+  via `*exec.ExitError`) — seul un échec de l'outillage lui-même
+  (`go` introuvable, sortie illisible) en est une.
+- `cmd/codebrowser` : serveur `net/http` + `chi` + `templ` + `HTMX`,
+  même stack que `cmd/jarvisweb`. Le `Model` (types) et les `Category`
+  (tests) sont calculés une fois au démarrage puis mis en cache dans
+  `Server` (protégé par un `sync.RWMutex`) — `go/packages.Load` re-type-
+  check tout le module à chaque appel, trop lent pour le refaire à
+  chaque page vue. Bouton "↻ Rescanner" (`POST /refresh`) pour recalculer
+  explicitement après une modification du code. Les derniers résultats
+  de tests connus sont conservés à travers un rescan (rescanner le code
+  ne relance pas les tests).
+  - `GET /classes` : liste des packages/types (barre latérale) + détail
+    du type sélectionné (champs, méthodes, `Embeds`/`EmbeddedBy`,
+    `Implements`/`ImplementedBy`, chacun cliquable en HTMX vers
+    `GET /classes/detail?pkg=...&name=...`).
+  - `GET /tests` : une carte par catégorie (package), liste des tests
+    avec statut (jamais lancé / pass / fail), durée, et pour un échec la
+    trace complète affichée en place. Boutons "Lancer" par test, par
+    catégorie, et "Tout lancer" (avec un variant "avec integration"
+    ajoutant `-tags=integration`) — tous via `POST /tests/run` avec
+    `pkg`/`name`/`integration` en query, HTMX remplace uniquement le
+    fragment concerné (une ligne, une carte, ou toute la liste).
+  - `--module-dir` (vide = répertoire courant), `--addr` (défaut
+    `127.0.0.1:8091`, distinct de `jarvisweb` sur `:8090`).
+- **Validé manuellement, bout en bout, serveur réel lancé en local** :
+  `GET /classes/detail?...name=DocumentRecord` affiche correctement
+  `RecordMeta` sous "Embed" (la relation d'héritage du jalon 9, visible
+  dans le navigateur) ; `POST /tests/run?pkg=...` (catégorie) et
+  `POST /tests/run?pkg=...&name=...` (test unique) exécutent vraiment
+  `go test` et renvoient un statut `pass` correct pour des tests connus
+  bons.
+- Usage :
+  ```
+  make run-codebrowser       # ou : make build-codebrowser && ./bin/codebrowser
+  # puis ouvrir http://127.0.0.1:8091 (redirige vers /classes)
+  ```
+
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion
   automatique au niveau document pour l'instant).

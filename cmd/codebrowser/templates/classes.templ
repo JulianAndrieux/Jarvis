@@ -1,0 +1,170 @@
+package templates
+
+import "fmt"
+
+// TypeSummary est l'entrée d'un type dans la barre latérale.
+type TypeSummary struct {
+	Name string
+	Kind string // "struct" | "interface" | "other"
+}
+
+// PackageSummary regroupe les types d'un package pour la barre latérale.
+type PackageSummary struct {
+	Path  string
+	Types []TypeSummary
+}
+
+type FieldView struct {
+	Name      string
+	Type      string
+	Tag       string
+	Anonymous bool
+}
+
+type MethodView struct {
+	Name            string
+	Signature       string
+	PointerReceiver bool
+}
+
+type RefView struct {
+	Package string
+	Name    string
+}
+
+// TypeDetailView est le détail d'un type sélectionné.
+type TypeDetailView struct {
+	Name          string
+	Package       string
+	Kind          string
+	Fields        []FieldView
+	Methods       []MethodView
+	Embeds        []RefView
+	EmbeddedBy    []RefView
+	Implements    []RefView
+	ImplementedBy []RefView
+}
+
+func typeLink(pkg, name string) string {
+	return fmt.Sprintf("/classes/detail?pkg=%s&name=%s", pkg, name)
+}
+
+templ ClassesPage(packages []PackageSummary, selected *TypeDetailView) {
+	@Layout("Classes — Jarvis") {
+		<main>
+			<div class="sidebar">
+				for _, pkg := range packages {
+					<details class="pkg-group" open?={ len(packages) <= 6 }>
+						<summary>{ pkg.Path }</summary>
+						for _, t := range pkg.Types {
+							<a
+								class={ "type-link", templ.KV("kind-interface", t.Kind == "interface") }
+								href={ templ.SafeURL(typeLink(pkg.Path, t.Name)) }
+								hx-get={ typeLink(pkg.Path, t.Name) }
+								hx-target="#detail"
+								hx-push-url="true"
+							>
+								{ t.Name }
+								if t.Kind == "interface" {
+									<span class="badge badge-interface">interface</span>
+								}
+							</a>
+						}
+					</details>
+				}
+			</div>
+			<div class="detail" id="detail">
+				if selected != nil {
+					@TypeDetail(*selected)
+				} else {
+					<p class="muted">Choisis un type dans la liste à gauche.</p>
+				}
+			</div>
+		</main>
+	}
+}
+
+templ TypeDetail(d TypeDetailView) {
+	<h2>
+		{ d.Name }
+		if d.Kind == "interface" {
+			<span class="badge badge-interface">interface</span>
+		} else {
+			<span class="badge badge-struct">{ d.Kind }</span>
+		}
+	</h2>
+	<p class="muted mono">{ d.Package }</p>
+
+	if len(d.Embeds) > 0 {
+		<h3>Embed (équivalent "superclasses")</h3>
+		<div class="rel-list">
+			for _, r := range d.Embeds {
+				<a href={ templ.SafeURL(typeLink(r.Package, r.Name)) } hx-get={ typeLink(r.Package, r.Name) } hx-target="#detail" hx-push-url="true">{ r.Name }</a>
+			}
+		</div>
+	}
+	if len(d.EmbeddedBy) > 0 {
+		<h3>Embeddé par (équivalent "sous-classes")</h3>
+		<div class="rel-list">
+			for _, r := range d.EmbeddedBy {
+				<a href={ templ.SafeURL(typeLink(r.Package, r.Name)) } hx-get={ typeLink(r.Package, r.Name) } hx-target="#detail" hx-push-url="true">{ r.Name }</a>
+			}
+		</div>
+	}
+	if len(d.Implements) > 0 {
+		<h3>Implémente</h3>
+		<div class="rel-list">
+			for _, r := range d.Implements {
+				<a href={ templ.SafeURL(typeLink(r.Package, r.Name)) } hx-get={ typeLink(r.Package, r.Name) } hx-target="#detail" hx-push-url="true">{ r.Name }</a>
+			}
+		</div>
+	}
+	if len(d.ImplementedBy) > 0 {
+		<h3>Implémenté par</h3>
+		<div class="rel-list">
+			for _, r := range d.ImplementedBy {
+				<a href={ templ.SafeURL(typeLink(r.Package, r.Name)) } hx-get={ typeLink(r.Package, r.Name) } hx-target="#detail" hx-push-url="true">{ r.Name }</a>
+			}
+		</div>
+	}
+
+	if len(d.Fields) > 0 {
+		<h3>Champs</h3>
+		<table>
+			<tr><th>Nom</th><th>Type</th><th>Tag</th></tr>
+			for _, f := range d.Fields {
+				<tr>
+					<td class="mono">
+						if f.Anonymous {
+							<em>{ f.Name }</em>
+						} else {
+							{ f.Name }
+						}
+					</td>
+					<td class="mono">{ f.Type }</td>
+					<td class="mono muted">{ f.Tag }</td>
+				</tr>
+			}
+		</table>
+	}
+
+	if len(d.Methods) > 0 {
+		<h3>Méthodes déclarées</h3>
+		<table>
+			<tr><th>Nom</th><th>Signature</th><th>Récepteur</th></tr>
+			for _, meth := range d.Methods {
+				<tr>
+					<td class="mono">{ meth.Name }</td>
+					<td class="mono">{ meth.Signature }</td>
+					<td class="muted">
+						if meth.PointerReceiver {
+							pointeur
+						} else {
+							valeur
+						}
+					</td>
+				</tr>
+			}
+		</table>
+	}
+}

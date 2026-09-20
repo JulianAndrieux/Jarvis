@@ -1,0 +1,142 @@
+package templates
+
+import "fmt"
+
+// TestRowView est un test affiché dans une catégorie, avec son dernier
+// résultat connu (Status == "" tant qu'il n'a jamais été lancé depuis le
+// démarrage du serveur).
+type TestRowView struct {
+	Name        string
+	File        string
+	Line        int
+	Integration bool
+	Status      string // "" | "pass" | "fail" | "skip"
+	Elapsed     float64
+	Output      string
+}
+
+// TestCategoryView regroupe les tests d'un package pour la page de tests.
+type TestCategoryView struct {
+	Package string
+	Tests   []TestRowView
+}
+
+func statusClass(status string) string {
+	switch status {
+	case "pass":
+		return "status-pass"
+	case "fail":
+		return "status-fail"
+	case "skip":
+		return "status-skip"
+	default:
+		return "status-unknown"
+	}
+}
+
+func statusLabel(status string) string {
+	switch status {
+	case "pass":
+		return "OK"
+	case "fail":
+		return "échec"
+	case "skip":
+		return "ignoré"
+	default:
+		return "jamais lancé"
+	}
+}
+
+templ TestsPage(categories []TestCategoryView) {
+	@Layout("Tests — Jarvis") {
+		<main class="tests-main">
+			<div class="detail">
+				<div class="summary-line">
+					<button
+						hx-post="/tests/run"
+						hx-target="#test-categories"
+						hx-swap="innerHTML"
+						hx-indicator="#run-spinner"
+					>
+						▶ Tout lancer
+					</button>
+					<button
+						hx-post="/tests/run?integration=1"
+						hx-target="#test-categories"
+						hx-swap="innerHTML"
+						hx-indicator="#run-spinner"
+					>
+						▶ Tout lancer (avec integration)
+					</button>
+					<span id="run-spinner" class="htmx-indicator muted">en cours…</span>
+				</div>
+				<div id="test-categories">
+					@TestCategories(categories)
+				</div>
+			</div>
+		</main>
+	}
+}
+
+templ TestCategories(categories []TestCategoryView) {
+	for _, cat := range categories {
+		@TestCategoryCard(cat)
+	}
+}
+
+templ TestCategoryCard(cat TestCategoryView) {
+	<div class="cat-card" id={ "cat-" + safeID(cat.Package) }>
+		<h3>
+			{ cat.Package }
+			<span class="muted">({ fmt.Sprintf("%d", len(cat.Tests)) } tests)</span>
+			<button
+				hx-post={ fmt.Sprintf("/tests/run?pkg=%s", cat.Package) }
+				hx-target={ "#cat-" + safeID(cat.Package) }
+				hx-swap="outerHTML"
+				hx-indicator="#run-spinner"
+			>
+				▶ Lancer cette catégorie
+			</button>
+		</h3>
+		for _, tr := range cat.Tests {
+			@TestRow(cat.Package, tr)
+		}
+	</div>
+}
+
+templ TestRow(pkg string, tr TestRowView) {
+	<div class={ "test-row", statusClass(tr.Status) }>
+		<span class="status-dot" title={ statusLabel(tr.Status) }></span>
+		<span class="test-name">{ tr.Name }</span>
+		if tr.Integration {
+			<span class="tag tag-integration">integration</span>
+		}
+		<span class="muted">{ tr.File }:{ fmt.Sprintf("%d", tr.Line) }</span>
+		if tr.Status != "" {
+			<span class="muted">{ fmt.Sprintf("%.3fs", tr.Elapsed) }</span>
+		}
+		<button
+			hx-post={ fmt.Sprintf("/tests/run?pkg=%s&name=%s", pkg, tr.Name) }
+			hx-target="closest .test-row"
+			hx-swap="outerHTML"
+			hx-indicator="#run-spinner"
+		>
+			▶
+		</button>
+	</div>
+	if tr.Status == "fail" && tr.Output != "" {
+		<pre class="output">{ tr.Output }</pre>
+	}
+}
+
+func safeID(pkg string) string {
+	out := make([]byte, 0, len(pkg))
+	for _, r := range pkg {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			out = append(out, byte(r))
+		} else {
+			out = append(out, '-')
+		}
+	}
+	return string(out)
+}
