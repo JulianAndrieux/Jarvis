@@ -1,4 +1,4 @@
-.PHONY: test test-integration build build-app templ fmt vet run-app
+.PHONY: test test-integration build build-app build-launcher package-app templ fmt vet run-app
 
 test:
 	go test ./...
@@ -32,6 +32,21 @@ run-app: build-app
 		--llm-url http://127.0.0.1:8081/v1 --llm-model qwen3-8b \
 		--mongo-uri "$$MONGO_URI" \
 		--out-dir ./data/results
+
+# Lanceur : démarre VLM + LLM + jarvisapp en un geste, ouvre le
+# navigateur — cf. CLAUDE.md, jalon 14.
+build-launcher:
+	go build -o bin/jarvis-launcher ./cmd/jarvis-launcher
+
+# Empaquette jarvis-launcher en .app macOS minimal (juste la structure
+# Info.plist standard, aucun outil tiers) pour un raccourci Dock.
+# Non signé : premier lancement via clic droit > Ouvrir dans le Finder.
+package-app: build-launcher
+	rm -rf dist/Jarvis.app
+	mkdir -p dist/Jarvis.app/Contents/MacOS
+	cp packaging/macos/Info.plist dist/Jarvis.app/Contents/Info.plist
+	cp bin/jarvis-launcher dist/Jarvis.app/Contents/MacOS/jarvis-launcher
+	@echo "dist/Jarvis.app prêt — glisse-le dans /Applications ou le Dock."
 
 fmt:
 	gofmt -l .

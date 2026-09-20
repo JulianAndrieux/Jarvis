@@ -230,6 +230,12 @@ anciens binaires `cmd/jarvisweb` (upload/suivi) et `cmd/codebrowser`
 Classes · Tests). Voir "État des jalons" plus bas pour le détail de la
 fusion, et "Atelier de code" pour le détail du navigateur de code/tests
 lui-même (moteurs inchangés par la fusion).
+
+**Usage quotidien recommandé : le lanceur** (`cmd/jarvis-launcher`,
+jalon 14) démarre VLM + LLM + `jarvisapp` en un geste et ouvre le
+navigateur — voir "État des jalons" pour le détail. `make package-app`
+produit `dist/Jarvis.app`, à glisser dans le Dock. Ce qui suit est la
+séquence manuelle, utile pour déboguer étape par étape.
 ```
 # Une fois (regénère les templates après toute modif de .templ) :
 go install github.com/a-h/templ/cmd/templ@latest   # ajoute $(go env GOPATH)/bin au PATH
@@ -721,6 +727,83 @@ spécifique à `localhost`.
     le cache de résultats (`resultKey`/`recordResults`).
   - `go build ./...` + suite complète (`gofmt`, `go vet`, `go test
     ./... -race -tags=integration`) verts.
+- **Jalon 14 — lanceur (`cmd/jarvis-launcher`) : fait, validé
+  end-to-end.** Démarre en un geste VLM + LLM + `jarvisapp`, pour un
+  raccourci dans le Dock ("comme ça je peux créer un raccourci dans ma
+  barre d'app").
+  - Pensé pour tourner **sans terminal** (double-clic depuis le Dock) :
+    aucune dépendance à une variable d'environnement shell ou à un flag
+    pour la configuration — tout vit dans `~/.jarvis/launcher.json`
+    (créé avec les valeurs par défaut de `internal/launcher.
+    DefaultConfig`, dérivées des chemins déjà documentés dans "Setup
+    local complet", au premier lancement). Toute la sortie va dans
+    `~/.jarvis/logs/{launcher,vlm,llm,jarvisapp}.log`, seul moyen de
+    déboguer un lancement sans terminal.
+  - **`MONGO_URI` n'est jamais deviné.** Résolu dans l'ordre : variable
+    d'environnement (pratique en lancement depuis un terminal) puis, sur
+    macOS, une boîte de dialogue native (`osascript display dialog`) —
+    demandée une seule fois, la valeur saisie est aussitôt écrite dans
+    le fichier de config (permissions restreintes à `0600`, le fichier
+    contenant l'URI en clair). Hors macOS sans variable
+    d'environnement : erreur explicite, pas de blocage silencieux.
+  - `internal/launcher` (le cœur testable — TDD, comme partout ailleurs
+    dans ce projet) :
+    - `Config`/`DefaultConfig`/`LoadConfig`/`SaveConfig`/`EnsureConfig` :
+      aucune valeur cachée — `DefaultConfig` est une fonction pure
+      (chemins dérivés de `homeDir`/`repoDir` donnés, jamais lus depuis
+      l'environnement), le fichier une fois écrit est la seule source de
+      vérité relue ensuite.
+    - `PortOpen`/`WaitHealthy` : évite de démarrer un second serveur si
+      quelque chose écoute déjà sur le port (permet de mélanger lancement
+      manuel et lanceur sans conflit), puis attend un vrai `200` sur
+      `/health` (endpoint confirmé empiriquement sur un `llama-server`
+      réel avant d'écrire le code, `{"status":"ok"}`) plutôt qu'un
+      `sleep` fixe.
+    - `ArgsForVLM`/`ArgsForLLM`/`ArgsForJarvisApp`/`ResolvePath` :
+      construction pure des arguments — testée explicitement, pour
+      qu'un flag manquant ou mal placé casse un test plutôt que d'être
+      découvert en re-tapant les commandes à la main.
+    - `StartProcess` : démarre un sous-processus avec stdout/stderr
+      redirigés vers son fichier de log, sans bloquer.
+    - `ParseOSAScriptTextReturned` : extraction pure de la réponse
+      `osascript` (format `"button returned:OK, text returned:..."`),
+      séparée de l'appel réel pour être testable sans déclencher une
+      vraie boîte de dialogue.
+  - `cmd/jarvis-launcher/main.go` : orchestration (non testée
+    unitairement, comme les autres `main.go` de ce projet — la logique
+    testable est déjà dans `internal/launcher`) — vérifie l'existence
+    des poids modèles et des binaires (`llama-server` sur le PATH,
+    `bin/jarvisapp` déjà construit) avant de démarrer quoi que ce soit,
+    démarre VLM/LLM/jarvisapp (en réutilisant ce qui tourne déjà),
+    attend que chacun soit prêt, ouvre le navigateur (`open`, macOS),
+    puis bloque jusqu'à un signal d'arrêt ou jusqu'à ce qu'un des
+    processus qu'il a lui-même démarrés s'arrête de façon inattendue —
+    dans les deux cas, termine (`SIGTERM`) uniquement les processus
+    qu'il a démarrés, jamais ceux détectés déjà en cours.
+  - **Empaquetage `.app` macOS** (`packaging/macos/Info.plist` +
+    `make package-app`) : structure minimale standard (pas d'outil
+    tiers), non signée — premier lancement via clic droit > Ouvrir dans
+    le Finder (Gatekeeper), ensuite glissable dans le Dock.
+  - **Limite connue, assumée** : `jarvis-launcher` est un simple
+    exécutable Unix enveloppé dans un `.app`, pas une vraie application
+    Cocoa (pas de menu ni de gestion d'événements `NSApplication`). Le
+    comportement du "Quit" depuis le menu contextuel du Dock peut donc
+    être incohérent selon macOS — un arrêt forcé depuis le Moniteur
+    d'activité reste le filet de secours si `SIGTERM` n'est pas délivré
+    proprement. Non résolu ici (demanderait une vraie intégration Cocoa,
+    hors scope "primitives, pas de framework lourd").
+  - **Validé en conditions réelles, premier lancement inclus** :
+    `~/.jarvis/launcher.json` inexistant supprimé avant le test,
+    `MONGO_URI` exporté (pour éviter de déclencher la boîte de dialogue
+    pendant un test automatisé) ; le lanceur a créé la config, détecté
+    les deux `llama-server` VLM/LLM déjà en cours (réutilisés sans
+    doublon), démarré `jarvisapp`, attendu qu'il soit prêt, et
+    `curl http://127.0.0.1:8090/` a répondu `200` — le tout en moins de
+    2s puisque VLM/LLM tournaient déjà. Fichier de config vérifié en
+    `0600` après correctif (la première version l'écrivait en `0644`,
+    trouvé avant commit).
+  - Testé : suite `internal/launcher` complète (`-race`), + la
+    validation réelle ci-dessus pour `cmd/jarvis-launcher` lui-même.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

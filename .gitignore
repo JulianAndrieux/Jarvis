@@ -1,6 +1,7 @@
 # Binaires buildés
 /bin/
 /jarvis
+/dist/
 
 # Copie locale des résultats (--out-dir), régénérée par jarvisapp/jarvis
 /data/
