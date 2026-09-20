@@ -261,8 +261,10 @@ traitement, vide = répertoire temporaire système), `--out-dir` (copie
 locale additionnelle facultative des résultats, comme pour `jarvis
 process` — MongoDB reste la source de vérité), `--dpi`/`--vlm-timeout`/
 `--llm-timeout` (mêmes défauts que la CLI), `--module-dir` (racine du
-module pour le navigateur de code, vide = répertoire courant). `make
-run-app` lance tout avec les valeurs par défaut du setup ci-dessus
+module pour le navigateur de code, vide = répertoire courant),
+`--watch-dir`/`--watch-interval` (ingestion automatique de PDF déposés
+dans un dossier, jalon 16 ; vide = désactivée). `make run-app` lance
+tout avec les valeurs par défaut du setup ci-dessus
 (`MONGO_URI` doit être exporté dans l'environnement).
 
 **Hébergement plus tard :** le binaire est un serveur `net/http`
@@ -886,6 +888,50 @@ spécifique à `localhost`.
     confirmation de persistance), `internal/webapp/mongo_store_test.go`
     (réel, cf. ci-dessus). Suite complète verte (`gofmt`, `go vet`, `go
     test ./... -race -tags=integration`, `MONGO_URI` exporté).
+- **Jalon 16 — ingestion automatique par dossier surveillé : fait,
+  validé end-to-end.** "Avoir un job qui tourne à chaque fois qu'un
+  document est uploadé dans un folder." Réutilise entièrement le jalon
+  15 (classification + extraction conditionnelle) — l'ingestion par
+  dossier n'ajoute que la détection du nouveau fichier, pas un second
+  chemin de traitement.
+  - **`internal/watch.Watcher`** (nouveau) : sonde un dossier à
+    intervalle régulier (`Interval`, défaut 5s) — **pas de dépendance de
+    notification système** (`fsnotify` ou équivalent) : un simple
+    `os.ReadDir` périodique suffit et reste remplaçable en un jour,
+    cohérent avec "primitives, pas de dépendances lourdes".
+  - **Pas d'état persistant nécessaire pour savoir quels fichiers sont
+    "nouveaux"** : chaque fichier `*.pdf` trouvé est immédiatement
+    déplacé (`os.Rename`, atomique) dans un sous-dossier `.processing/`
+    avant même d'être lu — donc un fichier encore présent au sondage
+    suivant est forcément nouveau, sans avoir à mémoriser une liste de
+    fichiers déjà vus (qui n'aurait pas survécu à un redémarrage). Une
+    fois traité, direction `processed/` (succès) ou `failed/` (échec —
+    jamais retraité en boucle, jamais perdu). Une collision de nom dans
+    `processed/`/`failed/` (même fichier redéposé plus tard) est
+    suffixée par un horodatage plutôt que d'écraser la trace
+    précédente.
+  - `Watcher.OnFile(ctx, filename, content) error` est le seul point de
+    contact avec le reste du système : câblé dans `cmd/jarvisapp` sur
+    exactement le même `JobManager.Submit` que l'upload web — un
+    document ingéré par le dossier suit rigoureusement le même chemin
+    (Mongo → classification → extraction conditionnelle) et apparaît
+    de façon identique dans le suivi des jobs, aucune logique dupliquée.
+  - `cmd/jarvisapp` : `--watch-dir` (vide = désactivé, pas de dossier
+    surveillé par défaut) et `--watch-interval` (défaut 5s). Lancé dans
+    une goroutine dédiée au démarrage, en parallèle du serveur HTTP.
+  - **Validé en conditions réelles** : un PDF déjà présent dans le
+    dossier au démarrage est traité immédiatement (pas d'attente du
+    premier intervalle) ; un second PDF déposé pendant que le serveur
+    tourne est détecté au sondage suivant (3s dans ce test) — les deux
+    finissent `status: done`, `doc_type: facture` correctement
+    persisté (revalidant au passage le correctif Mongo du jalon 15),
+    et les deux fichiers se retrouvent dans `processed/`. Jobs et
+    fichiers de test supprimés après coup.
+  - Testé : `internal/watch` (fichiers PDF traités et déplacés,
+    fichiers non-PDF et sous-dossiers ignorés, échec de `OnFile` envoyé
+    vers `failed/`, collision de nom non écrasante, arrêt propre sur
+    annulation de contexte, traitement immédiat au démarrage) + la
+    validation réelle ci-dessus pour le câblage dans `cmd/jarvisapp`.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

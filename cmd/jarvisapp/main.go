@@ -32,6 +32,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/store"
 	"github.com/JulianAndrieux/Jarvis/internal/triage"
 	"github.com/JulianAndrieux/Jarvis/internal/vlm"
+	"github.com/JulianAndrieux/Jarvis/internal/watch"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
@@ -55,6 +56,8 @@ func main() {
 	mongoDB := flag.String("mongo-db", "jarvis", "Base MongoDB")
 	mongoCollection := flag.String("mongo-collection", "jobs", "Collection MongoDB pour les jobs")
 	moduleDir := flag.String("module-dir", "", "Racine du module Go à analyser pour le navigateur de code (vide = répertoire courant)")
+	watchDir := flag.String("watch-dir", "", "Dossier surveillé pour l'ingestion automatique de PDF ; vide = désactivée")
+	watchInterval := flag.Duration("watch-interval", watch.DefaultInterval, "Intervalle de sondage de --watch-dir")
 	flag.Parse()
 
 	if *vlmURL == "" || *vlmModel == "" {
@@ -111,6 +114,24 @@ func main() {
 	jobs.WorkDir = *workDir
 	if *outDir != "" {
 		jobs.OnFinish = persistJobLocally(*outDir)
+	}
+
+	if *watchDir != "" {
+		w := &watch.Watcher{
+			Dir:      *watchDir,
+			Interval: *watchInterval,
+			OnFile: func(ctx context.Context, filename string, content []byte) error {
+				_, err := jobs.Submit(ctx, filename, content)
+				return err
+			},
+			Logf: log.Printf,
+		}
+		go func() {
+			if err := w.Run(context.Background()); err != nil {
+				log.Printf("jarvisapp: watcher arrêté: %v", err)
+			}
+		}()
+		log.Printf("jarvisapp: ingestion automatique depuis %s (toutes les %s)", *watchDir, *watchInterval)
 	}
 
 	dir := *moduleDir
