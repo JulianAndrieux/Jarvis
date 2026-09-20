@@ -30,3 +30,12 @@ func HashFile(path string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
+
+// HashBytes calcule le SHA-256 de content, en hexadécimal — même usage que
+// HashFile, pour un document déjà en mémoire (ex. récupéré depuis une
+// base plutôt que lu sur disque) plutôt que d'écrire un fichier temporaire
+// juste pour le hasher.
+func HashBytes(content []byte) string {
+	h := sha256.Sum256(content)
+	return hex.EncodeToString(h[:])
+}

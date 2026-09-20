@@ -7,7 +7,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -32,15 +31,13 @@ func (r *blockingRunner) Run(ctx context.Context, reg doctype.Registration, path
 	return r.result, r.err
 }
 
-func newTestServer(t *testing.T, runner webapp.Runner) (*Server, string) {
+func newTestServer(t *testing.T, runner webapp.Runner) (*Server, *webapp.FakeStore) {
 	t.Helper()
-	uploadDir := t.TempDir()
-	s := &Server{
-		Jobs:      webapp.NewJobManager(runner, doctype.NewDefaultRegistry()),
-		Registry:  doctype.NewDefaultRegistry(),
-		UploadDir: uploadDir,
-	}
-	return s, uploadDir
+	fakeStore := webapp.NewFakeStore()
+	jobs := webapp.NewJobManager(fakeStore, runner, doctype.NewDefaultRegistry())
+	jobs.WorkDir = t.TempDir()
+	s := &Server{Jobs: jobs, Registry: doctype.NewDefaultRegistry()}
+	return s, fakeStore
 }
 
 func multipartUpload(t *testing.T, docType, filename string, content []byte) (*bytes.Buffer, string) {
@@ -80,7 +77,7 @@ func TestHandleIndex_ListsDocTypes(t *testing.T) {
 
 func TestHandleSubmit_ValidUpload_ReturnsRunningFragment(t *testing.T) {
 	proceed := make(chan struct{})
-	s, uploadDir := newTestServer(t, &blockingRunner{proceed: proceed})
+	s, fakeStore := newTestServer(t, &blockingRunner{proceed: proceed})
 	defer close(proceed)
 
 	body, contentType := multipartUpload(t, "facture", "doc.pdf", []byte("%PDF-1.4 fake"))
@@ -100,12 +97,13 @@ func TestHandleSubmit_ValidUpload_ReturnsRunningFragment(t *testing.T) {
 		t.Errorf("body has no polling attribute for a running job: %s", rec.Body.String())
 	}
 
-	entries, err := os.ReadDir(uploadDir)
-	if err != nil {
-		t.Fatal(err)
+	id := extractJobID(t, rec.Body.String())
+	stored, ok, err := fakeStore.Get(context.Background(), id)
+	if err != nil || !ok {
+		t.Fatalf("fakeStore.Get(%s) = %+v, %v, %v", id, stored, ok, err)
 	}
-	if len(entries) != 1 {
-		t.Errorf("upload dir has %d entries, want 1 (the saved PDF)", len(entries))
+	if string(stored.Content) != "%PDF-1.4 fake" {
+		t.Errorf("stored content = %q, want the uploaded bytes", stored.Content)
 	}
 }
 

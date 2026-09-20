@@ -18,11 +18,12 @@ import (
 const maxUploadSize = 64 << 20
 
 // Server expose le pipeline jarvis sur HTTP : formulaire d'upload, suivi
-// asynchrone d'un job, résultat une fois prêt.
+// asynchrone d'un job, résultat une fois prêt. Le document uploadé est
+// lu en mémoire et confié tel quel à Jobs (qui le persiste via son
+// Store — MongoDB en production) ; Server n'écrit rien sur disque.
 type Server struct {
-	Jobs      *webapp.JobManager
-	Registry  *doctype.Registry
-	UploadDir string
+	Jobs     *webapp.JobManager
+	Registry *doctype.Registry
 }
 
 // Routes construit le routeur chi. Séparé de main() pour être testable
@@ -57,29 +58,14 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// os.CreateTemp garantit un nom de fichier unique même en cas
-	// d'uploads concurrents portant le même nom d'origine.
-	dest, err := os.CreateTemp(s.UploadDir, "upload-*.pdf")
+	content, err := io.ReadAll(file)
 	if err != nil {
-		http.Error(w, "impossible d'enregistrer le fichier : "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	destPath := dest.Name()
-	if _, err := io.Copy(dest, file); err != nil {
-		dest.Close()
-		os.Remove(destPath)
-		http.Error(w, "impossible d'enregistrer le fichier : "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := dest.Close(); err != nil {
-		os.Remove(destPath)
-		http.Error(w, "impossible d'enregistrer le fichier : "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "impossible de lire le fichier : "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	job, err := s.Jobs.Submit(docType, header.Filename, destPath)
+	job, err := s.Jobs.Submit(r.Context(), docType, header.Filename, content)
 	if err != nil {
-		os.Remove(destPath)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -89,7 +75,11 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	job, ok := s.Jobs.Get(id)
+	job, ok, err := s.Jobs.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, "erreur de lecture du job : "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return

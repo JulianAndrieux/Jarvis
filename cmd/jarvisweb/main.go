@@ -1,12 +1,16 @@
 // Command jarvisweb expose le pipeline jarvis (triage -> parsing ->
 // extraction) derrière une interface web : upload d'un document,
-// traitement asynchrone, résultat affiché dès qu'il est prêt. Pensé pour
-// tourner en local aujourd'hui et être hébergé plus tard (net/http, pas
-// de dépendance à l'environnement local au-delà des serveurs VLM/LLM
-// configurés en flags).
+// traitement asynchrone, résultat affiché dès qu'il est prêt.
+//
+// Les jobs (documents uploadés, statut, résultat) sont persistés dans
+// MongoDB (Atlas en production) — voir CLAUDE.md pour la portée de
+// l'exception explicite à "aucune donnée ne sort de la machine" que ça
+// représente. L'inférence (VLM, LLM), elle, continue de tourner en local
+// via les serveurs pointés par --vlm-url/--llm-url.
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"fmt"
@@ -41,8 +45,11 @@ func main() {
 	dpi := flag.Int("dpi", 200, "Résolution de rendu des pages (DPI)")
 	vlmTimeout := flag.Duration("vlm-timeout", 120*time.Second, "Timeout par appel VLM")
 	llmTimeout := flag.Duration("llm-timeout", 180*time.Second, "Timeout par appel LLM")
-	uploadDir := flag.String("upload-dir", "", "Répertoire de stockage des documents uploadés (vide = répertoire temporaire du système)")
-	outDir := flag.String("out-dir", "", "Répertoire de persistance des résultats (JSON par page + log de rejeu) ; vide = pas de persistance")
+	workDir := flag.String("work-dir", "", "Répertoire des fichiers temporaires de traitement (vide = répertoire temporaire du système)")
+	outDir := flag.String("out-dir", "", "Répertoire de persistance locale additionnelle des résultats (JSON par page + log de rejeu) ; vide = pas de copie locale")
+	mongoURI := flag.String("mongo-uri", "", "URI de connexion MongoDB (ex: Atlas) — stocke les jobs (document source, statut, résultat)")
+	mongoDB := flag.String("mongo-db", "jarvis", "Base MongoDB")
+	mongoCollection := flag.String("mongo-collection", "jobs", "Collection MongoDB pour les jobs")
 	flag.Parse()
 
 	if *vlmURL == "" || *vlmModel == "" {
@@ -51,16 +58,8 @@ func main() {
 	if *llmURL == "" || *llmModel == "" {
 		log.Fatal("jarvisweb: --llm-url et --llm-model sont requis")
 	}
-
-	dir := *uploadDir
-	if dir == "" {
-		var err error
-		dir, err = os.MkdirTemp("", "jarvisweb-uploads-*")
-		if err != nil {
-			log.Fatalf("jarvisweb: create upload dir: %v", err)
-		}
-	} else if err := os.MkdirAll(dir, 0o755); err != nil {
-		log.Fatalf("jarvisweb: create upload dir %s: %v", dir, err)
+	if *mongoURI == "" {
+		log.Fatal("jarvisweb: --mongo-uri est requis (les jobs sont persistés dans MongoDB)")
 	}
 
 	registry := doctype.NewDefaultRegistry()
@@ -88,12 +87,20 @@ func main() {
 		},
 	}
 
-	jobs := webapp.NewJobManager(runner, registry)
-	if *outDir != "" {
-		jobs.OnFinish = persistJob(*outDir)
+	connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	jobStore, err := webapp.NewMongoStore(connectCtx, *mongoURI, *mongoDB, *mongoCollection)
+	if err != nil {
+		log.Fatalf("jarvisweb: %v", err)
 	}
 
-	srv := &Server{Jobs: jobs, Registry: registry, UploadDir: dir}
+	jobs := webapp.NewJobManager(jobStore, runner, registry)
+	jobs.WorkDir = *workDir
+	if *outDir != "" {
+		jobs.OnFinish = persistJobLocally(*outDir)
+	}
+
+	srv := &Server{Jobs: jobs, Registry: registry}
 
 	staticContent, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -104,28 +111,25 @@ func main() {
 	mux.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticContent))))
 
 	log.Printf("jarvisweb: listening on http://%s (doc types: %v)", *addr, registry.Names())
-	log.Printf("jarvisweb: uploads -> %s", dir)
+	log.Printf("jarvisweb: jobs -> mongodb %s/%s", *mongoDB, *mongoCollection)
 	if *outDir != "" {
-		log.Printf("jarvisweb: résultats persistés -> %s", *outDir)
+		log.Printf("jarvisweb: copie locale des résultats -> %s", *outDir)
 	}
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		log.Fatalf("jarvisweb: %v", err)
 	}
 }
 
-// persistJob branche la persistance sur disque (internal/store), la même
-// que celle utilisée par `jarvis process --out-dir`, sur la fin de
-// traitement d'un job web.
-func persistJob(outDir string) func(webapp.Job) {
+// persistJobLocally branche une copie locale additionnelle (internal/store,
+// la même que `jarvis process --out-dir`) sur la fin de traitement d'un
+// job web — utile pour inspecter/déboguer sans requêter MongoDB, ou comme
+// filet de secours local. MongoDB (jobStore) reste la source de vérité.
+func persistJobLocally(outDir string) func(webapp.Job) {
 	return func(job webapp.Job) {
 		if job.Status != webapp.StatusDone || job.Result == nil {
 			return
 		}
-		hash, err := store.HashFile(job.Path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "jarvisweb: hash %s: %v\n", job.Path, err)
-			return
-		}
+		hash := store.HashBytes(job.Content)
 		doc, pages := store.BuildRecords(hash, job.Filename, job.DocType, time.Now().UTC(), *job.Result)
 		if err := store.WriteRecords(outDir, doc, pages); err != nil {
 			fmt.Fprintf(os.Stderr, "jarvisweb: write records for %s: %v\n", job.Filename, err)

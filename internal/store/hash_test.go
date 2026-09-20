@@ -63,6 +63,31 @@ func TestHashFile_DifferentContentDifferentHash(t *testing.T) {
 	}
 }
 
+func TestHashBytes_MatchesHashFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.pdf")
+	content := []byte("hello world")
+	writeFile(t, path, content)
+
+	fromFile, err := HashFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromBytes := HashBytes(content)
+
+	if fromBytes != fromFile {
+		t.Errorf("HashBytes() = %q, want it to match HashFile() = %q", fromBytes, fromFile)
+	}
+}
+
+func TestHashBytes_DifferentContentDifferentHash(t *testing.T) {
+	a := HashBytes([]byte("content A"))
+	b := HashBytes([]byte("content B"))
+	if a == b {
+		t.Error("HashBytes(a) == HashBytes(b), want different hashes for different content")
+	}
+}
+
 func TestHashFile_NonExistentFile_ReturnsError(t *testing.T) {
 	_, err := HashFile("does-not-exist.pdf")
 	if err == nil {

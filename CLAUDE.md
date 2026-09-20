@@ -22,10 +22,20 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
 - Langage : Go. Stack web (si besoin, plus tard uniquement) : `net/http` +
   `chi` + `templ` + `HTMX`.
 - Aucune donnée ne sort de la machine ; les modèles sont servis localement.
-  **Exception explicite et unique** : voir "Stockage phase 2" plus bas —
-  seuls les résultats extraits validés pourront, plus tard, être envoyés à
-  MongoDB Atlas. Les PDF sources et toute donnée intermédiaire ne quittent
-  jamais la machine.
+  **Exceptions explicites, toutes deux décidées par l'utilisateur, pas des
+  fuites accidentelles :**
+  1. **Inférence** (VLM, LLM) : toujours locale, sans exception — voir
+     "Setup local complet" plus bas.
+  2. **Interface web (`cmd/jarvisweb`, jalon 12) : les documents uploadés
+     — PDF sources compris, pas seulement les résultats extraits — sont
+     stockés dans MongoDB Atlas (cloud).** Décision explicite de
+     l'utilisateur (élargit l'exception initiale, qui ne couvrait que les
+     résultats), au nom de la simplicité de l'infrastructure ; l'utilisateur
+     prévoit à terme plusieurs providers cloud européens + une copie locale
+     à intervalle régulier (infrastructure non détaillée ici, à documenter
+     quand elle sera précisée). La CLI (`jarvis`/`jarvis process`) et
+     `internal/store` (JSON sur disque) restent, eux, 100% locaux et
+     inchangés — cette exception ne concerne que le flux web.
 - TDD strict : chaque paquet a ses tests avant son implémentation. Pas de
   code non testé.
 - Construire à partir de primitives ; éviter les frameworks lourds et les
@@ -219,28 +229,31 @@ go install github.com/a-h/templ/cmd/templ@latest   # ajoute $(go env GOPATH)/bin
 make build-web
 
 # Les deux serveurs llama.cpp du setup ci-dessus doivent tourner
-# (VLM :8080, LLM :8081), puis :
+# (VLM :8080, LLM :8081), puis (MONGO_URI = connexion Atlas, cf. jalon 12) :
 ./bin/jarvisweb \
   --vlm-url http://127.0.0.1:8080/v1 --vlm-model olmOCR-2-7B-1025 --vlm-model-version Q6_K \
   --llm-url http://127.0.0.1:8081/v1 --llm-model qwen3-8b --llm-model-version Q5_K_M \
+  --mongo-uri "$MONGO_URI" \
   --out-dir ./data/results \
   --addr 127.0.0.1:8090
 
 # Puis ouvrir http://127.0.0.1:8090 — upload d'un PDF, résultat affiché
 # dès qu'il est prêt (poll HTMX automatique, pas de rechargement manuel).
 ```
-Flags utiles : `--upload-dir` (par défaut un répertoire temporaire système,
-nettoyé par l'OS), `--out-dir` (vide = pas de persistance, comme pour
-`jarvis process`), `--dpi`/`--vlm-timeout`/`--llm-timeout` (mêmes défauts
-que la CLI). `make run-web` lance tout avec les valeurs par défaut du
-setup ci-dessus.
+Flags utiles : `--mongo-uri` (**requis**, jalon 12 — les jobs, PDF source
+compris, sont persistés dans MongoDB), `--mongo-db`/`--mongo-collection`
+(défauts `jarvis`/`jobs`), `--work-dir` (fichiers temporaires de
+traitement, vide = répertoire temporaire système), `--out-dir` (copie
+locale additionnelle facultative des résultats, comme pour `jarvis
+process` — MongoDB reste la source de vérité), `--dpi`/`--vlm-timeout`/
+`--llm-timeout` (mêmes défauts que la CLI). `make run-web` lance tout
+avec les valeurs par défaut du setup ci-dessus (`MONGO_URI` doit être
+exporté dans l'environnement).
 
-**Hébergement plus tard :** le binaire est un serveur `net/http` standard
-sans état persistant en dehors de `--upload-dir`/`--out-dir` (les jobs en
-mémoire ne survivent pas à un redémarrage, par choix — les résultats,
-eux, sont sur disque). Pour un déploiement distant, pointer `--vlm-url`/
-`--llm-url` vers les serveurs `llama.cpp` alors accessibles et exposer
-`--addr` derrière un reverse proxy (TLS, auth) — rien dans le code n'est
+**Hébergement plus tard :** le binaire est un serveur `net/http`
+standard. Pour un déploiement distant, pointer `--vlm-url`/`--llm-url`
+vers les serveurs `llama.cpp` alors accessibles et exposer `--addr`
+derrière un reverse proxy (TLS, auth) — rien dans le code n'est
 spécifique à `localhost`.
 - **Jalon 4 — registre de types + dérivation JSON Schema + étage
   Extraction (fake LLM) : fait.**
@@ -604,6 +617,57 @@ spécifique à `localhost`.
   - Testé : unitaire pour chaque morceau (DisableThinking, MergePages y
     compris récursif sur des champs imbriqués, persistance,
     fingerprint/migration) + les deux revalidations réelles ci-dessus.
+- **Jalon 12 — jobs web persistés dans MongoDB (`cmd/jarvisweb`) : code
+  préparé et testé sans base réelle, connexion Atlas à valider dès
+  l'accès donné par l'utilisateur.**
+  - **Portée de l'exception vie privée** : voir "Contraintes non
+    négociables" en tête de document — décision explicite de
+    l'utilisateur, documents sources compris, uniquement pour le flux
+    web. CLI et `internal/store` inchangés.
+  - `internal/webapp.Store` : nouveau port
+    (`Create`/`Get`/`Update`), même principe que tous les autres ports du
+    projet. `FakeStore` (en mémoire, mutex) pour tous les tests métier —
+    répond directement à la question de l'utilisateur ("comment mocker
+    Mongo ?") : on ne mocke jamais le driver, on mocke notre interface.
+    `MongoStore` (driver officiel `go.mongodb.org/mongo-driver/v2`) pour
+    la prod — connecté et `Ping`é dès la construction (`NewMongoStore`),
+    pour échouer au démarrage plutôt qu'au premier job. `Update` ne
+    réécrit que statut/résultat/erreur via `$set` (jamais `Content`,
+    déjà en base depuis `Create` — évite de retransmettre le PDF source
+    à chaque transition de statut).
+  - `Job.Path` (chemin déjà écrit sur disque) devient `Job.Content
+    []byte` (les octets du PDF, persistés tels quels). Le pipeline reste
+    basé sur des chemins de fichiers (`pdftotext`/`pdftoppm` en ont
+    besoin) : `JobManager` matérialise `Content` dans un fichier
+    temporaire sous `WorkDir` le temps du traitement, puis le supprime
+    systématiquement (succès ou échec).
+  - `cmd/jarvisweb` : upload lu en mémoire (plus d'écriture disque à la
+    réception) ; `--mongo-uri` requis (mode local supprimé, décision
+    explicite de l'utilisateur — "remplace complètement"),
+    `--mongo-db`/`--mongo-collection` avec défauts raisonnables.
+    `--out-dir` reste disponible comme **copie locale additionnelle**
+    (`internal/store`, inchangé) — MongoDB est la source de vérité, la
+    copie locale un filet de secours optionnel.
+  - **Non testé contre une vraie base à ce stade** — `MongoStore` compile
+    et son code a été relu avec soin (API du driver v2 vérifiée via `go
+    doc`, pas devinée), mais seul `go run` contre une URI invalide a été
+    vérifié (échec rapide et clair, cf. ci-dessous). Tests d'intégration
+    réels et vérification bout en bout à faire une fois l'accès Atlas
+    donné.
+  - Un vrai data race a été détecté par `-race` et corrigé pendant le
+    développement — dans le code de **test** cette fois (deux jobs
+    soumis au même `fakeRunner` partagé, écriture concurrente non
+    synchronisée d'un champ de suivi) : corrigé avec un mutex sur la
+    fake, cohérent avec la discipline déjà appliquée au `JobManager`
+    lui-même au jalon 8.
+  - Testé : `FakeStore` (contrat Create/Get/Update), `JobManager`
+    entièrement revu (matérialisation du contenu, nettoyage du fichier
+    temporaire y compris en cas d'échec de traitement, résilience à un
+    échec de `Store.Update` intermédiaire), handlers HTTP (upload en
+    mémoire, `Store` remplacé par une fake). `go build` réel de
+    `jarvisweb` + lancement contre une URI Mongo injoignable : échoue
+    immédiatement avec un message explicite plutôt qu'un timeout
+    silencieux ou un crash.
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion
@@ -618,16 +682,16 @@ spécifique à `localhost`.
   Remplace vLLM partout dans ce document et dans le code — vLLM ne tourne
   pas sur Apple Silicon (pas de CUDA). Les ports Go (interfaces VLM/LLM)
   restent inchangés : seule l'implémentation HTTP cible change de backend.
-- **Stockage phase 2 : MongoDB Atlas, contrainte de confidentialité
-  assouplie EXPLICITEMENT et seulement pour cet usage précis.** Portée de
-  l'exception, telle qu'acceptée par l'utilisateur : seuls les **résultats
-  extraits validés** (le JSON final) peuvent, plus tard, être synchronisés
-  vers Atlas. Les **PDF sources et toute donnée intermédiaire (pages
-  rendues en PNG, Markdown issu du VLM) ne quittent jamais la machine** et
-  ne sont jamais envoyés à un service cloud. Toute inférence (VLM, LLM)
-  continue de tourner en local via llama.cpp. Phase 1 reste 100% JSON sur
-  disque ; la bascule vers Atlas est un jalon séparé, à valider
-  explicitement le moment venu.
+- **Stockage phase 2 : MongoDB Atlas — portée élargie au jalon 12.**
+  Décision initiale (jalon 3) : seuls les résultats extraits validés
+  pourraient être synchronisés vers Atlas, jamais les PDF sources.
+  **Révisée explicitement par l'utilisateur au jalon 12** : les documents
+  uploadés via `cmd/jarvisweb` (PDF sources compris) sont désormais aussi
+  stockés dans Atlas — voir "Contraintes non négociables" en tête de
+  document pour la formulation à jour. Toute inférence (VLM, LLM) continue
+  de tourner en local via llama.cpp, sans exception. La CLI et
+  `internal/store` (JSON sur disque, `jarvis process --out-dir`) restent
+  100% locaux, non concernés par cette bascule.
 
 ## Décisions en attente
 - Stratégie bbox pour les pages **scannées** (VLM) — voir jalon 7
@@ -638,3 +702,9 @@ spécifique à `localhost`.
   s'ajoute au besoin.
 Les findings 3 et 4 du jalon 10 (fusion multi-pages, latence Qwen3) sont
 résolus — voir jalon 11.
+- Validation réelle de `MongoStore` contre Atlas (jalon 12) — accès à
+  donner par l'utilisateur. Tant que ce n'est pas fait : le code compile
+  et est testé via `FakeStore`, mais n'a jamais parlé à une vraie base.
+- Infrastructure MongoDB multi-provider + copie locale périodique
+  (mentionnée par l'utilisateur au jalon 12) — pas détaillée, hors
+  scope du code applicatif pour l'instant.
