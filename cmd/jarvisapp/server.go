@@ -124,8 +124,6 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	docType := r.FormValue("doc_type")
-
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "fichier manquant : "+err.Error(), http.StatusBadRequest)
@@ -139,7 +137,10 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.Jobs.Submit(r.Context(), docType, header.Filename, content)
+	// Le type de document n'est plus choisi ici : il est déterminé par
+	// classification automatique pendant le traitement (internal/classify,
+	// câblé dans pipeline.Pipeline.RunAuto — voir main.go).
+	job, err := s.Jobs.Submit(r.Context(), header.Filename, content)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

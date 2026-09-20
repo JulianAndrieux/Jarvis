@@ -68,9 +68,18 @@ func (s *MongoStore) Get(ctx context.Context, id string) (Job, bool, error) {
 }
 
 // Update ne réécrit que les champs qui changent réellement après création
-// (statut, résultat, erreur, FinishedAt) via $set — pas Content : pas de
-// raison de retransmettre le PDF source (potentiellement volumineux) à
-// chaque transition de statut.
+// (statut, type de document, résultat, erreur, FinishedAt) via $set — pas
+// Content : pas de raison de retransmettre le PDF source (potentiellement
+// volumineux) à chaque transition de statut.
+//
+// doc_type fait partie de ce $set depuis la classification automatique
+// (jalon 15) : il n'est plus connu à Create (job.DocType == "" à la
+// soumission), seulement une fois le job terminé — l'oublier ici laissait
+// le champ vide en base pour toujours, alors que le job.templ affichait
+// bien le bon type juste après le traitement (lu depuis result_json, pas
+// depuis doc_type) : un rechargement de /jobs/{id} perdait silencieusement
+// l'information. Trouvé en testant un vrai upload bout en bout, pas en
+// relecture.
 func (s *MongoStore) Update(ctx context.Context, job Job) error {
 	var resultJSON []byte
 	if job.Result != nil {
@@ -83,6 +92,7 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 
 	update := bson.M{"$set": bson.M{
 		"status":      string(job.Status),
+		"doc_type":    job.DocType,
 		"finished_at": job.FinishedAt,
 		"result_json": resultJSON,
 		"err":         job.Err,

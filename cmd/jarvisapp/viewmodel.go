@@ -44,11 +44,12 @@ func buildResultView(job webapp.Job) templates.ResultView {
 	}
 
 	return templates.ResultView{
-		DocType:      job.DocType,
-		TriageScore:  result.Triage.Score,
-		HasTextLayer: result.Triage.HasTextLayer,
-		Pages:        pages,
-		Merged:       merged,
+		DocType:                  job.DocType,
+		TriageScore:              result.Triage.Score,
+		HasTextLayer:             result.Triage.HasTextLayer,
+		Pages:                    pages,
+		Merged:                   merged,
+		ClassificationConfidence: result.ClassificationConfidence,
 	}
 }
 

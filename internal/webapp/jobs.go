@@ -1,6 +1,6 @@
 // Package webapp orchestre le pipeline jarvis pour une interface web :
 // soumission d'un document, suivi asynchrone d'un job, récupération du
-// résultat une fois prêt. Aucune dépendance HTTP ici — c'est cmd/jarvisweb
+// résultat une fois prêt. Aucune dépendance HTTP ici — c'est cmd/jarvisapp
 // qui expose ça sur le réseau.
 package webapp
 
@@ -12,7 +12,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 )
 
@@ -29,6 +28,10 @@ const (
 // Job est le suivi d'une soumission de document. Content est le PDF
 // source lui-même (persisté via Store, ex. MongoDB — voir CLAUDE.md pour
 // la portée de l'exception à "aucune donnée ne sort de la machine").
+// DocType n'est connu qu'une fois le job terminé (StatusDone) —
+// déterminé par classification automatique (internal/classify), pas
+// choisi par l'utilisateur à l'upload : "" tant que le job n'est pas
+// terminé, et peut rester "" même terminé si aucun type ne correspond.
 // Result n'est renseigné que si Status == StatusDone ; Err seulement si
 // Status == StatusFailed.
 type Job struct {
@@ -45,11 +48,12 @@ type Job struct {
 
 // Runner exécute le pipeline complet pour un document, à partir d'un
 // chemin de fichier local (les outils sous-jacents — pdftotext, pdftoppm —
-// opèrent sur des fichiers). pipeline.Pipeline satisfait cette interface
-// (typage structurel) ; une fake suffit pour les tests, aucun modèle ni
-// GPU requis.
+// opèrent sur des fichiers), en déterminant lui-même le type de document
+// par classification automatique (voir pipeline.Pipeline.RunAuto, que
+// pipeline.Pipeline satisfait par typage structurel — une fake suffit
+// pour les tests, aucun modèle ni GPU requis).
 type Runner interface {
-	Run(ctx context.Context, reg doctype.Registration, path string) (pipeline.Result, error)
+	RunAuto(ctx context.Context, path string) (pipeline.Result, error)
 }
 
 // JobManager orchestre la soumission et le traitement asynchrone des
@@ -61,9 +65,8 @@ type Runner interface {
 // matérialise Content dans un fichier temporaire (sous WorkDir) le temps
 // du traitement, puis le supprime — que le traitement réussisse ou non.
 type JobManager struct {
-	store    Store
-	runner   Runner
-	registry *doctype.Registry
+	store  Store
+	runner Runner
 
 	// WorkDir est le répertoire des fichiers temporaires de traitement ;
 	// "" laisse os.CreateTemp choisir (répertoire temporaire du système).
@@ -76,30 +79,26 @@ type JobManager struct {
 	newID func() (string, error) // injectable pour les tests
 }
 
-func NewJobManager(store Store, runner Runner, registry *doctype.Registry) *JobManager {
+func NewJobManager(store Store, runner Runner) *JobManager {
 	return &JobManager{
-		store:    store,
-		runner:   runner,
-		registry: registry,
-		newID:    randomID,
+		store:  store,
+		runner: runner,
+		newID:  randomID,
 	}
 }
 
 // Submit enregistre un nouveau job pour content et lance son traitement en
-// arrière-plan. Retourne immédiatement avec le job à l'état StatusPending.
-func (m *JobManager) Submit(ctx context.Context, docType, filename string, content []byte) (Job, error) {
-	reg, ok := m.registry.Get(docType)
-	if !ok {
-		return Job{}, fmt.Errorf("webapp: unknown doc type %q", docType)
-	}
-
+// arrière-plan. Le type de document n'est pas demandé : il est déterminé
+// automatiquement pendant le traitement (classification). Retourne
+// immédiatement avec le job à l'état StatusPending.
+func (m *JobManager) Submit(ctx context.Context, filename string, content []byte) (Job, error) {
 	id, err := m.newID()
 	if err != nil {
 		return Job{}, fmt.Errorf("webapp: generate job id: %w", err)
 	}
 
 	job := Job{
-		ID: id, DocType: docType, Filename: filename, Content: content,
+		ID: id, Filename: filename, Content: content,
 		Status: StatusPending, CreatedAt: time.Now(),
 	}
 
@@ -108,12 +107,12 @@ func (m *JobManager) Submit(ctx context.Context, docType, filename string, conte
 		return Job{}, fmt.Errorf("webapp: create job: %w", err)
 	}
 
-	go m.run(created, reg)
+	go m.run(created)
 
 	return created, nil
 }
 
-func (m *JobManager) run(job Job, reg doctype.Registration) {
+func (m *JobManager) run(job Job) {
 	ctx := context.Background()
 
 	job.Status = StatusRunning
@@ -128,7 +127,7 @@ func (m *JobManager) run(job Job, reg doctype.Registration) {
 	}
 	defer cleanup()
 
-	result, err := m.runner.Run(ctx, reg, path)
+	result, err := m.runner.RunAuto(ctx, path)
 	m.finish(ctx, job, result, err)
 }
 
@@ -140,6 +139,7 @@ func (m *JobManager) finish(ctx context.Context, job Job, result pipeline.Result
 	} else {
 		job.Status = StatusDone
 		job.Result = &result
+		job.DocType = result.DocType
 	}
 
 	if err := m.store.Update(ctx, job); err != nil {

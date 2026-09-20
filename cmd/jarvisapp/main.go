@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
+	"github.com/JulianAndrieux/Jarvis/internal/classify"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
@@ -68,6 +69,17 @@ func main() {
 
 	registry := doctype.NewDefaultRegistry()
 
+	llmClient := llm.HTTPClient{
+		BaseURL:      *llmURL,
+		Model:        *llmModel,
+		ModelVersion: *llmVersion,
+		HTTP:         &http.Client{Timeout: *llmTimeout},
+		// Voir cmd/jarvis/process.go et CLAUDE.md (jalon 10 finding 4
+		// / jalon 11) : Qwen3 peut sinon générer un nombre de tokens
+		// très variable sur du contenu ambigu.
+		DisableThinking: true,
+	}
+
 	runner := pipeline.Pipeline{
 		TextExtractor: triage.PdftotextExtractor{},
 		Renderer:      parsing.PdftoppmRenderer{},
@@ -79,16 +91,13 @@ func main() {
 			HTTP:         &http.Client{Timeout: *vlmTimeout},
 		},
 		DPI: *dpi,
-		LLM: llm.HTTPClient{
-			BaseURL:      *llmURL,
-			Model:        *llmModel,
-			ModelVersion: *llmVersion,
-			HTTP:         &http.Client{Timeout: *llmTimeout},
-			// Voir cmd/jarvis/process.go et CLAUDE.md (jalon 10 finding 4
-			// / jalon 11) : Qwen3 peut sinon générer un nombre de tokens
-			// très variable sur du contenu ambigu.
-			DisableThinking: true,
-		},
+		LLM: llmClient,
+		// Classifier réutilise le même LLM d'extraction (aucun nouveau
+		// modèle choisi) pour déterminer automatiquement le type de
+		// document à l'upload — voir CLAUDE.md, "Upload : classification
+		// automatique".
+		Classifier: classify.LLMClassifier{Client: llmClient},
+		Registry:   registry,
 	}
 
 	connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -98,7 +107,7 @@ func main() {
 		log.Fatalf("jarvisapp: %v", err)
 	}
 
-	jobs := webapp.NewJobManager(jobStore, runner, registry)
+	jobs := webapp.NewJobManager(jobStore, runner)
 	jobs.WorkDir = *workDir
 	if *outDir != "" {
 		jobs.OnFinish = persistJobLocally(*outDir)

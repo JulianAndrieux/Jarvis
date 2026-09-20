@@ -21,7 +21,8 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
-// --- Upload / suivi de documents (portés depuis l'ex-cmd/jarvisweb) ---
+// --- Upload / suivi de documents (portés depuis l'ex-cmd/jarvisweb,
+// adaptés à la classification automatique du jalon 15) ---
 
 type blockingRunner struct {
 	result  pipeline.Result
@@ -29,7 +30,7 @@ type blockingRunner struct {
 	proceed chan struct{}
 }
 
-func (r *blockingRunner) Run(ctx context.Context, reg doctype.Registration, path string) (pipeline.Result, error) {
+func (r *blockingRunner) RunAuto(ctx context.Context, path string) (pipeline.Result, error) {
 	if r.proceed != nil {
 		<-r.proceed
 	}
@@ -39,19 +40,16 @@ func (r *blockingRunner) Run(ctx context.Context, reg doctype.Registration, path
 func newTestServer(t *testing.T, runner webapp.Runner) (*Server, *webapp.FakeStore) {
 	t.Helper()
 	fakeStore := webapp.NewFakeStore()
-	jobs := webapp.NewJobManager(fakeStore, runner, doctype.NewDefaultRegistry())
+	jobs := webapp.NewJobManager(fakeStore, runner)
 	jobs.WorkDir = t.TempDir()
 	s := &Server{Jobs: jobs, Registry: doctype.NewDefaultRegistry()}
 	return s, fakeStore
 }
 
-func multipartUpload(t *testing.T, docType, filename string, content []byte) (*bytes.Buffer, string) {
+func multipartUpload(t *testing.T, filename string, content []byte) (*bytes.Buffer, string) {
 	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
-	if err := w.WriteField("doc_type", docType); err != nil {
-		t.Fatal(err)
-	}
 	part, err := w.CreateFormFile("file", filename)
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +63,7 @@ func multipartUpload(t *testing.T, docType, filename string, content []byte) (*b
 	return &body, w.FormDataContentType()
 }
 
-func TestHandleIndex_ListsDocTypes(t *testing.T) {
+func TestHandleIndex_MentionsRecognizedDocTypes(t *testing.T) {
 	s, _ := newTestServer(t, &blockingRunner{})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -78,6 +76,9 @@ func TestHandleIndex_ListsDocTypes(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "facture") {
 		t.Errorf("body does not mention the registered doc type %q: %s", "facture", rec.Body.String())
 	}
+	if strings.Contains(rec.Body.String(), "<select") {
+		t.Errorf("body still has a doc-type selector, want none (classification is automatic): %s", rec.Body.String())
+	}
 }
 
 func TestHandleSubmit_ValidUpload_ReturnsRunningFragment(t *testing.T) {
@@ -85,7 +86,7 @@ func TestHandleSubmit_ValidUpload_ReturnsRunningFragment(t *testing.T) {
 	s, fakeStore := newTestServer(t, &blockingRunner{proceed: proceed})
 	defer close(proceed)
 
-	body, contentType := multipartUpload(t, "facture", "doc.pdf", []byte("%PDF-1.4 fake"))
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("%PDF-1.4 fake"))
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
 	req.Header.Set("Content-Type", contentType)
 	rec := httptest.NewRecorder()
@@ -101,6 +102,9 @@ func TestHandleSubmit_ValidUpload_ReturnsRunningFragment(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "hx-get") {
 		t.Errorf("body has no polling attribute for a running job: %s", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), "Enregistré dans MongoDB") {
+		t.Errorf("body does not confirm persistence: %s", rec.Body.String())
+	}
 
 	id := extractJobID(t, rec.Body.String())
 	stored, ok, err := fakeStore.Get(context.Background(), id)
@@ -109,21 +113,6 @@ func TestHandleSubmit_ValidUpload_ReturnsRunningFragment(t *testing.T) {
 	}
 	if string(stored.Content) != "%PDF-1.4 fake" {
 		t.Errorf("stored content = %q, want the uploaded bytes", stored.Content)
-	}
-}
-
-func TestHandleSubmit_UnknownDocType_ReturnsBadRequest(t *testing.T) {
-	s, _ := newTestServer(t, &blockingRunner{})
-
-	body, contentType := multipartUpload(t, "extraterrestre", "doc.pdf", []byte("x"))
-	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
-	req.Header.Set("Content-Type", contentType)
-	rec := httptest.NewRecorder()
-
-	s.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rec.Code)
 	}
 }
 
@@ -140,12 +129,13 @@ func TestHandleJobStatus_UnknownID_ReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestHandleJobStatus_DoneJob_RendersResultWithoutPolling(t *testing.T) {
+func TestHandleJobStatus_DoneJob_ClassifiedType_RendersResultWithoutPolling(t *testing.T) {
 	s, _ := newTestServer(t, &blockingRunner{result: pipeline.Result{
-		Triage: pipeline.Result{}.Triage,
+		DocType: "facture",
+		Triage:  pipeline.Result{}.Triage,
 	}})
 
-	body, contentType := multipartUpload(t, "facture", "doc.pdf", []byte("x"))
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("x"))
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
 	req.Header.Set("Content-Type", contentType)
 	rec := httptest.NewRecorder()
@@ -172,12 +162,49 @@ func TestHandleJobStatus_DoneJob_RendersResultWithoutPolling(t *testing.T) {
 	if strings.Contains(last, "hx-get") {
 		t.Errorf("done fragment still carries a polling attribute: %s", last)
 	}
+	if !strings.Contains(last, "facture") {
+		t.Errorf("done fragment does not mention the classified doc type: %s", last)
+	}
+}
+
+func TestHandleJobStatus_DoneJob_UnclassifiedType_ShowsNoTypeRecognized(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{result: pipeline.Result{
+		DocType:                  "",
+		ClassificationConfidence: 0.2,
+	}})
+
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("x"))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	id := extractJobID(t, rec.Body.String())
+
+	deadline := time.Now().Add(2 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		req := httptest.NewRequest(http.MethodGet, "/jobs/"+id, nil)
+		rec := httptest.NewRecorder()
+		s.Routes().ServeHTTP(rec, req)
+		last = rec.Body.String()
+		if strings.Contains(last, "status-done") {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	if !strings.Contains(last, "Aucun type de document reconnu") {
+		t.Errorf("body does not explain that no type was recognized: %s", last)
+	}
+	if strings.Contains(last, "hx-get") {
+		t.Errorf("done fragment still carries a polling attribute: %s", last)
+	}
 }
 
 func TestHandleJobStatus_FailedJob_ShowsError(t *testing.T) {
 	s, _ := newTestServer(t, &blockingRunner{err: errors.New("pipeline boom")})
 
-	body, contentType := multipartUpload(t, "facture", "doc.pdf", []byte("x"))
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("x"))
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
 	req.Header.Set("Content-Type", contentType)
 	rec := httptest.NewRecorder()

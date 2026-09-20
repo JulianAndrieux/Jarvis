@@ -79,3 +79,17 @@ func (r *Registry) Names() []string {
 	sort.Strings(names)
 	return names
 }
+
+// Registrations retourne toutes les Registration enregistrées, triées
+// par nom — utilisé par la classification automatique (internal/classify)
+// pour lister les candidats (nom + description) à proposer au LLM.
+func (r *Registry) Registrations() []Registration {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	regs := make([]Registration, 0, len(r.types))
+	for _, reg := range r.types {
+		regs = append(regs, reg)
+	}
+	sort.Slice(regs, func(i, j int) bool { return regs[i].Name < regs[j].Name })
+	return regs
+}

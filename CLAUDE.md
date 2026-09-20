@@ -804,6 +804,88 @@ spécifique à `localhost`.
     trouvé avant commit).
   - Testé : suite `internal/launcher` complète (`-race`), + la
     validation réelle ci-dessus pour `cmd/jarvis-launcher` lui-même.
+- **Jalon 15 — classification automatique à l'upload + correctif
+  MongoDB : fait, validé end-to-end.** Demandé explicitement :
+  "uploader un document et laisser le modèle trouver le type. Quand il
+  a trouvé le type alors il essaye d'extraire les données."
+  - **`internal/classify`** (nouveau port) : `Classifier.Classify(ctx,
+    text, candidates) (Result, error)`, `Result{DocType, Confidence}`
+    (`DocType` vide si rien ne correspond — jamais un type deviné).
+    `LLMClassifier` réutilise le LLM d'extraction déjà en place (aucun
+    nouveau modèle choisi) avec un **JSON Schema dont l'énumération de
+    `doc_type` est construite dynamiquement** à partir des candidats du
+    registre (`doctype.Registry.Registrations()`, nouvelle méthode) —
+    décodage contraint à un nom de type connu ou `"unknown"`, jamais du
+    texte libre ; une vérification défensive supplémentaire ignore quand
+    même toute valeur hors de cette liste (jamais confiance aveugle
+    dans une sortie de modèle). Texte envoyé borné à 4000 caractères
+    (`DefaultMaxTextLength`) — la classification n'a besoin que d'un
+    signal, pas du document entier.
+  - **`pipeline.Pipeline.RunAuto(ctx, path)`** (nouveau, à côté de `Run`
+    qui reste inchangé pour la CLI où le type est déjà connu) :
+    factorise Triage+Parsing dans un helper `prepare()` partagé par les
+    deux, classifie le texte fusionné de toutes les pages, puis
+    extrait seulement si un type a été trouvé. `Result` gagne `DocType`
+    et `ClassificationConfidence`. Aucun type reconnu = `Result` sans
+    erreur, juste `Extraction` vide — cohérent avec "jamais de valeur
+    inventée", pas un échec.
+  - **`internal/webapp`** simplifié en conséquence : `Runner.Run(ctx,
+    reg, path)` devient `Runner.RunAuto(ctx, path)` (plus de type
+    imposé par l'appelant) ; `JobManager.Submit` perd son paramètre
+    `docType` ; `Job.DocType` est vide jusqu'à la fin du traitement,
+    renseigné depuis `result.DocType` dans `finish()`. Le registre n'est
+    plus une dépendance de `JobManager` du tout (il vit désormais
+    uniquement dans `pipeline.Pipeline`, côté classification).
+  - **`cmd/jarvisapp`** : page Upload sans sélecteur de type — juste le
+    fichier, un texte informatif ("Types reconnus aujourd'hui : ...").
+    `job.templ` distingue maintenant trois issues pour un job terminé :
+    type classifié (résultat affiché comme avant, plus la confiance de
+    classification), aucun type reconnu (message explicite, pas de
+    tableau vide déroutant), échec. **Chaque état affiche désormais
+    "✓ Enregistré dans MongoDB (id: ...)"** dès la soumission — en
+    réponse directe à l'utilisateur qui avait l'impression que les
+    documents n'atteignaient pas la base.
+  - **Bug réel trouvé et corrigé en testant un vrai upload bout en
+    bout** (pas en relecture) : `MongoStore.Update` ne réécrivait jamais
+    `doc_type` dans son `$set` — un reliquat du jalon 12, où le type
+    était fixé une fois pour toutes à la soumission (choisi par
+    l'utilisateur) et n'avait donc jamais besoin d'être mis à jour.
+    Avec la classification automatique, `DocType` n'est connu qu'à la
+    fin du traitement : `Update` l'oubliait, donc `GET /jobs/{id}`
+    relisait toujours `doc_type: ""` depuis Mongo malgré une
+    classification réussie (visible dans `result_json`, qui lui était
+    bien à jour) — un upload de `facture_multiligne.pdf` (une vraie
+    facture) affichait "Aucun type de document reconnu" à chaque
+    rechargement de la page. Confirmé reproductible sur le serveur réel
+    (3 tentatives, toujours faux), puis isolé : un appel direct à
+    `LLMClassifier`/`Pipeline.RunAuto` donnait le bon résultat —
+    la classification elle-même n'était jamais en cause, seule la
+    persistance de son résultat l'était. Corrigé (`doc_type` ajouté au
+    `$set`), reproduit en échec puis en succès avec un test dédié
+    (`internal/webapp/mongo_store_test.go`, `-tags=integration`, ignoré
+    si `MONGO_URI` n'est pas exporté) avant de considérer le correctif
+    validé — **premiers tests automatisés de `MongoStore` contre une
+    vraie base Atlas** (jusqu'ici seulement testé manuellement, cf.
+    jalon 12).
+  - **Validé en conditions réelles** : upload de `facture_multiligne.pdf`
+    (vraie facture) → classifiée `facture` (confiance 1.00), champs
+    extraits corrects, `doc_type` persisté et relu correctement depuis
+    Mongo après le correctif. Upload d'un document non-facture généré
+    pour l'occasion (rapport technique) → `Aucun type de document
+    reconnu`, aucune extraction tentée, document tout de même enregistré.
+    Les jobs de test créés pendant cette investigation ont été supprimés
+    de la collection `jobs` réelle après coup (identifiants notés,
+    supprimés un par un) pour ne pas polluer les données de
+    l'utilisateur.
+  - Testé : `internal/classify` (schéma à énumération dynamique, prompt,
+    troncature, hallucination traitée en défense, erreurs LLM/JSON),
+    `internal/pipeline` (`RunAuto` : classification puis extraction,
+    type inconnu, Classifier/Registry manquants, erreurs), `internal/
+    webapp` (`Submit` sans docType, `DocType` renseigné après coup),
+    `cmd/jarvisapp` (upload sans sélecteur, rendu des trois issues,
+    confirmation de persistance), `internal/webapp/mongo_store_test.go`
+    (réel, cf. ci-dessus). Suite complète verte (`gofmt`, `go vet`, `go
+    test ./... -race -tags=integration`, `MONGO_URI` exporté).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement
@@ -911,9 +993,11 @@ touchée, pure analyse statique + exécution de `go test`.
   s'ajoute au besoin.
 Les findings 3 et 4 du jalon 10 (fusion multi-pages, latence Qwen3) sont
 résolus — voir jalon 11.
-- Validation réelle de `MongoStore` contre Atlas (jalon 12) — accès à
-  donner par l'utilisateur. Tant que ce n'est pas fait : le code compile
-  et est testé via `FakeStore`, mais n'a jamais parlé à une vraie base.
+- Validation réelle de `MongoStore` contre Atlas (jalon 12) — **résolue
+  au jalon 15** : accès donné, testée manuellement puis avec des tests
+  automatisés dédiés (`internal/webapp/mongo_store_test.go`,
+  `-tags=integration`, `MONGO_URI` requis). Un bug réel de persistance
+  (`doc_type` jamais mis à jour) a été trouvé et corrigé dans la foulée.
 - Infrastructure MongoDB multi-provider + copie locale périodique
   (mentionnée par l'utilisateur au jalon 12) — pas détaillée, hors
   scope du code applicatif pour l'instant.

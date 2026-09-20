@@ -61,3 +61,20 @@ func TestRegistry_Names_SortedAlphabetically(t *testing.T) {
 		t.Errorf("Names() = %v, want %v", got, want)
 	}
 }
+
+func TestRegistry_Registrations_SortedAlphabeticallyWithDescriptions(t *testing.T) {
+	r := NewRegistry()
+	_ = Register[dummyDoc](r, "zzz", "description z")
+	_ = Register[dummyDoc](r, "aaa", "description a")
+
+	got := r.Registrations()
+	if len(got) != 2 {
+		t.Fatalf("len(Registrations()) = %d, want 2", len(got))
+	}
+	if got[0].Name != "aaa" || got[0].Description != "description a" {
+		t.Errorf("Registrations()[0] = %+v, want Name=aaa Description='description a'", got[0])
+	}
+	if got[1].Name != "zzz" || got[1].Description != "description z" {
+		t.Errorf("Registrations()[1] = %+v, want Name=zzz Description='description z'", got[1])
+	}
+}

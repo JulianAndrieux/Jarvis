@@ -38,6 +38,11 @@ type ResultView struct {
 	// extraction.MergePages. Réutilise PageView (même forme d'affichage),
 	// son champ Page n'est pas significatif ici.
 	Merged PageView
+	// ClassificationConfidence est le score de confiance de la
+	// classification automatique du type de document (0 si non
+	// applicable). Renseigné même quand DocType est vide (aucun type
+	// reconnu), pour expliquer pourquoi.
+	ClassificationConfidence float64
 }
 
 func statusLabel(s webapp.Status) string {
@@ -69,6 +74,14 @@ func rowClass(f FieldView) string {
 	return ""
 }
 
+// persistedNote rend visible, à chaque état du job, que le document est
+// bien enregistré dans MongoDB (le job y est créé dès la soumission,
+// avant même le traitement) — sinon rien dans l'interface ne le confirme
+// explicitement.
+templ persistedNote(jobID string) {
+	<p class="muted">✓ Enregistré dans MongoDB (id: { jobID })</p>
+}
+
 templ JobFragment(job webapp.Job, view ResultView) {
 	if job.Status == webapp.StatusPending || job.Status == webapp.StatusRunning {
 		<div id={ "job-" + job.ID } class="card" hx-get={ "/jobs/" + job.ID } hx-trigger="load delay:1.5s" hx-swap="outerHTML">
@@ -76,18 +89,30 @@ templ JobFragment(job webapp.Job, view ResultView) {
 				<span class="spinner"></span>
 				{ statusLabel(job.Status) } — { job.Filename }
 			</p>
+			@persistedNote(job.ID)
 		</div>
 	} else if job.Status == webapp.StatusFailed {
 		<div id={ "job-" + job.ID } class="card">
 			<p class="status-failed">Échec — { job.Filename }</p>
 			<div class="error-box">{ job.Err }</div>
+			@persistedNote(job.ID)
+		</div>
+	} else if view.DocType == "" {
+		<div id={ "job-" + job.ID } class="card">
+			<p class="status-done">Terminé — { job.Filename }</p>
+			<p class="status-pending">
+				⚠ Aucun type de document reconnu (confiance { fmt.Sprintf("%.2f", view.ClassificationConfidence) }) —
+				pas d'extraction possible. Le document reste enregistré tel quel.
+			</p>
+			@persistedNote(job.ID)
 		</div>
 	} else {
 		<div id={ "job-" + job.ID } class="card">
-			<p class="status-done">Terminé — { job.Filename } ({ view.DocType })</p>
+			<p class="status-done">Terminé — { job.Filename } ({ view.DocType }, classification { fmt.Sprintf("%.2f", view.ClassificationConfidence) })</p>
 			<p class="muted">
 				Triage : score { fmt.Sprintf("%.2f", view.TriageScore) }, couche texte native { yesNo(view.HasTextLayer) }
 			</p>
+			@persistedNote(job.ID)
 			<div class="merged-summary">
 				<h3>Résumé document (fusion de toutes les pages)</h3>
 				if view.Merged.Failed {
