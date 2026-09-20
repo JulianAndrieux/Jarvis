@@ -1,15 +1,15 @@
-// Package main implémente codebrowser : une page de contrôle locale,
-// dans l'esprit d'un navigateur de classes Smalltalk / Glamorous
-// Toolkit, pour inspecter l'architecture du code Jarvis (types, champs,
-// méthodes, embeddings = "héritage", interfaces implémentées) et lancer
-// les tests localement, catégorisés par package, avec le résultat
-// affiché directement. Outil de développement, distinct du produit
-// d'extraction PDF lui-même.
+// Package main implémente jarvisapp : l'application web unique qui
+// regroupe ce qui était avant deux binaires séparés — cmd/jarvisweb
+// (upload/suivi de documents) et cmd/codebrowser (navigateur de classes
+// façon Smalltalk / Glamorous Toolkit + page de tests). Une seule page à
+// ouvrir en local, une seule nav (Upload · Classes · Tests), un seul
+// port. Voir CLAUDE.md, jalon 13.
 package main
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -18,17 +18,27 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/JulianAndrieux/Jarvis/cmd/codebrowser/templates"
+	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
 	"github.com/JulianAndrieux/Jarvis/internal/codemap"
+	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/testmap"
 	"github.com/JulianAndrieux/Jarvis/internal/testrunner"
+	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
-// Server sert le navigateur de code. Le modèle (types + tests) est
-// analysé une fois au démarrage puis mis en cache : go/packages.Load
-// re-parse et re-type-check tout le module, trop lent pour le refaire à
-// chaque page — voir handleRefresh pour le recalcul explicite.
+// maxUploadSize borne la taille d'un document accepté (64 Mio).
+const maxUploadSize = 64 << 20
+
+// Server expose les deux domaines fonctionnels sur un seul routeur :
+// upload/suivi de documents (Jobs/Registry, ex-jarvisweb) et navigateur
+// de code/tests (ModuleDir + le cache model/categories/results,
+// ex-codebrowser). Les deux restent des préoccupations séparées en
+// interne (aucune dépendance croisée entre elles) — seule la présentation
+// (nav, layout) est commune.
 type Server struct {
+	Jobs     *webapp.JobManager
+	Registry *doctype.Registry
+
 	ModuleDir string
 
 	mu         sync.RWMutex
@@ -41,17 +51,17 @@ type Server struct {
 func resultKey(pkg, name string) string { return pkg + "\x00" + name }
 
 // Refresh relance l'analyse statique (codemap) et la découverte des
-// tests (testmap). Les résultats d'exécution déjà connus sont
-// conservés tels quels (un rescan de code ne fait pas tourner les
-// tests).
+// tests (testmap) pour le navigateur de code — n'affecte pas Jobs. Les
+// résultats d'exécution déjà connus sont conservés à travers un rescan
+// (rescanner le code ne relance pas les tests).
 func (s *Server) Refresh() error {
 	model, err := codemap.Analyze(s.ModuleDir, "./...")
 	if err != nil {
-		return fmt.Errorf("codebrowser: analyse du code: %w", err)
+		return fmt.Errorf("jarvisapp: analyse du code: %w", err)
 	}
 	categories, err := testmap.Discover(s.ModuleDir)
 	if err != nil {
-		return fmt.Errorf("codebrowser: découverte des tests: %w", err)
+		return fmt.Errorf("jarvisapp: découverte des tests: %w", err)
 	}
 
 	s.mu.Lock()
@@ -67,10 +77,6 @@ func (s *Server) Refresh() error {
 	return nil
 }
 
-// readModulePath lit le "module ..." déclaré dans go.mod — nécessaire
-// pour transformer un chemin d'import de catégorie (ex.
-// "github.com/.../internal/triage") en pattern relatif
-// ("./internal/triage") accepté par `go test` avec Dir=ModuleDir.
 func readModulePath(moduleDir string) string {
 	b, err := os.ReadFile(moduleDir + "/go.mod")
 	if err != nil {
@@ -87,18 +93,84 @@ func readModulePath(moduleDir string) string {
 
 func (s *Server) Routes() chi.Router {
 	r := chi.NewRouter()
+
+	// Upload / suivi de documents (ex-cmd/jarvisweb).
 	r.Get("/", s.handleIndex)
+	r.Post("/jobs", s.handleSubmit)
+	r.Get("/jobs/{id}", s.handleJobStatus)
+
+	// Navigateur de classes + tests (ex-cmd/codebrowser).
 	r.Get("/classes", s.handleClasses)
 	r.Get("/classes/detail", s.handleClassDetail)
 	r.Get("/tests", s.handleTests)
 	r.Post("/tests/run", s.handleTestsRun)
 	r.Post("/refresh", s.handleRefresh)
+
 	return r
 }
 
+// --- Upload / suivi de documents ---
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/classes", http.StatusFound)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.Upload(s.Registry.Names()).Render(r.Context(), w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
+
+func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		http.Error(w, "formulaire invalide : "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	docType := r.FormValue("doc_type")
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "fichier manquant : "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "impossible de lire le fichier : "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	job, err := s.Jobs.Submit(r.Context(), docType, header.Filename, content)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.renderJob(w, r, job)
+}
+
+func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	job, ok, err := s.Jobs.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, "erreur de lecture du job : "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	s.renderJob(w, r, job)
+}
+
+func (s *Server) renderJob(w http.ResponseWriter, r *http.Request, job webapp.Job) {
+	view := buildResultView(job)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.JobFragment(job, view).Render(r.Context(), w); err != nil {
+		fmt.Fprintf(os.Stderr, "jarvisapp: render job %s: %v\n", job.ID, err)
+	}
+}
+
+// --- Rescan (partagé) ---
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	if err := s.Refresh(); err != nil {
@@ -140,7 +212,7 @@ func (s *Server) typeDetail(pkgPath, name string) (templates.TypeDetailView, boo
 		Kind:    string(t.Kind),
 	}
 	for _, f := range t.Fields {
-		d.Fields = append(d.Fields, templates.FieldView{Name: f.Name, Type: f.Type, Tag: f.Tag, Anonymous: f.Anonymous})
+		d.Fields = append(d.Fields, templates.FieldInfoView{Name: f.Name, Type: f.Type, Tag: f.Tag, Anonymous: f.Anonymous})
 	}
 	for _, m := range t.Methods {
 		d.Methods = append(d.Methods, templates.MethodView{Name: m.Name, Signature: m.Signature, PointerReceiver: m.PointerReceiver})
@@ -172,7 +244,7 @@ func (s *Server) handleClasses(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.ClassesPage(packages, selected).Render(r.Context(), w); err != nil {
-		fmt.Fprintf(os.Stderr, "codebrowser: render classes: %v\n", err)
+		fmt.Fprintf(os.Stderr, "jarvisapp: render classes: %v\n", err)
 	}
 }
 
@@ -185,7 +257,7 @@ func (s *Server) handleClassDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.TypeDetail(d).Render(r.Context(), w); err != nil {
-		fmt.Fprintf(os.Stderr, "codebrowser: render detail: %v\n", err)
+		fmt.Fprintf(os.Stderr, "jarvisapp: render detail: %v\n", err)
 	}
 }
 
@@ -224,7 +296,7 @@ func (s *Server) categoryView(pkg string) (templates.TestCategoryView, bool) {
 func (s *Server) handleTests(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.TestsPage(s.categoryViews()).Render(r.Context(), w); err != nil {
-		fmt.Fprintf(os.Stderr, "codebrowser: render tests: %v\n", err)
+		fmt.Fprintf(os.Stderr, "jarvisapp: render tests: %v\n", err)
 	}
 }
 
@@ -232,8 +304,7 @@ func (s *Server) handleTests(w http.ResponseWriter, r *http.Request) {
 //   - aucun paramètre -> tout le module
 //   - ?pkg=... -> uniquement ce package (une catégorie)
 //   - ?pkg=...&name=... -> un seul test
-//   - ?integration=1 -> ajoute -tags=integration (sinon tests unitaires
-//     uniquement, cohérent avec `make test` vs `make test-integration`)
+//   - ?integration=1 -> ajoute -tags=integration
 func (s *Server) handleTestsRun(w http.ResponseWriter, r *http.Request) {
 	pkg := r.URL.Query().Get("pkg")
 	name := r.URL.Query().Get("name")
@@ -278,7 +349,7 @@ func (s *Server) handleTestsRun(w http.ResponseWriter, r *http.Request) {
 		for _, row := range cat.Tests {
 			if row.Name == name {
 				if err := templates.TestRow(pkg, row).Render(r.Context(), w); err != nil {
-					fmt.Fprintf(os.Stderr, "codebrowser: render row: %v\n", err)
+					fmt.Fprintf(os.Stderr, "jarvisapp: render row: %v\n", err)
 				}
 				return
 			}
@@ -291,19 +362,17 @@ func (s *Server) handleTestsRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := templates.TestCategoryCard(cat).Render(r.Context(), w); err != nil {
-			fmt.Fprintf(os.Stderr, "codebrowser: render category: %v\n", err)
+			fmt.Fprintf(os.Stderr, "jarvisapp: render category: %v\n", err)
 		}
 	default:
 		if err := templates.TestCategories(s.categoryViews()).Render(r.Context(), w); err != nil {
-			fmt.Fprintf(os.Stderr, "codebrowser: render categories: %v\n", err)
+			fmt.Fprintf(os.Stderr, "jarvisapp: render categories: %v\n", err)
 		}
 	}
 }
 
 // recordResults met à jour le cache des derniers résultats connus à
-// partir d'une exécution de go test -json. Le nom de package retourné
-// par `go test -json` est le chemin d'import complet — la même clé que
-// testmap.Category.Package.
+// partir d'une exécution de go test -json.
 func (s *Server) recordResults(pkgResults []testrunner.PackageResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

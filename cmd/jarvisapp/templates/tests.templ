@@ -34,7 +34,9 @@ func statusClass(status string) string {
 	}
 }
 
-func statusLabel(status string) string {
+// testStatusLabel décrit le statut d'un test (à ne pas confondre avec
+// statusLabel de job.templ, qui décrit le statut d'un job).
+func testStatusLabel(status string) string {
 	switch status {
 	case "pass":
 		return "OK"
@@ -48,8 +50,8 @@ func statusLabel(status string) string {
 }
 
 templ TestsPage(categories []TestCategoryView) {
-	@Layout("Tests — Jarvis") {
-		<main class="tests-main">
+	@Layout("Jarvis — tests", "tests") {
+		<main class="two-pane">
 			<div class="detail">
 				<div class="summary-line">
 					<button
@@ -106,7 +108,7 @@ templ TestCategoryCard(cat TestCategoryView) {
 
 templ TestRow(pkg string, tr TestRowView) {
 	<div class={ "test-row", statusClass(tr.Status) }>
-		<span class="status-dot" title={ statusLabel(tr.Status) }></span>
+		<span class="status-dot" title={ testStatusLabel(tr.Status) }></span>
 		<span class="test-name">{ tr.Name }</span>
 		if tr.Integration {
 			<span class="tag tag-integration">integration</span>

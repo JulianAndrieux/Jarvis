@@ -2,6 +2,9 @@
 /bin/
 /jarvis
 
+# Copie locale des résultats (--out-dir), régénérée par jarvisapp/jarvis
+/data/
+
 # Go
 *.test
 *.out

@@ -14,7 +14,7 @@ type PackageSummary struct {
 	Types []TypeSummary
 }
 
-type FieldView struct {
+type FieldInfoView struct {
 	Name      string
 	Type      string
 	Tag       string
@@ -37,7 +37,7 @@ type TypeDetailView struct {
 	Name          string
 	Package       string
 	Kind          string
-	Fields        []FieldView
+	Fields        []FieldInfoView
 	Methods       []MethodView
 	Embeds        []RefView
 	EmbeddedBy    []RefView
@@ -50,8 +50,8 @@ func typeLink(pkg, name string) string {
 }
 
 templ ClassesPage(packages []PackageSummary, selected *TypeDetailView) {
-	@Layout("Classes — Jarvis") {
-		<main>
+	@Layout("Jarvis — classes", "classes") {
+		<main class="two-pane">
 			<div class="sidebar">
 				for _, pkg := range packages {
 					<details class="pkg-group" open?={ len(packages) <= 6 }>

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/JulianAndrieux/Jarvis/cmd/jarvisweb/templates"
+	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
 	"github.com/JulianAndrieux/Jarvis/internal/extraction"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )

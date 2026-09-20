@@ -1,6 +1,8 @@
-// Command jarvisweb expose le pipeline jarvis (triage -> parsing ->
-// extraction) derrière une interface web : upload d'un document,
-// traitement asynchrone, résultat affiché dès qu'il est prêt.
+// Command jarvisapp est l'application web unique de Jarvis : upload et
+// suivi de documents (le pipeline triage -> parsing -> extraction) et
+// navigateur de code/tests façon Smalltalk / Glamorous Toolkit, sur un
+// seul port. Remplace les deux anciens binaires cmd/jarvisweb et
+// cmd/codebrowser — voir CLAUDE.md, jalon 13.
 //
 // Les jobs (documents uploadés, statut, résultat) sont persistés dans
 // MongoDB (Atlas en production) — voir CLAUDE.md pour la portée de
@@ -18,6 +20,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
@@ -50,16 +53,17 @@ func main() {
 	mongoURI := flag.String("mongo-uri", "", "URI de connexion MongoDB (ex: Atlas) — stocke les jobs (document source, statut, résultat)")
 	mongoDB := flag.String("mongo-db", "jarvis", "Base MongoDB")
 	mongoCollection := flag.String("mongo-collection", "jobs", "Collection MongoDB pour les jobs")
+	moduleDir := flag.String("module-dir", "", "Racine du module Go à analyser pour le navigateur de code (vide = répertoire courant)")
 	flag.Parse()
 
 	if *vlmURL == "" || *vlmModel == "" {
-		log.Fatal("jarvisweb: --vlm-url et --vlm-model sont requis")
+		log.Fatal("jarvisapp: --vlm-url et --vlm-model sont requis")
 	}
 	if *llmURL == "" || *llmModel == "" {
-		log.Fatal("jarvisweb: --llm-url et --llm-model sont requis")
+		log.Fatal("jarvisapp: --llm-url et --llm-model sont requis")
 	}
 	if *mongoURI == "" {
-		log.Fatal("jarvisweb: --mongo-uri est requis (les jobs sont persistés dans MongoDB)")
+		log.Fatal("jarvisapp: --mongo-uri est requis (les jobs sont persistés dans MongoDB)")
 	}
 
 	registry := doctype.NewDefaultRegistry()
@@ -91,7 +95,7 @@ func main() {
 	defer cancel()
 	jobStore, err := webapp.NewMongoStore(connectCtx, *mongoURI, *mongoDB, *mongoCollection)
 	if err != nil {
-		log.Fatalf("jarvisweb: %v", err)
+		log.Fatalf("jarvisapp: %v", err)
 	}
 
 	jobs := webapp.NewJobManager(jobStore, runner, registry)
@@ -100,23 +104,43 @@ func main() {
 		jobs.OnFinish = persistJobLocally(*outDir)
 	}
 
-	srv := &Server{Jobs: jobs, Registry: registry}
+	dir := *moduleDir
+	if dir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			log.Fatalf("jarvisapp: répertoire courant : %v", err)
+		}
+		dir = wd
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		log.Fatalf("jarvisapp: chemin absolu de %s : %v", dir, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
+		log.Fatalf("jarvisapp: pas de go.mod dans %s (--module-dir doit pointer sur la racine du module) : %v", dir, err)
+	}
+
+	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir}
+	log.Printf("jarvisapp: analyse de %s...", dir)
+	if err := srv.Refresh(); err != nil {
+		log.Fatalf("jarvisapp: %v", err)
+	}
 
 	staticContent, err := fs.Sub(staticFS, "static")
 	if err != nil {
-		log.Fatalf("jarvisweb: static assets: %v", err)
+		log.Fatalf("jarvisapp: static assets: %v", err)
 	}
 
 	mux := srv.Routes()
 	mux.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticContent))))
 
-	log.Printf("jarvisweb: listening on http://%s (doc types: %v)", *addr, registry.Names())
-	log.Printf("jarvisweb: jobs -> mongodb %s/%s", *mongoDB, *mongoCollection)
+	log.Printf("jarvisapp: listening on http://%s (doc types: %v)", *addr, registry.Names())
+	log.Printf("jarvisapp: jobs -> mongodb %s/%s", *mongoDB, *mongoCollection)
 	if *outDir != "" {
-		log.Printf("jarvisweb: copie locale des résultats -> %s", *outDir)
+		log.Printf("jarvisapp: copie locale des résultats -> %s", *outDir)
 	}
 	if err := http.ListenAndServe(*addr, mux); err != nil {
-		log.Fatalf("jarvisweb: %v", err)
+		log.Fatalf("jarvisapp: %v", err)
 	}
 }
 
@@ -132,7 +156,7 @@ func persistJobLocally(outDir string) func(webapp.Job) {
 		hash := store.HashBytes(job.Content)
 		doc, pages := store.BuildRecords(hash, job.Filename, job.DocType, time.Now().UTC(), *job.Result)
 		if err := store.WriteRecords(outDir, doc, pages); err != nil {
-			fmt.Fprintf(os.Stderr, "jarvisweb: write records for %s: %v\n", job.Filename, err)
+			fmt.Fprintf(os.Stderr, "jarvisapp: write records for %s: %v\n", job.Filename, err)
 			return
 		}
 		entry := store.RunLogEntry{
@@ -151,7 +175,7 @@ func persistJobLocally(outDir string) func(webapp.Job) {
 			}
 		}
 		if err := store.AppendRunLog(outDir, hash, entry); err != nil {
-			fmt.Fprintf(os.Stderr, "jarvisweb: append run log for %s: %v\n", job.Filename, err)
+			fmt.Fprintf(os.Stderr, "jarvisapp: append run log for %s: %v\n", job.Filename, err)
 		}
 	}
 }

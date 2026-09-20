@@ -26,7 +26,8 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
   fuites accidentelles :**
   1. **Inférence** (VLM, LLM) : toujours locale, sans exception — voir
      "Setup local complet" plus bas.
-  2. **Interface web (`cmd/jarvisweb`, jalon 12) : les documents uploadés
+  2. **Interface web (`cmd/jarvisapp`, ex-`cmd/jarvisweb` avant la fusion
+     du jalon 13, exception ouverte au jalon 12) : les documents uploadés
      — PDF sources compris, pas seulement les résultats extraits — sont
      stockés dans MongoDB Atlas (cloud).** Décision explicite de
      l'utilisateur (élargit l'exception initiale, qui ne couvrait que les
@@ -222,23 +223,30 @@ tournant simultanément :
 - Pipeline complet sur une page scannée (triage → VLM → LLM) : ~80s de
   bout en bout.
 
-### Interface web (cmd/jarvisweb)
+### Application web unifiée (cmd/jarvisapp)
+**Un seul binaire, un seul port** — remplace depuis le jalon 13 les deux
+anciens binaires `cmd/jarvisweb` (upload/suivi) et `cmd/codebrowser`
+(navigateur de code/tests), fusionnés sous une nav commune (Upload ·
+Classes · Tests). Voir "État des jalons" plus bas pour le détail de la
+fusion, et "Atelier de code" pour le détail du navigateur de code/tests
+lui-même (moteurs inchangés par la fusion).
 ```
 # Une fois (regénère les templates après toute modif de .templ) :
 go install github.com/a-h/templ/cmd/templ@latest   # ajoute $(go env GOPATH)/bin au PATH
-make build-web
+make build-app
 
 # Les deux serveurs llama.cpp du setup ci-dessus doivent tourner
 # (VLM :8080, LLM :8081), puis (MONGO_URI = connexion Atlas, cf. jalon 12) :
-./bin/jarvisweb \
+./bin/jarvisapp \
   --vlm-url http://127.0.0.1:8080/v1 --vlm-model olmOCR-2-7B-1025 --vlm-model-version Q6_K \
   --llm-url http://127.0.0.1:8081/v1 --llm-model qwen3-8b --llm-model-version Q5_K_M \
   --mongo-uri "$MONGO_URI" \
   --out-dir ./data/results \
   --addr 127.0.0.1:8090
 
-# Puis ouvrir http://127.0.0.1:8090 — upload d'un PDF, résultat affiché
-# dès qu'il est prêt (poll HTMX automatique, pas de rechargement manuel).
+# Puis ouvrir http://127.0.0.1:8090 — Upload (upload d'un PDF, résultat
+# affiché dès qu'il est prêt, poll HTMX automatique), Classes/Tests
+# (navigateur de code, cf. "Atelier de code" plus bas).
 ```
 Flags utiles : `--mongo-uri` (**requis**, jalon 12 — les jobs, PDF source
 compris, sont persistés dans MongoDB), `--mongo-db`/`--mongo-collection`
@@ -246,9 +254,10 @@ compris, sont persistés dans MongoDB), `--mongo-db`/`--mongo-collection`
 traitement, vide = répertoire temporaire système), `--out-dir` (copie
 locale additionnelle facultative des résultats, comme pour `jarvis
 process` — MongoDB reste la source de vérité), `--dpi`/`--vlm-timeout`/
-`--llm-timeout` (mêmes défauts que la CLI). `make run-web` lance tout
-avec les valeurs par défaut du setup ci-dessus (`MONGO_URI` doit être
-exporté dans l'environnement).
+`--llm-timeout` (mêmes défauts que la CLI), `--module-dir` (racine du
+module pour le navigateur de code, vide = répertoire courant). `make
+run-app` lance tout avec les valeurs par défaut du setup ci-dessus
+(`MONGO_URI` doit être exporté dans l'environnement).
 
 **Hébergement plus tard :** le binaire est un serveur `net/http`
 standard. Pour un déploiement distant, pointer `--vlm-url`/`--llm-url`
@@ -668,9 +677,58 @@ spécifique à `localhost`.
     `jarvisweb` + lancement contre une URI Mongo injoignable : échoue
     immédiatement avec un message explicite plutôt qu'un timeout
     silencieux ou un crash.
+- **Jalon 13 — fusion en une seule application web (`cmd/jarvisapp`) :
+  fait.** Demandé explicitement par l'utilisateur, préalable à l'épopée
+  "ingestion automatique + bibliothèque de documents" (jalons 14+) :
+  "regrouper toutes les pages qu'on a créées d'une seule application
+  WEB" avant d'ajouter la suite.
+  - `cmd/jarvisweb` (upload/suivi, jalons 8-12) et `cmd/codebrowser`
+    (navigateur de code/tests, travail parallèle du jalon 12) retirés,
+    remplacés par `cmd/jarvisapp` : un seul binaire, un seul port
+    (`:8090`), une seule nav (Upload · Classes · Tests). Toute la
+    logique métier sous-jacente est réutilisée telle quelle — aucun
+    changement dans `internal/webapp`, `internal/codemap`,
+    `internal/testmap`, `internal/testrunner` : le jalon 13 est de la
+    plomberie de présentation, pas une réécriture.
+  - `cmd/jarvisapp/templates` fusionne les deux jeux de templates
+    (`layout.templ` commun, `upload.templ`+`job.templ` ex-jarvisweb,
+    `classes.templ`+`tests.templ` ex-codebrowser) sous un seul
+    `package templates` — deux collisions de noms révélées par le
+    compilateur en les rassemblant : `FieldView` (renommé
+    `FieldInfoView` côté classes, pour ne pas écraser le `FieldView`
+    d'un champ extrait côté job) et `statusLabel` (renommé
+    `testStatusLabel` côté tests, pour ne pas écraser le `statusLabel`
+    d'un statut de job).
+  - `Layout(title, active string)` : nouveau paramètre `active` pour
+    surligner l'onglet courant dans la nav (`header nav a.active`),
+    absent des deux layouts d'origine.
+  - CSS des deux anciens layouts fusionné dans un seul `<style>`, sans
+    doublon (`table`/`td,th`/`.muted`/`button` etc. étaient définis à
+    l'identique des deux côtés) ; le correctif lisibilité du jalon
+    "atelier de code" (`color-scheme: light` + couleur de texte
+    explicite, cf. plus bas) est repris pour l'ensemble de l'appli — la
+    page Upload utilisait encore l'ancien `color-scheme: light dark`
+    bugué, non corrigée jusqu'ici faute d'avoir été signalée.
+  - Testé : les tests HTTP de l'ex-`cmd/jarvisweb` portés tels quels
+    (upload, statut de job, poll). Nouveaux tests pour le câblage propre
+    à la fusion — pas une re-vérification des moteurs déjà testés en
+    isolation (`internal/codemap`, `internal/testmap`,
+    `internal/testrunner` ont leurs propres suites) : rendu de
+    `/classes` et `/classes/detail` à partir d'un `Model` injecté
+    directement (relation `Embeds` visible), rendu de `/tests` à partir
+    de `Category` injectées, et une vraie invocation de `go test -json`
+    sur un module synthétique via `POST /tests/run?pkg=...` pour valider
+    le cache de résultats (`resultKey`/`recordResults`).
+  - `go build ./...` + suite complète (`gofmt`, `go vet`, `go test
+    ./... -race -tags=integration`) verts.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement
+
+**Fusionné dans `cmd/jarvisapp` au jalon 13** — cette section décrit les
+moteurs (`internal/codemap`/`internal/testmap`/`internal/testrunner`),
+inchangés par la fusion ; pour l'usage, voir "Application web unifiée"
+plus haut.
 Demandé explicitement par l'utilisateur en parallèle du jalon 12 : "une
 page en local qui me permet de naviguer dans le code et dans les tests
 en mode Smalltalk / Glamorous Toolkit" — navigateur de classes (types,
@@ -706,15 +764,16 @@ touchée, pure analyse statique + exécution de `go test`.
   d'échec). Un échec de test n'est pas une erreur de `Run` (distingué
   via `*exec.ExitError`) — seul un échec de l'outillage lui-même
   (`go` introuvable, sortie illisible) en est une.
-- `cmd/codebrowser` : serveur `net/http` + `chi` + `templ` + `HTMX`,
-  même stack que `cmd/jarvisweb`. Le `Model` (types) et les `Category`
-  (tests) sont calculés une fois au démarrage puis mis en cache dans
-  `Server` (protégé par un `sync.RWMutex`) — `go/packages.Load` re-type-
-  check tout le module à chaque appel, trop lent pour le refaire à
-  chaque page vue. Bouton "↻ Rescanner" (`POST /refresh`) pour recalculer
-  explicitement après une modification du code. Les derniers résultats
-  de tests connus sont conservés à travers un rescan (rescanner le code
-  ne relance pas les tests).
+- Servi par `cmd/jarvisapp` (`GET /classes`, `GET /tests` — voir
+  "Application web unifiée" plus haut ; anciennement un binaire séparé
+  `cmd/codebrowser`, retiré au jalon 13). Le `Model` (types) et les
+  `Category` (tests) sont calculés une fois au démarrage puis mis en
+  cache dans `Server` (protégé par un `sync.RWMutex`) — `go/packages.Load`
+  re-type-check tout le module à chaque appel, trop lent pour le refaire
+  à chaque page vue. Bouton "↻ Rescanner le code" (`POST /refresh`) pour
+  recalculer explicitement après une modification du code. Les derniers
+  résultats de tests connus sont conservés à travers un rescan
+  (rescanner le code ne relance pas les tests).
   - `GET /classes` : liste des packages/types (barre latérale) + détail
     du type sélectionné (champs, méthodes, `Embeds`/`EmbeddedBy`,
     `Implements`/`ImplementedBy`, chacun cliquable en HTMX vers
@@ -726,20 +785,15 @@ touchée, pure analyse statique + exécution de `go test`.
     ajoutant `-tags=integration`) — tous via `POST /tests/run` avec
     `pkg`/`name`/`integration` en query, HTMX remplace uniquement le
     fragment concerné (une ligne, une carte, ou toute la liste).
-  - `--module-dir` (vide = répertoire courant), `--addr` (défaut
-    `127.0.0.1:8091`, distinct de `jarvisweb` sur `:8090`).
-- **Validé manuellement, bout en bout, serveur réel lancé en local** :
-  `GET /classes/detail?...name=DocumentRecord` affiche correctement
-  `RecordMeta` sous "Embed" (la relation d'héritage du jalon 9, visible
-  dans le navigateur) ; `POST /tests/run?pkg=...` (catégorie) et
-  `POST /tests/run?pkg=...&name=...` (test unique) exécutent vraiment
-  `go test` et renvoient un statut `pass` correct pour des tests connus
-  bons.
-- Usage :
-  ```
-  make run-codebrowser       # ou : make build-codebrowser && ./bin/codebrowser
-  # puis ouvrir http://127.0.0.1:8091 (redirige vers /classes)
-  ```
+- **Validé manuellement, bout en bout, serveur réel lancé en local**
+  (avant la fusion, sous l'ancien binaire `cmd/codebrowser` — mêmes
+  moteurs, comportement inchangé) : `GET /classes/detail?...
+  name=DocumentRecord` affiche correctement `RecordMeta` sous "Embed"
+  (la relation d'héritage du jalon 9, visible dans le navigateur) ;
+  `POST /tests/run?pkg=...` (catégorie) et `POST /tests/run?pkg=...
+  &name=...` (test unique) exécutent vraiment `go test` et renvoient un
+  statut `pass` correct pour des tests connus bons. Re-couvert par les
+  tests automatisés du jalon 13 (`cmd/jarvisapp/server_test.go`).
 
 ## Décisions tranchées
 - Granularité des résultats : **un JSON par page** (pas de fusion
