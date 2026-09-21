@@ -1061,6 +1061,56 @@ spécifique à `localhost`.
     `SearchText`, y compris document non classifié), `cmd/jarvisapp`
     (route `DELETE`, en-tête `HX-Redirect`, 404 sur id inconnu) + la
     validation réelle ci-dessus. Suite complète verte.
+- **Jalon 19 — quatre nouveaux types de document : fait, validé
+  end-to-end.** Proposition d'une liste de candidats (facture n'étant
+  qu'un premier exemple, cf. brief initial "pièce d'identité,
+  correspondance, document technique, etc."), l'utilisateur en a choisi
+  quatre — délibérément un sous-ensemble qui inclut le cas le plus
+  difficile pour la classification automatique (jalon 15) : deux types
+  dont les champs ressemblent beaucoup à Facture.
+  - `internal/doctype` : `Devis`, `BonCommande`, `PieceIdentite`,
+    `Correspondance` (un fichier chacun, même forme que `Facture`) —
+    aucun changement à `internal/schema` ni `internal/extraction`,
+    exactement comme promis par la conception du registre depuis le
+    jalon 4.
+    - `Devis{Numero, Fournisseur, MontantTotal, DateValidite}`
+    - `BonCommande{Numero, Fournisseur, Client, MontantTotal}`
+    - `PieceIdentite{Nom, Prenom, DateNaissance, NumeroDocument,
+      DateExpiration}`
+    - `Correspondance{Expediteur, Destinataire, Date, Objet}`
+  - **Descriptions volontairement écrites pour se distinguer
+    explicitement** (le texte vu par le LLM de classification) :
+    Facture = "paiement pour des biens/services **déjà livrés**",
+    Devis = "proposition de prix **avant achat, pas encore payée**",
+    BonCommande = "émis **par le client**, avant facturation". Sans
+    cette distinction explicite dans les descriptions, la classification
+    aurait pu confondre les trois (champs quasi identiques : numéro,
+    fournisseur, montant).
+  - **Un test existant s'est révélé brittle** en ajoutant ces types :
+    `TestPipeline_RunAuto_ClassifiesThenExtracts` présumait que le
+    registre par défaut ne contenait qu'un seul type (`facture`) —
+    corrigé pour vérifier seulement que le candidat facture figure bien
+    parmi les candidats envoyés au classifieur, sans présumer du nombre
+    total. Un rappel utile : les tests qui dépendent de
+    `doctype.NewDefaultRegistry()` ne doivent jamais présumer de sa
+    taille exacte, elle grandira encore.
+  - **Validé en conditions réelles, les quatre types, y compris le cas
+    difficile** : quatre documents synthétiques générés pour
+    l'occasion (mêmes primitives que `scripts/gen_fixtures.py`, non
+    ajoutés au corpus permanent) — un devis, un bon de commande, une
+    pièce d'identité, une correspondance. **Classification correcte à
+    chaque fois** (`devis` confiance 1.00, `bon_commande` confiance
+    1.00 — le devis et le bon de commande n'ont pas été confondus
+    l'un avec l'autre ni avec facture — `piece_identite` confiance
+    1.00, `correspondance` confiance 0.95), **extraction exacte pour
+    chaque champ** des quatre types, aucune hallucination. Jobs de
+    test supprimés de la collection `jobs` réelle après coup.
+  - Testé : un fichier de test par type dans `internal/doctype` (miroir
+    de `facture_test.go` : registration présente + description
+    non-vide + schéma dérive sans erreur avec les propriétés
+    attendues) + la validation réelle ci-dessus (le vrai test de ce
+    jalon — la classification en conditions réelles, pas seulement la
+    dérivation de schéma).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

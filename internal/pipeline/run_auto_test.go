@@ -47,8 +47,20 @@ func TestPipeline_RunAuto_ClassifiesThenExtracts(t *testing.T) {
 	if len(got.Extraction) != 1 || got.Extraction[0].Failed {
 		t.Fatalf("Extraction = %+v, want 1 successful result", got.Extraction)
 	}
-	if len(classifier.GotCandidates) != 1 || classifier.GotCandidates[0].Name != "facture" {
-		t.Errorf("classifier.GotCandidates = %+v, want the registry's facture candidate", classifier.GotCandidates)
+	// Ne présume pas du nombre total de types enregistrés (le registre
+	// par défaut en gagne au fil des jalons) : vérifie seulement que le
+	// candidat facture y figure bien, avec sa description.
+	foundFacture := false
+	for _, c := range classifier.GotCandidates {
+		if c.Name == "facture" {
+			foundFacture = true
+			if c.Description == "" {
+				t.Errorf("facture candidate has no description")
+			}
+		}
+	}
+	if !foundFacture {
+		t.Errorf("classifier.GotCandidates = %+v, want it to include the registry's facture candidate", classifier.GotCandidates)
 	}
 }
 
