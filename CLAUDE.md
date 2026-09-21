@@ -1111,6 +1111,65 @@ spécifique à `localhost`.
     attendues) + la validation réelle ci-dessus (le vrai test de ce
     jalon — la classification en conditions réelles, pas seulement la
     dérivation de schéma).
+- **Jalon 20 — jobs orphelins après redémarrage + timestamp de début :
+  fait, validé end-to-end.** Déclenché par un vrai incident signalé par
+  l'utilisateur ("j'ai uploadé un nouveau document, et c'est vraiment
+  très long !").
+  - **Root cause trouvée en investiguant l'incident réel** (pas en
+    relecture) : le document en question (`Devis 160-2026.pdf`, un vrai
+    devis de l'utilisateur — bon test du jalon 19 en usage réel) était
+    bloqué `status: running` avec un `finished_at` **déjà dans le
+    passé** — signe d'une ré-extraction (`Reprocess`, jalon 17)
+    interrompue par un redémarrage du serveur (probable pendant mes
+    propres cycles de rebuild du jalon 19) : la goroutine qui aurait dû
+    la terminer appartenait à l'ancien process, disparue avec lui.
+    `JobManager` ne persiste aucun état de reprise, donc un tel job
+    reste bloqué "running" **pour toujours**, avec un fragment qui
+    continue de sonder dans le vide — ce que l'utilisateur percevait
+    comme "très long" était en fait un job qui n'allait jamais aboutir.
+    Corrigé pour ce document précis en relançant manuellement une
+    ré-extraction (résultat correct obtenu : `devis`, tous les champs
+    exacts) avant de corriger la cause.
+  - **`ListQuery.Status Status`** (nouveau filtre, `FakeStore` +
+    `MongoStore`) permet de retrouver les jobs dans un état exact.
+  - **`JobManager.RecoverOrphaned(ctx) (int, error)`** — appelé une
+    fois au démarrage de `cmd/jarvisapp` (avant d'accepter des
+    requêtes) : tout job encore `StatusPending`/`StatusRunning` à ce
+    moment-là appartenait par construction à un process précédent (ce
+    process vient de démarrer) et ne peut jamais aboutir — marqué
+    `StatusFailed` avec un message explicite ("interrompu par un
+    redémarrage du serveur — relance-le"), plutôt que laissé bloqué
+    silencieusement.
+  - **`Job.StartedAt`** (nouveau champ, distinct de `CreatedAt`) :
+    l'instant où le traitement **en cours** a commencé, réinitialisé à
+    chaque tentative (`Submit` et `Reprocess` le renseignent
+    séparément) — répond directement à "il faudrait ajouter un
+    timestamp de début". Affiché dans `job.templ` : "démarré à
+    HH:MM:SS" pendant pending/running, "démarré à HH:MM:SS, terminé en
+    X.Xs" une fois terminé (succès, échec, ou type non reconnu) — donne
+    enfin un repère visible pour remarquer un job resté "running" trop
+    longtemps, exactement ce qui manquait pour ce diagnostic-ci.
+  - **Validé en conditions réelles** : un job "orphelin" simulé
+    (inséré directement en base avec `status: running`) a été détecté
+    et marqué en échec dès le démarrage suivant de `jarvisapp`, avec le
+    message explicatif visible sur sa page ; un vrai upload a bien
+    affiché "démarré à HH:MM:SS" pendant le traitement puis "démarré à
+    HH:MM:SS, terminé en 26s" une fois fini. Données de test supprimées
+    de la collection `jobs` réelle après coup.
+  - Testé : `internal/webapp` (`FakeStore.List` filtré par statut exact,
+    `JobManager.RecoverOrphaned` — jobs pending/running marqués échec, done
+    laissé intact, aucun orphelin = 0 ; `Submit`/`Reprocess` renseignent
+    `StartedAt`, un `Reprocess` lui donne une valeur fraîche et
+    postérieure à la première tentative), `internal/webapp/
+    mongo_store_test.go` (réel : `List` filtré par statut) + la
+    validation réelle ci-dessus.
+  - **Analyse de la rapidité demandée séparément** (piste principale :
+    paralléliser le traitement par page, VLM et LLM, puisque
+    `llama-server` expose déjà 4 slots parallèles alors que
+    `internal/parsing.Parser.ParsePages` et `internal/extraction.
+    Extractor.ExtractPages` traitent les pages séquentiellement) —
+    proposée à l'utilisateur, pas encore implémentée : voir échange en
+    dehors de ce document, à documenter ici si retenue.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

@@ -93,6 +93,7 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 	update := bson.M{"$set": bson.M{
 		"status":      string(job.Status),
 		"doc_type":    job.DocType,
+		"started_at":  job.StartedAt,
 		"finished_at": job.FinishedAt,
 		"result_json": resultJSON,
 		"err":         job.Err,
@@ -145,6 +146,9 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 			bson.M{"search_text": re},
 		}
 	}
+	if q.Status != "" {
+		filter["status"] = string(q.Status)
+	}
 
 	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit)
 	cur, err := s.Collection.Find(ctx, filter, opts)
@@ -185,6 +189,7 @@ type mongoJobDoc struct {
 	Content    []byte    `bson:"content"`
 	Status     string    `bson:"status"`
 	CreatedAt  time.Time `bson:"created_at"`
+	StartedAt  time.Time `bson:"started_at,omitempty"`
 	FinishedAt time.Time `bson:"finished_at,omitempty"`
 	ResultJSON []byte    `bson:"result_json,omitempty"`
 	Err        string    `bson:"err,omitempty"`
@@ -196,7 +201,7 @@ func jobToDoc(job Job) (mongoJobDoc, error) {
 	doc := mongoJobDoc{
 		ID: job.ID, DocType: job.DocType, Filename: job.Filename,
 		Content: job.Content, Status: string(job.Status),
-		CreatedAt: job.CreatedAt, FinishedAt: job.FinishedAt, Err: job.Err,
+		CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, FinishedAt: job.FinishedAt, Err: job.Err,
 		Tags: job.Tags, SearchText: job.SearchText,
 	}
 	if job.Result != nil {
@@ -213,7 +218,7 @@ func docToJob(doc mongoJobDoc) (Job, error) {
 	job := Job{
 		ID: doc.ID, DocType: doc.DocType, Filename: doc.Filename,
 		Content: doc.Content, Status: Status(doc.Status),
-		CreatedAt: doc.CreatedAt, FinishedAt: doc.FinishedAt, Err: doc.Err,
+		CreatedAt: doc.CreatedAt, StartedAt: doc.StartedAt, FinishedAt: doc.FinishedAt, Err: doc.Err,
 		Tags: doc.Tags, SearchText: doc.SearchText,
 	}
 	if len(doc.ResultJSON) > 0 {

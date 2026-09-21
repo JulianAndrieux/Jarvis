@@ -207,6 +207,43 @@ func TestMongoStore_List_FiltersBySearchText(t *testing.T) {
 	}
 }
 
+func TestMongoStore_List_FiltersByExactStatus(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	suffix := time.Now().Format("20060102150405.000000")
+
+	running := Job{ID: "test-status-running-" + suffix, Filename: "en-cours.pdf", Status: StatusRunning, CreatedAt: time.Now()}
+	done := Job{ID: "test-status-done-" + suffix, Filename: "termine.pdf", Status: StatusDone, CreatedAt: time.Now()}
+	for _, j := range []Job{running, done} {
+		if _, err := store.Create(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+		defer cleanupJob(t, store, j.ID)
+	}
+
+	// Filtré ensuite aux seuls ID de ce test pour ignorer les données
+	// réelles éventuellement déjà "running"/"done" dans jobs_test.
+	got, err := store.List(ctx, ListQuery{Status: StatusRunning})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	foundRunning, foundDone := false, false
+	for _, j := range got {
+		if j.ID == running.ID {
+			foundRunning = true
+		}
+		if j.ID == done.ID {
+			foundDone = true
+		}
+	}
+	if !foundRunning {
+		t.Errorf("List(Status=running) did not find the running job")
+	}
+	if foundDone {
+		t.Errorf("List(Status=running) found the done job, want it excluded")
+	}
+}
+
 func TestMongoStore_Delete_RemovesJob(t *testing.T) {
 	store := newTestMongoStore(t)
 	ctx := context.Background()

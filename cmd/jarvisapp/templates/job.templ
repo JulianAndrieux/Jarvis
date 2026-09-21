@@ -2,9 +2,32 @@ package templates
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
+
+// formatStarted formate l'instant de début du traitement en cours
+// (Job.StartedAt) — affiché pendant pending/running pour répondre à
+// "combien de temps est-ce en train de tourner ?" (jalon 20 : un vrai
+// job resté bloqué "running" après un redémarrage du serveur n'avait
+// jusqu'ici aucun repère visible pour le remarquer).
+func formatStarted(job webapp.Job) string {
+	if job.StartedAt.IsZero() {
+		return "en attente de démarrage"
+	}
+	return "démarré à " + job.StartedAt.Format("15:04:05")
+}
+
+// formatDuration décrit le temps de traitement d'un job terminé — "" si
+// StartedAt n'est pas renseigné (job créé avant le jalon 20, ou jamais
+// vraiment démarré).
+func formatDuration(job webapp.Job) string {
+	if job.StartedAt.IsZero() {
+		return ""
+	}
+	return fmt.Sprintf("démarré à %s, terminé en %s", job.StartedAt.Format("15:04:05"), job.FinishedAt.Sub(job.StartedAt).Round(100*time.Millisecond))
+}
 
 // FieldView est la vue d'un champ extrait (schema.Field aplati), prête à
 // afficher — construite par cmd/jarvisapp à partir du JSON brut, pour ne
@@ -89,17 +112,20 @@ templ JobFragment(job webapp.Job, view ResultView) {
 				<span class="spinner"></span>
 				{ statusLabel(job.Status) } — { job.Filename }
 			</p>
+			<p class="muted">{ formatStarted(job) }</p>
 			@persistedNote(job.ID)
 		</div>
 	} else if job.Status == webapp.StatusFailed {
 		<div id={ "job-" + job.ID } class="card">
 			<p class="status-failed">Échec — { job.Filename }</p>
 			<div class="error-box">{ job.Err }</div>
+			<p class="muted">{ formatDuration(job) }</p>
 			@persistedNote(job.ID)
 		</div>
 	} else if view.DocType == "" {
 		<div id={ "job-" + job.ID } class="card">
 			<p class="status-done">Terminé — { job.Filename }</p>
+			<p class="muted">{ formatDuration(job) }</p>
 			<p class="status-pending">
 				⚠ Aucun type de document reconnu (confiance { fmt.Sprintf("%.2f", view.ClassificationConfidence) }) —
 				pas d'extraction possible. Le document reste enregistré tel quel.
@@ -119,6 +145,7 @@ templ JobFragment(job webapp.Job, view ResultView) {
 			<p class="muted">
 				Triage : score { fmt.Sprintf("%.2f", view.TriageScore) }, couche texte native { yesNo(view.HasTextLayer) }
 			</p>
+			<p class="muted">{ formatDuration(job) }</p>
 			@persistedNote(job.ID)
 			<div class="merged-summary">
 				<h3>Résumé document (fusion de toutes les pages)</h3>

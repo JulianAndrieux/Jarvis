@@ -116,6 +116,17 @@ func main() {
 		jobs.OnFinish = persistJobLocally(*outDir)
 	}
 
+	// Tout job encore "pending"/"running" ici appartenait forcément à un
+	// process précédent (ce process vient de démarrer) — il ne peut par
+	// construction jamais aboutir, cf. CLAUDE.md jalon 20 (incident réel
+	// : un job restait bloqué "running" pour toujours après un
+	// redémarrage pendant son traitement).
+	if n, err := jobs.RecoverOrphaned(context.Background()); err != nil {
+		log.Printf("jarvisapp: récupération des jobs orphelins : %v", err)
+	} else if n > 0 {
+		log.Printf("jarvisapp: %d job(s) laissé(s) en cours par un précédent démarrage, marqué(s) en échec", n)
+	}
+
 	if *watchDir != "" {
 		w := &watch.Watcher{
 			Dir:      *watchDir,

@@ -15,6 +15,10 @@ type ListQuery struct {
 	// sous-chaîne (insensible à la casse) — la barre de recherche de la
 	// bibliothèque de documents.
 	Search string
+	// Status, si non vide, ne retient que les jobs dans cet état exact —
+	// utilisé par JobManager.RecoverOrphaned (jalon 20) pour retrouver
+	// les jobs laissés "pending"/"running" par un process précédent.
+	Status Status
 	// Limit : 0 -> DefaultListLimit.
 	Limit int
 }

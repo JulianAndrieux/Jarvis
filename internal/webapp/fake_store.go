@@ -66,6 +66,9 @@ func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 
 	matched := make([]Job, 0, len(s.jobs))
 	for _, j := range s.jobs {
+		if q.Status != "" && j.Status != q.Status {
+			continue
+		}
 		if search == "" || jobMatchesSearch(j, search) {
 			matched = append(matched, j)
 		}

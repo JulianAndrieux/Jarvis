@@ -110,7 +110,10 @@ func TestJobManager_Submit_StartsPendingThenRunning(t *testing.T) {
 	}
 
 	<-started // le runner a bien été invoqué de façon asynchrone
-	waitForStatus(t, m, job.ID, StatusRunning)
+	running := waitForStatus(t, m, job.ID, StatusRunning)
+	if running.StartedAt.IsZero() {
+		t.Error("running.StartedAt is zero, want it set when processing starts")
+	}
 }
 
 func TestJobManager_Submit_MaterializesContentForRunner(t *testing.T) {
@@ -312,6 +315,37 @@ func TestJobManager_Reprocess_RunsWithGivenTypeAndUpdatesDocType(t *testing.T) {
 	}
 }
 
+func TestJobManager_Reprocess_SetsFreshStartedAt(t *testing.T) {
+	runner := &fakeRunner{result: pipeline.Result{Path: "somewhere", DocType: "facture"}}
+	m := newTestJobManager(runner)
+
+	job, err := m.Submit(context.Background(), "doc.pdf", []byte("content"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRun := waitForStatus(t, m, job.ID, StatusDone)
+	firstStartedAt := firstRun.StartedAt
+	if firstStartedAt.IsZero() {
+		t.Fatal("firstRun.StartedAt is zero, want it set")
+	}
+
+	time.Sleep(2 * time.Millisecond) // garantit un StartedAt strictement postérieur
+
+	proceed := make(chan struct{})
+	runner.proceed = proceed
+	runner.started = make(chan struct{})
+	defer close(proceed)
+
+	if err := m.Reprocess(context.Background(), job.ID, "facture"); err != nil {
+		t.Fatal(err)
+	}
+	<-runner.started
+	running := waitForStatus(t, m, job.ID, StatusRunning)
+	if !running.StartedAt.After(firstStartedAt) {
+		t.Errorf("reprocess StartedAt = %v, want it after the first run's StartedAt (%v)", running.StartedAt, firstStartedAt)
+	}
+}
+
 func TestJobManager_Reprocess_UnknownJobID_ReturnsError(t *testing.T) {
 	m := newTestJobManager(&fakeRunner{})
 
@@ -418,5 +452,70 @@ func TestJobManager_Delete_UnknownID_ReturnsError(t *testing.T) {
 	err := m.Delete(context.Background(), "does-not-exist")
 	if err == nil {
 		t.Fatal("Delete() error = nil, want non-nil for an unknown job id")
+	}
+}
+
+// --- RecoverOrphaned (jalon 20) ---
+//
+// Un job encore "pending"/"running" au démarrage d'un nouveau process ne
+// peut par construction jamais aboutir : la goroutine qui l'aurait
+// terminé appartenait à l'ancien process, disparue avec lui (Submit ne
+// persiste aucun état de reprise). RecoverOrphaned est appelé une fois
+// au démarrage pour les faire échouer explicitement plutôt que de les
+// laisser bloqués indéfiniment à sonder dans le vide.
+
+func TestJobManager_RecoverOrphaned_MarksPendingAndRunningJobsAsFailed(t *testing.T) {
+	store := NewFakeStore()
+	ctx := context.Background()
+	_, _ = store.Create(ctx, Job{ID: "running-job", Status: StatusRunning, CreatedAt: time.Now()})
+	_, _ = store.Create(ctx, Job{ID: "pending-job", Status: StatusPending, CreatedAt: time.Now()})
+	_, _ = store.Create(ctx, Job{ID: "done-job", Status: StatusDone, CreatedAt: time.Now()})
+
+	m := NewJobManager(store, &fakeRunner{})
+	n, err := m.RecoverOrphaned(ctx)
+	if err != nil {
+		t.Fatalf("RecoverOrphaned() error = %v, want nil", err)
+	}
+	if n != 2 {
+		t.Errorf("RecoverOrphaned() = %d, want 2", n)
+	}
+
+	for _, id := range []string{"running-job", "pending-job"} {
+		job, ok, err := store.Get(ctx, id)
+		if err != nil || !ok {
+			t.Fatalf("Get(%s) = %+v, %v, %v", id, job, ok, err)
+		}
+		if job.Status != StatusFailed {
+			t.Errorf("job %s Status = %q, want failed", id, job.Status)
+		}
+		if job.Err == "" {
+			t.Errorf("job %s Err is empty, want an explanatory message", id)
+		}
+		if job.FinishedAt.IsZero() {
+			t.Errorf("job %s FinishedAt is zero, want it set", id)
+		}
+	}
+
+	done, ok, err := store.Get(ctx, "done-job")
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if done.Status != StatusDone {
+		t.Errorf("done-job Status = %q, want it untouched (done)", done.Status)
+	}
+}
+
+func TestJobManager_RecoverOrphaned_NoOrphans_ReturnsZero(t *testing.T) {
+	store := NewFakeStore()
+	ctx := context.Background()
+	_, _ = store.Create(ctx, Job{ID: "done-job", Status: StatusDone, CreatedAt: time.Now()})
+
+	m := NewJobManager(store, &fakeRunner{})
+	n, err := m.RecoverOrphaned(ctx)
+	if err != nil {
+		t.Fatalf("RecoverOrphaned() error = %v, want nil", err)
+	}
+	if n != 0 {
+		t.Errorf("RecoverOrphaned() = %d, want 0", n)
 	}
 }

@@ -35,12 +35,20 @@ const (
 // Result n'est renseigné que si Status == StatusDone ; Err seulement si
 // Status == StatusFailed.
 type Job struct {
-	ID         string
-	DocType    string
-	Filename   string
-	Content    []byte
-	Status     Status
-	CreatedAt  time.Time
+	ID        string
+	DocType   string
+	Filename  string
+	Content   []byte
+	Status    Status
+	CreatedAt time.Time
+	// StartedAt est l'instant où le traitement EN COURS a commencé —
+	// distinct de CreatedAt (l'upload initial) : un job relancé
+	// manuellement (Reprocess, jalon 17) garde son CreatedAt d'origine,
+	// mais StartedAt est réinitialisé à chaque nouvelle tentative.
+	// Répond à la demande "un timestamp de début" (jalon 20) — sans lui,
+	// rien ne dit depuis quand le traitement affiché est réellement en
+	// cours, en particulier après une ré-extraction.
+	StartedAt  time.Time
 	FinishedAt time.Time
 	Result     *pipeline.Result
 	Err        string
@@ -127,6 +135,7 @@ func (m *JobManager) run(job Job) {
 	ctx := context.Background()
 
 	job.Status = StatusRunning
+	job.StartedAt = time.Now()
 	if err := m.store.Update(ctx, job); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: update job %s to running: %v\n", job.ID, err)
 	}
@@ -196,6 +205,36 @@ func (m *JobManager) Delete(ctx context.Context, id string) error {
 	return m.store.Delete(ctx, id)
 }
 
+// RecoverOrphaned marque en échec tout job resté StatusPending ou
+// StatusRunning — trouvé au redémarrage (jalon 20), après un incident
+// réel où un job restait bloqué "running" pour toujours : la goroutine
+// qui l'aurait terminé appartenait à un process précédent, disparue
+// avec lui. Aucun état de reprise n'est persisté, donc ces jobs ne
+// peuvent par construction jamais aboutir — les laisser tels quels
+// affiche un fragment qui sonde indéfiniment dans le vide plutôt qu'un
+// message actionnable. Retourne le nombre de jobs récupérés, pour le
+// journaliser au démarrage.
+func (m *JobManager) RecoverOrphaned(ctx context.Context) (int, error) {
+	n := 0
+	for _, status := range []Status{StatusRunning, StatusPending} {
+		jobs, err := m.store.List(ctx, ListQuery{Status: status, Limit: DefaultListLimit})
+		if err != nil {
+			return n, fmt.Errorf("webapp: recover orphaned (%s): %w", status, err)
+		}
+		for _, job := range jobs {
+			job.Status = StatusFailed
+			job.Err = "traitement interrompu par un redémarrage du serveur — relance-le (changer le type relance l'extraction)"
+			job.FinishedAt = time.Now()
+			if err := m.store.Update(ctx, job); err != nil {
+				fmt.Fprintf(os.Stderr, "webapp: recover orphaned job %s: %v\n", job.ID, err)
+				continue
+			}
+			n++
+		}
+	}
+	return n, nil
+}
+
 // List retourne les jobs correspondant à q (bibliothèque de documents,
 // jalon 17) — délègue directement à Store.List.
 func (m *JobManager) List(ctx context.Context, q ListQuery) ([]Job, error) {
@@ -236,6 +275,7 @@ func (m *JobManager) Reprocess(ctx context.Context, id, docType string) error {
 	}
 
 	job.Status = StatusRunning
+	job.StartedAt = time.Now()
 	if err := m.store.Update(ctx, job); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: update job %s to running: %v\n", job.ID, err)
 	}

@@ -139,6 +139,22 @@ func TestFakeStore_List_FiltersBySearchOnSearchText(t *testing.T) {
 	}
 }
 
+func TestFakeStore_List_FiltersByExactStatus(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	_, _ = s.Create(ctx, Job{ID: "1", Status: StatusRunning})
+	_, _ = s.Create(ctx, Job{ID: "2", Status: StatusDone})
+	_, _ = s.Create(ctx, Job{ID: "3", Status: StatusPending})
+
+	got, err := s.List(ctx, ListQuery{Status: StatusRunning})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "1" {
+		t.Errorf("List(Status=running) = %+v, want just job 1", got)
+	}
+}
+
 func TestFakeStore_Delete_RemovesJob(t *testing.T) {
 	s := NewFakeStore()
 	ctx := context.Background()
