@@ -10,8 +10,10 @@ const DefaultListLimit = 200
 // ListQuery filtre/borne un appel à Store.List.
 type ListQuery struct {
 	// Search, si non vide, ne retient que les jobs dont Filename,
-	// DocType ou un des Tags contient cette sous-chaîne (insensible à la
-	// casse) — la barre de recherche de la bibliothèque de documents.
+	// DocType, un des Tags, ou SearchText (le texte du document —
+	// jalon 18, "chercher dans les documents") contient cette
+	// sous-chaîne (insensible à la casse) — la barre de recherche de la
+	// bibliothèque de documents.
 	Search string
 	// Limit : 0 -> DefaultListLimit.
 	Limit int
@@ -41,4 +43,8 @@ type Store interface {
 	// plus ancien (CreatedAt décroissant) — la bibliothèque de documents,
 	// jalon 17.
 	List(ctx context.Context, q ListQuery) ([]Job, error)
+	// Delete supprime définitivement le job id — jalon 18. Une erreur
+	// est retournée si id n'existe pas (jamais un succès silencieux sur
+	// rien à supprimer).
+	Delete(ctx context.Context, id string) error
 }

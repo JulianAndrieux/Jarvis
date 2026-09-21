@@ -124,6 +124,49 @@ func TestFakeStore_List_FiltersBySearchOnFilenameDocTypeAndTags_CaseInsensitive(
 	}
 }
 
+func TestFakeStore_List_FiltersBySearchOnSearchText(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	_, _ = s.Create(ctx, Job{ID: "1", Filename: "doc1.pdf", SearchText: "Contient le mot Kangourou dans le texte"})
+	_, _ = s.Create(ctx, Job{ID: "2", Filename: "doc2.pdf", SearchText: "Rien à voir"})
+
+	got, err := s.List(ctx, ListQuery{Search: "kangourou"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "1" {
+		t.Errorf("search by content = %+v, want just job 1", got)
+	}
+}
+
+func TestFakeStore_Delete_RemovesJob(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	if _, err := s.Create(ctx, Job{ID: "1", Filename: "doc.pdf"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Delete(ctx, "1"); err != nil {
+		t.Fatalf("Delete() error = %v, want nil", err)
+	}
+
+	_, ok, err := s.Get(ctx, "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Error("Get() ok = true after Delete(), want false")
+	}
+}
+
+func TestFakeStore_Delete_UnknownID_ReturnsError(t *testing.T) {
+	s := NewFakeStore()
+	err := s.Delete(context.Background(), "does-not-exist")
+	if err == nil {
+		t.Fatal("Delete() error = nil, want non-nil for an unknown job id")
+	}
+}
+
 func TestFakeStore_List_RespectsLimit(t *testing.T) {
 	s := NewFakeStore()
 	ctx := context.Background()

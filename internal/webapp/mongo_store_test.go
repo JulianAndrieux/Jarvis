@@ -180,3 +180,60 @@ func TestMongoStore_List_FiltersBySearchAndSortsByDateDescending(t *testing.T) {
 		t.Errorf("filtered+ordered ids = %v, want [%s %s] (recent facture, ancien facture — other excluded, newest first)", ids, newer.ID, older.ID)
 	}
 }
+
+func TestMongoStore_List_FiltersBySearchText(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	id := "test-searchtext-" + time.Now().Format("20060102150405.000000")
+
+	job := Job{ID: id, Filename: "sans-mot-cle.pdf", CreatedAt: time.Now(), SearchText: "Contient le mot Kangourou dans le texte du document"}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupJob(t, store, id)
+
+	got, err := store.List(ctx, ListQuery{Search: "kangourou"})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	found := false
+	for _, j := range got {
+		if j.ID == id {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("List(Search=kangourou) did not find the job whose SearchText contains it")
+	}
+}
+
+func TestMongoStore_Delete_RemovesJob(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	id := "test-delete-" + time.Now().Format("20060102150405.000000")
+
+	if _, err := store.Create(ctx, Job{ID: id, Filename: "a-supprimer.pdf", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Delete(ctx, id); err != nil {
+		t.Fatalf("Delete() error = %v, want nil", err)
+	}
+
+	_, ok, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Error("Get() ok = true after Delete(), want false")
+	}
+}
+
+func TestMongoStore_Delete_UnknownID_ReturnsError(t *testing.T) {
+	store := newTestMongoStore(t)
+
+	err := store.Delete(context.Background(), "does-not-exist-in-atlas")
+	if err == nil {
+		t.Fatal("Delete() error = nil, want non-nil for an unknown job id")
+	}
+}

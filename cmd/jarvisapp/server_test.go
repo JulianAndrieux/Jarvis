@@ -548,6 +548,47 @@ func TestHandleDocumentReprocess_StartsRunningAndReturnsPollingFragment(t *testi
 	}
 }
 
+func TestHandleDocumentDelete_RemovesDocumentAndRedirects(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("x"))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	id := extractJobID(t, rec.Body.String())
+
+	req2 := httptest.NewRequest(http.MethodDelete, "/documents/"+id, nil)
+	rec2 := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec2.Code, rec2.Body.String())
+	}
+	if rec2.Header().Get("HX-Redirect") != "/documents" {
+		t.Errorf("HX-Redirect = %q, want /documents", rec2.Header().Get("HX-Redirect"))
+	}
+
+	_, ok, err := s.Jobs.Get(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Error("document still exists after DELETE, want it removed")
+	}
+}
+
+func TestHandleDocumentDelete_UnknownID_ReturnsNotFound(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/documents/does-not-exist", nil)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
 // waitForJobDone poll /jobs/{id} jusqu'à voir status-done dans le
 // fragment rendu — utilisé par les tests de la bibliothèque de
 // documents qui ont besoin d'un job déjà terminé.

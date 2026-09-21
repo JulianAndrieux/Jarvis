@@ -22,6 +22,8 @@ templ Layout(title string, active string) {
 				header form { margin-left: auto; }
 				button { padding: .35rem .8rem; border-radius: 6px; border: 1px solid #8884; cursor: pointer; font-weight: 600; background: #8881; }
 				button:hover { background: #8883; }
+				.button-danger { border-color: #c66; color: #a33; }
+				.button-danger:hover { background: #fee2; }
 
 				/* Page étroite (Upload) : formulaire + résultat centrés, comme
 				   avant la fusion (ex-cmd/jarvisweb). */
@@ -29,6 +31,11 @@ templ Layout(title string, active string) {
 				/* Bibliothèque de documents : liste + aperçu PDF, un peu plus
 				   large que la page Upload. */
 				.page-wide { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+				/* Grande barre de recherche (jalon 18) : bien visible, cherche
+				   aussi dans le contenu des documents (pas juste le nom/type/tag). */
+				.search-bar { display: flex; gap: .6rem; margin: 1.5rem 0; }
+				.search-bar input[type=text] { flex: 1; font-size: 1.15rem; padding: .7rem 1rem; border: 2px solid #8886; border-radius: 8px; margin-bottom: 0; }
+				.search-bar button { font-size: 1rem; padding: 0 1.5rem; }
 				.card { border: 1px solid #8884; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; background: #fff; }
 				.merged-summary { border-left: 3px solid #48a; padding-left: .9rem; margin: 1rem 0 1.5rem; }
 				.merged-summary h3 { margin-top: 0; }

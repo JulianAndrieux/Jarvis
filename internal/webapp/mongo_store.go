@@ -97,6 +97,7 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 		"result_json": resultJSON,
 		"err":         job.Err,
 		"tags":        job.Tags,
+		"search_text": job.SearchText,
 	}}
 
 	res, err := s.Collection.UpdateByID(ctx, job.ID, update)
@@ -109,10 +110,24 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 	return nil
 }
 
+// Delete supprime définitivement le job id (bibliothèque de documents,
+// jalon 18).
+func (s *MongoStore) Delete(ctx context.Context, id string) error {
+	res, err := s.Collection.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		return fmt.Errorf("webapp: mongo delete %s: %w", id, err)
+	}
+	if res.DeletedCount == 0 {
+		return fmt.Errorf("webapp: mongo delete %s: job not found", id)
+	}
+	return nil
+}
+
 // List retourne les jobs correspondant à q (bibliothèque de documents,
 // jalon 17), triés du plus récent au plus ancien. q.Search filtre sur
-// filename/doc_type/tags via une regex insensible à la casse — pas
-// d'index de recherche plein texte dédié : la collection est petite,
+// filename/doc_type/tags/search_text (le texte du document — jalon 18,
+// "chercher dans les documents") via une regex insensible à la casse —
+// pas d'index de recherche plein texte dédié : la collection est petite,
 // $regex suffit et reste remplaçable en un jour si le volume grandit.
 func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	limit := int64(q.Limit)
@@ -127,6 +142,7 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 			bson.M{"filename": re},
 			bson.M{"doc_type": re},
 			bson.M{"tags": re},
+			bson.M{"search_text": re},
 		}
 	}
 
@@ -173,6 +189,7 @@ type mongoJobDoc struct {
 	ResultJSON []byte    `bson:"result_json,omitempty"`
 	Err        string    `bson:"err,omitempty"`
 	Tags       []string  `bson:"tags,omitempty"`
+	SearchText string    `bson:"search_text,omitempty"`
 }
 
 func jobToDoc(job Job) (mongoJobDoc, error) {
@@ -180,7 +197,7 @@ func jobToDoc(job Job) (mongoJobDoc, error) {
 		ID: job.ID, DocType: job.DocType, Filename: job.Filename,
 		Content: job.Content, Status: string(job.Status),
 		CreatedAt: job.CreatedAt, FinishedAt: job.FinishedAt, Err: job.Err,
-		Tags: job.Tags,
+		Tags: job.Tags, SearchText: job.SearchText,
 	}
 	if job.Result != nil {
 		b, err := json.Marshal(job.Result)
@@ -197,7 +214,7 @@ func docToJob(doc mongoJobDoc) (Job, error) {
 		ID: doc.ID, DocType: doc.DocType, Filename: doc.Filename,
 		Content: doc.Content, Status: Status(doc.Status),
 		CreatedAt: doc.CreatedAt, FinishedAt: doc.FinishedAt, Err: doc.Err,
-		Tags: doc.Tags,
+		Tags: doc.Tags, SearchText: doc.SearchText,
 	}
 	if len(doc.ResultJSON) > 0 {
 		var result pipeline.Result

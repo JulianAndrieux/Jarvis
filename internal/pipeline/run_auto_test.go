@@ -142,6 +142,29 @@ func TestPipeline_RunAuto_TriageExtractorError_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestPipeline_RunAuto_SetsSearchTextFromPageContent(t *testing.T) {
+	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{
+		{Page: 1, Text: "page-un contient le mot Kangourou - " + longEnoughText()},
+	}}
+	classifier := &classify.FakeClassifier{Result: classify.Result{DocType: "", Confidence: 0}}
+
+	p := Pipeline{
+		TextExtractor: textExtractor,
+		VLM:           &vlm.FakeClient{},
+		LLM:           &llm.FakeClient{},
+		Classifier:    classifier,
+		Registry:      doctype.NewDefaultRegistry(),
+	}
+
+	got, err := p.RunAuto(context.Background(), "doc.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.SearchText, "Kangourou") {
+		t.Errorf("SearchText = %q, want it to contain the document's text (even when unclassified)", got.SearchText)
+	}
+}
+
 func TestPipeline_RunWithType_ExtractsWithGivenType(t *testing.T) {
 	extracted := json.RawMessage(`{
 		"numero": {"value": "F-1", "confidence": 0.9, "source_snippet": "F-1"},

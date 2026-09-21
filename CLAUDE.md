@@ -1011,6 +1011,56 @@ spécifique à `localhost`.
     `reprocess`) + la validation réelle ci-dessus. Suite complète verte
     (`gofmt`, `go vet`, `go build`, `go test ./... -race
     -tags=integration`, `MONGO_URI` exporté).
+- **Jalon 18 — suppression de documents + recherche élargie au contenu :
+  fait, validé end-to-end.** Deux demandes : "pouvoir supprimer un
+  document" et "une plus grande barre de recherche qui peut aussi
+  chercher dans les documents".
+  - **Suppression** : `Store.Delete(ctx, id) error` (nouveau, implémenté
+    dans `FakeStore` et `MongoStore` — erreur explicite si `id`
+    n'existe pas, jamais un succès silencieux sur rien à supprimer) ;
+    `JobManager.Delete` délègue directement. **Ne touche pas à la copie
+    locale additionnelle (`--out-dir`)** — celle-ci reste un filet de
+    secours indépendant, jamais purgé automatiquement (décision
+    assumée, pas creusée davantage faute de demande explicite).
+    `DELETE /documents/{id}` (bouton `hx-delete` + `hx-confirm` côté
+    liste ET détail — confirmation navigateur avant une action
+    irréversible) répond avec l'en-tête `HX-Redirect: /documents` plutôt
+    qu'un fragment : que l'appel vienne de la liste ou du détail, HTMX
+    fait naviguer vers `/documents`, qui reflète alors l'état à jour —
+    plus simple que retirer une ligne en place et gérer différemment
+    selon l'origine de l'appel.
+  - **Recherche élargie au contenu** : `pipeline.Result` gagne
+    `SearchText string` — le texte du document (natif ou Markdown VLM,
+    toutes pages confondues, via `concatPageTexts` déjà utilisé pour la
+    classification, jalon 15) — renseigné par `Run` **et** `RunAuto`,
+    y compris quand aucun type n'est reconnu ou que l'extraction échoue
+    (dès que Triage+Parsing ont abouti : le texte d'un document existe
+    indépendamment de sa classification). Recopié dans `Job.SearchText`
+    à la fin du traitement (`finish()`, même mécanisme que `DocType`
+    depuis le jalon 15) et persisté (`MongoStore` : champ `search_text`,
+    inclus dans le `$set` de `Update`) ; `ListQuery.Search` /
+    `Store.List` (`FakeStore` et `MongoStore`, `$or` regex) l'incluent
+    désormais en plus de filename/doc_type/tags — toujours pas d'index
+    plein texte dédié (même décision assumée qu'au jalon 17).
+  - **Grande barre de recherche** : nouvelle classe CSS `.search-bar`
+    (pleine largeur, police et padding agrandis) remplace le petit champ
+    du jalon 17 ; placeholder mis à jour pour indiquer que le contenu du
+    document est aussi cherché.
+  - **Validé en conditions réelles** : upload d'une facture réelle
+    (`facture_multiligne.pdf`) → trouvée par recherche sur "Republique"
+    (l'adresse du fournisseur, dans le corps du PDF, absente du nom de
+    fichier/type/tags) et sur "Cartouche" (une ligne d'article) ;
+    absente d'une recherche sur un mot ne figurant pas dans le
+    document. `DELETE /documents/{id}` confirmé : en-tête
+    `HX-Redirect: /documents` reçu, document introuvable ensuite (404
+    sur le détail, absent de la recherche).
+  - Testé : `internal/webapp` (`FakeStore.Delete`/`.List` sur
+    `SearchText`, `JobManager.Delete`), `internal/webapp/
+    mongo_store_test.go` (réel : `Delete`, `List` filtré sur
+    `search_text`), `internal/pipeline` (`Run`/`RunAuto` renseignent
+    `SearchText`, y compris document non classifié), `cmd/jarvisapp`
+    (route `DELETE`, en-tête `HX-Redirect`, 404 sur id inconnu) + la
+    validation réelle ci-dessus. Suite complète verte.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

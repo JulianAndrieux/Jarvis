@@ -47,6 +47,11 @@ type Job struct {
 	// Tags est librement éditable par l'utilisateur (bibliothèque de
 	// documents, jalon 17) — n'a aucune incidence sur le traitement.
 	Tags []string
+	// SearchText est le texte du document (natif ou Markdown VLM, cf.
+	// pipeline.Result.SearchText) — recopié ici uniquement pour que
+	// Store.List puisse chercher dedans sans désérialiser tout Result
+	// (jalon 18, "chercher dans les documents").
+	SearchText string
 }
 
 // Runner exécute le pipeline complet pour un document, à partir d'un
@@ -146,6 +151,7 @@ func (m *JobManager) finish(ctx context.Context, job Job, result pipeline.Result
 		job.Status = StatusDone
 		job.Result = &result
 		job.DocType = result.DocType
+		job.SearchText = result.SearchText
 	}
 
 	if err := m.store.Update(ctx, job); err != nil {
@@ -180,6 +186,14 @@ func (m *JobManager) materialize(content []byte) (path string, cleanup func(), e
 // Get retourne le job id, s'il existe.
 func (m *JobManager) Get(ctx context.Context, id string) (Job, bool, error) {
 	return m.store.Get(ctx, id)
+}
+
+// Delete supprime définitivement le job id (bibliothèque de documents,
+// jalon 18) — délègue directement à Store.Delete. Ne touche pas à la
+// copie locale additionnelle éventuelle (--out-dir) : celle-ci reste un
+// filet de secours indépendant, jamais purgé automatiquement.
+func (m *JobManager) Delete(ctx context.Context, id string) error {
+	return m.store.Delete(ctx, id)
 }
 
 // List retourne les jobs correspondant à q (bibliothèque de documents,

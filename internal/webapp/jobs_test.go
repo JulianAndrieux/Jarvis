@@ -389,3 +389,34 @@ func TestJobManager_List_DelegatesToStore(t *testing.T) {
 		t.Errorf("len(List()) = %d, want 2", len(got))
 	}
 }
+
+// --- Delete (jalon 18) ---
+
+func TestJobManager_Delete_RemovesJob(t *testing.T) {
+	m := newTestJobManager(&fakeRunner{})
+	job, err := m.Submit(context.Background(), "doc.pdf", []byte("content"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Delete(context.Background(), job.ID); err != nil {
+		t.Fatalf("Delete() error = %v, want nil", err)
+	}
+
+	_, ok, err := m.Get(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Error("Get() ok = true after Delete(), want false")
+	}
+}
+
+func TestJobManager_Delete_UnknownID_ReturnsError(t *testing.T) {
+	m := newTestJobManager(&fakeRunner{})
+
+	err := m.Delete(context.Background(), "does-not-exist")
+	if err == nil {
+		t.Fatal("Delete() error = nil, want non-nil for an unknown job id")
+	}
+}

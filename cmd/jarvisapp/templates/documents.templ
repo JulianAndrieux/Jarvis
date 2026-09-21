@@ -20,9 +20,8 @@ type DocumentRow struct {
 templ DocumentsPage(docs []DocumentRow, search string) {
 	@Layout("Jarvis — documents", "documents") {
 		<div class="page-wide">
-			<form class="card" method="get" action="/documents">
-				<label for="q">Recherche</label>
-				<input type="text" name="q" id="q" value={ search } placeholder="nom de fichier, type, tag..."/>
+			<form class="search-bar" method="get" action="/documents">
+				<input type="text" name="q" id="q" value={ search } placeholder="Rechercher un document : nom, type, tag, ou contenu du document..."/>
 				<button type="submit">Rechercher</button>
 			</form>
 			if len(docs) == 0 {
@@ -35,6 +34,7 @@ templ DocumentsPage(docs []DocumentRow, search string) {
 						<th>Type</th>
 						<th>Statut</th>
 						<th>Tags</th>
+						<th></th>
 					</tr>
 					for _, d := range docs {
 						<tr>
@@ -49,6 +49,15 @@ templ DocumentsPage(docs []DocumentRow, search string) {
 							</td>
 							<td class={ "status-" + d.Status }>{ d.Status }</td>
 							<td class="muted">{ strings.Join(d.Tags, ", ") }</td>
+							<td>
+								<button
+									class="button-danger"
+									hx-delete={ "/documents/" + d.ID }
+									hx-confirm={ "Supprimer définitivement " + d.Filename + " ?" }
+								>
+									Supprimer
+								</button>
+							</td>
 						</tr>
 					}
 				</table>
@@ -79,6 +88,15 @@ templ DocumentDetailPage(job webapp.Job, view ResultView, docTypes []string) {
 				</form>
 			</div>
 			@JobFragment(job, view)
+			<div class="card">
+				<button
+					class="button-danger"
+					hx-delete={ "/documents/" + job.ID }
+					hx-confirm={ "Supprimer définitivement " + job.Filename + " ? Cette action est irréversible." }
+				>
+					Supprimer ce document
+				</button>
+			</div>
 		</div>
 	}
 }

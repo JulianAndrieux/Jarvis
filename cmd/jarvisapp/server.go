@@ -99,12 +99,13 @@ func (s *Server) Routes() chi.Router {
 	r.Post("/jobs", s.handleSubmit)
 	r.Get("/jobs/{id}", s.handleJobStatus)
 
-	// Bibliothèque de documents (jalon 17).
+	// Bibliothèque de documents (jalon 17-18).
 	r.Get("/documents", s.handleDocuments)
 	r.Get("/documents/{id}", s.handleDocumentDetail)
 	r.Get("/documents/{id}/pdf", s.handleDocumentPDF)
 	r.Post("/documents/{id}/tags", s.handleDocumentTags)
 	r.Post("/documents/{id}/reprocess", s.handleDocumentReprocess)
+	r.Delete("/documents/{id}", s.handleDocumentDelete)
 
 	// Navigateur de classes + tests (ex-cmd/codebrowser).
 	r.Get("/classes", s.handleClasses)
@@ -288,6 +289,22 @@ func (s *Server) handleDocumentReprocess(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.renderJob(w, r, job)
+}
+
+// handleDocumentDelete supprime définitivement un document (jalon 18).
+// Répond avec HX-Redirect plutôt qu'un fragment : que l'appel vienne de
+// la liste ou de la page de détail, le navigateur est renvoyé vers
+// /documents, qui reflète alors l'état à jour — plus simple et plus
+// robuste qu'essayer de retirer une ligne/naviguer différemment selon
+// l'origine de l'appel.
+func (s *Server) handleDocumentDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.Jobs.Delete(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("HX-Redirect", "/documents")
+	w.WriteHeader(http.StatusOK)
 }
 
 // splitTags découpe une liste de tags séparés par des virgules, en

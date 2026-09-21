@@ -44,6 +44,16 @@ func (s *FakeStore) Update(ctx context.Context, job Job) error {
 	return nil
 }
 
+func (s *FakeStore) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.jobs[id]; !ok {
+		return fmt.Errorf("webapp: fake store: job %s not found", id)
+	}
+	delete(s.jobs, id)
+	return nil
+}
+
 func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -80,6 +90,9 @@ func jobMatchesSearch(j Job, lowerSearch string) bool {
 		if strings.Contains(strings.ToLower(tag), lowerSearch) {
 			return true
 		}
+	}
+	if strings.Contains(strings.ToLower(j.SearchText), lowerSearch) {
+		return true
 	}
 	return false
 }

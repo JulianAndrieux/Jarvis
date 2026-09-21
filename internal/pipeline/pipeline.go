@@ -55,6 +55,12 @@ type Result struct {
 	DocType string
 	// ClassificationConfidence n'est renseigné que par RunAuto (0 sinon).
 	ClassificationConfidence float64
+	// SearchText est le texte du document (natif ou Markdown VLM, toutes
+	// pages confondues) — renseigné même si aucun type n'a été identifié
+	// (RunAuto) ou si l'extraction échoue, dès que Triage+Parsing ont
+	// abouti. Sert à "chercher dans les documents" (jalon 18), pas
+	// seulement dans leurs métadonnées/champs extraits.
+	SearchText string
 
 	Triage     triage.Result
 	Parsing    []parsing.PageResult
@@ -76,10 +82,11 @@ func (p Pipeline) Run(ctx context.Context, reg doctype.Registration, path string
 	if err != nil {
 		return Result{Path: path, Triage: triageResult, Parsing: parseResults}, err
 	}
+	searchText := concatPageTexts(pageTexts)
 
 	extractionResults, err := p.extractPages(ctx, reg, pageTexts)
 	if err != nil {
-		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults}, err
+		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, err
 	}
 
 	if p.BBox != nil {
@@ -93,6 +100,7 @@ func (p Pipeline) Run(ctx context.Context, reg doctype.Registration, path string
 		Parsing:    parseResults,
 		Extraction: extractionResults,
 		Merged:     extraction.MergePages(extractionResults, p.ConfidenceThreshold),
+		SearchText: searchText,
 	}, nil
 }
 
@@ -112,17 +120,19 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 	if err != nil {
 		return Result{Path: path, Triage: triageResult, Parsing: parseResults}, err
 	}
+	searchText := concatPageTexts(pageTexts)
 
 	candidates := candidatesFromRegistry(p.Registry)
-	classification, err := p.Classifier.Classify(ctx, concatPageTexts(pageTexts), candidates)
+	classification, err := p.Classifier.Classify(ctx, searchText, candidates)
 	if err != nil {
-		return Result{Path: path, Triage: triageResult, Parsing: parseResults}, fmt.Errorf("pipeline: classify %s: %w", path, err)
+		return Result{Path: path, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, fmt.Errorf("pipeline: classify %s: %w", path, err)
 	}
 
 	if classification.DocType == "" {
 		return Result{
 			Path: path, Triage: triageResult, Parsing: parseResults,
 			ClassificationConfidence: classification.Confidence,
+			SearchText:               searchText,
 		}, nil
 	}
 
@@ -131,12 +141,12 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 		// Défensif : internal/classify ne devrait renvoyer que des noms
 		// connus (contrainte d'énumération + vérification), mais on ne
 		// fait jamais confiance aveuglément à une décision externe.
-		return Result{Path: path, Triage: triageResult, Parsing: parseResults}, fmt.Errorf("pipeline: classifier returned unknown doc type %q", classification.DocType)
+		return Result{Path: path, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, fmt.Errorf("pipeline: classifier returned unknown doc type %q", classification.DocType)
 	}
 
 	extractionResults, err := p.extractPages(ctx, reg, pageTexts)
 	if err != nil {
-		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults}, err
+		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, err
 	}
 
 	if p.BBox != nil {
@@ -151,6 +161,7 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 		Parsing:                  parseResults,
 		Extraction:               extractionResults,
 		Merged:                   extraction.MergePages(extractionResults, p.ConfidenceThreshold),
+		SearchText:               searchText,
 	}, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
@@ -56,6 +57,9 @@ func TestPipeline_Run_NativeOnly_SkipsVLM(t *testing.T) {
 	}
 	if len(got.Extraction) != 1 || got.Extraction[0].Failed {
 		t.Fatalf("Extraction = %+v, want 1 successful result", got.Extraction)
+	}
+	if !strings.Contains(got.SearchText, "Facture F-1") {
+		t.Errorf("SearchText = %q, want it to contain the page's text (jalon 18, recherche dans les documents)", got.SearchText)
 	}
 }
 
