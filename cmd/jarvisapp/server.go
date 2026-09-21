@@ -99,6 +99,13 @@ func (s *Server) Routes() chi.Router {
 	r.Post("/jobs", s.handleSubmit)
 	r.Get("/jobs/{id}", s.handleJobStatus)
 
+	// Bibliothèque de documents (jalon 17).
+	r.Get("/documents", s.handleDocuments)
+	r.Get("/documents/{id}", s.handleDocumentDetail)
+	r.Get("/documents/{id}/pdf", s.handleDocumentPDF)
+	r.Post("/documents/{id}/tags", s.handleDocumentTags)
+	r.Post("/documents/{id}/reprocess", s.handleDocumentReprocess)
+
 	// Navigateur de classes + tests (ex-cmd/codebrowser).
 	r.Get("/classes", s.handleClasses)
 	r.Get("/classes/detail", s.handleClassDetail)
@@ -169,6 +176,131 @@ func (s *Server) renderJob(w http.ResponseWriter, r *http.Request, job webapp.Jo
 	if err := templates.JobFragment(job, view).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render job %s: %v\n", job.ID, err)
 	}
+}
+
+// --- Bibliothèque de documents ---
+//
+// Un "document" de cette bibliothèque EST un webapp.Job : même donnée,
+// juste une seconde porte d'entrée (naviguer par date/recherche plutôt
+// que suivre l'upload qui vient de se terminer). Aucune duplication de
+// modèle ni de logique de rendu : le statut/l'extraction réutilisent
+// templates.JobFragment tel quel, y compris son polling HTMX existant
+// (GET /jobs/{id}) — un document en cours de ré-extraction s'actualise
+// donc sans code de polling supplémentaire.
+
+func (s *Server) handleDocuments(w http.ResponseWriter, r *http.Request) {
+	search := r.URL.Query().Get("q")
+	jobs, err := s.Jobs.List(r.Context(), webapp.ListQuery{Search: search})
+	if err != nil {
+		http.Error(w, "erreur de lecture des documents : "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([]templates.DocumentRow, len(jobs))
+	for i, j := range jobs {
+		rows[i] = templates.DocumentRow{
+			ID: j.ID, Filename: j.Filename, DocType: j.DocType,
+			Status: string(j.Status), Tags: j.Tags,
+			CreatedAt: j.CreatedAt.Format("2006-01-02 15:04"),
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.DocumentsPage(rows, search).Render(r.Context(), w); err != nil {
+		fmt.Fprintf(os.Stderr, "jarvisapp: render documents: %v\n", err)
+	}
+}
+
+func (s *Server) handleDocumentDetail(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	job, ok, err := s.Jobs.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, "erreur de lecture du document : "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	view := buildResultView(job)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.DocumentDetailPage(job, view, s.Registry.Names()).Render(r.Context(), w); err != nil {
+		fmt.Fprintf(os.Stderr, "jarvisapp: render document detail %s: %v\n", id, err)
+	}
+}
+
+func (s *Server) handleDocumentPDF(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	job, ok, err := s.Jobs.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, "erreur de lecture du document : "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Write(job.Content)
+}
+
+func (s *Server) handleDocumentTags(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulaire invalide : "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tags := splitTags(r.FormValue("tags"))
+	if err := s.Jobs.SetTags(r.Context(), id, tags); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.TagsForm(id, tags).Render(r.Context(), w); err != nil {
+		fmt.Fprintf(os.Stderr, "jarvisapp: render tags form %s: %v\n", id, err)
+	}
+}
+
+func (s *Server) handleDocumentReprocess(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulaire invalide : "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	docType := r.FormValue("doc_type")
+	if err := s.Jobs.Reprocess(r.Context(), id, docType); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	job, ok, err := s.Jobs.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, "erreur de lecture du document : "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	s.renderJob(w, r, job)
+}
+
+// splitTags découpe une liste de tags séparés par des virgules, en
+// ignorant les entrées vides (espaces superflus, virgules successives).
+func splitTags(raw string) []string {
+	var tags []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			tags = append(tags, part)
+		}
+	}
+	return tags
 }
 
 // --- Rescan (partagé) ---

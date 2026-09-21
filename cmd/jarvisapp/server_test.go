@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,13 @@ type blockingRunner struct {
 }
 
 func (r *blockingRunner) RunAuto(ctx context.Context, path string) (pipeline.Result, error) {
+	if r.proceed != nil {
+		<-r.proceed
+	}
+	return r.result, r.err
+}
+
+func (r *blockingRunner) RunWithType(ctx context.Context, docType, path string) (pipeline.Result, error) {
 	if r.proceed != nil {
 		<-r.proceed
 	}
@@ -382,6 +390,180 @@ func TestOK(t *testing.T) {}
 	if !strings.Contains(rec2.Body.String(), "status-pass") {
 		t.Errorf("/tests does not reflect the cached pass result: %s", rec2.Body.String())
 	}
+}
+
+// --- Bibliothèque de documents (jalon 17) ---
+
+func TestHandleDocuments_ListsSubmittedJobs(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{result: pipeline.Result{DocType: "facture"}})
+	body, contentType := multipartUpload(t, "facture-a.pdf", []byte("x"))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	id := extractJobID(t, rec.Body.String())
+	waitForJobDone(t, s, id)
+
+	req2 := httptest.NewRequest(http.MethodGet, "/documents", nil)
+	rec2 := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec2.Code)
+	}
+	if !strings.Contains(rec2.Body.String(), "facture-a.pdf") {
+		t.Errorf("body does not list the submitted document: %s", rec2.Body.String())
+	}
+}
+
+func TestHandleDocuments_FiltersBySearchQuery(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	for _, name := range []string{"alpha.pdf", "beta.pdf"} {
+		body, contentType := multipartUpload(t, name, []byte("x"))
+		req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+		req.Header.Set("Content-Type", contentType)
+		rec := httptest.NewRecorder()
+		s.Routes().ServeHTTP(rec, req)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/documents?q=alpha", nil)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+
+	if !strings.Contains(rec.Body.String(), "alpha.pdf") {
+		t.Errorf("body does not list alpha.pdf: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "beta.pdf") {
+		t.Errorf("body lists beta.pdf, want it filtered out by the search query: %s", rec.Body.String())
+	}
+}
+
+func TestHandleDocumentDetail_RendersJobAndPreviewLink(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{result: pipeline.Result{DocType: "facture"}})
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("%PDF-1.4"))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	id := extractJobID(t, rec.Body.String())
+	waitForJobDone(t, s, id)
+
+	req2 := httptest.NewRequest(http.MethodGet, "/documents/"+id, nil)
+	rec2 := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec2.Code, rec2.Body.String())
+	}
+	if !strings.Contains(rec2.Body.String(), "/documents/"+id+"/pdf") {
+		t.Errorf("body does not link to the PDF preview: %s", rec2.Body.String())
+	}
+}
+
+func TestHandleDocumentDetail_UnknownID_ReturnsNotFound(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/documents/does-not-exist", nil)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestHandleDocumentPDF_ServesRawContent(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("%PDF-1.4 le contenu brut"))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	id := extractJobID(t, rec.Body.String())
+
+	req2 := httptest.NewRequest(http.MethodGet, "/documents/"+id+"/pdf", nil)
+	rec2 := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec2.Code)
+	}
+	if rec2.Header().Get("Content-Type") != "application/pdf" {
+		t.Errorf("Content-Type = %q, want application/pdf", rec2.Header().Get("Content-Type"))
+	}
+	if rec2.Body.String() != "%PDF-1.4 le contenu brut" {
+		t.Errorf("body = %q, want the raw PDF content", rec2.Body.String())
+	}
+}
+
+func TestHandleDocumentTags_UpdatesAndReturnsTagsForm(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("x"))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	id := extractJobID(t, rec.Body.String())
+
+	form := url.Values{"tags": {"urgent, client-x"}}
+	req2 := httptest.NewRequest(http.MethodPost, "/documents/"+id+"/tags", strings.NewReader(form.Encode()))
+	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec2 := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec2.Code, rec2.Body.String())
+	}
+
+	job, ok, err := s.Jobs.Get(context.Background(), id)
+	if err != nil || !ok {
+		t.Fatalf("Get() = %+v, %v, %v", job, ok, err)
+	}
+	if len(job.Tags) != 2 || job.Tags[0] != "urgent" || job.Tags[1] != "client-x" {
+		t.Errorf("job.Tags = %v, want [urgent client-x]", job.Tags)
+	}
+}
+
+func TestHandleDocumentReprocess_StartsRunningAndReturnsPollingFragment(t *testing.T) {
+	proceed := make(chan struct{})
+	s, _ := newTestServer(t, &blockingRunner{result: pipeline.Result{DocType: "facture"}, proceed: proceed})
+	defer close(proceed)
+
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("x"))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	id := extractJobID(t, rec.Body.String())
+
+	form := url.Values{"doc_type": {"facture"}}
+	req2 := httptest.NewRequest(http.MethodPost, "/documents/"+id+"/reprocess", strings.NewReader(form.Encode()))
+	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec2 := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec2.Code, rec2.Body.String())
+	}
+	if !strings.Contains(rec2.Body.String(), "hx-get") {
+		t.Errorf("body has no polling attribute for a running reprocess: %s", rec2.Body.String())
+	}
+}
+
+// waitForJobDone poll /jobs/{id} jusqu'à voir status-done dans le
+// fragment rendu — utilisé par les tests de la bibliothèque de
+// documents qui ont besoin d'un job déjà terminé.
+func waitForJobDone(t *testing.T, s *Server, id string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		req := httptest.NewRequest(http.MethodGet, "/jobs/"+id, nil)
+		rec := httptest.NewRecorder()
+		s.Routes().ServeHTTP(rec, req)
+		if strings.Contains(rec.Body.String(), "status-done") {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("job %s never reached status-done in time", id)
 }
 
 func mustWriteFile(t *testing.T, path, content string) {

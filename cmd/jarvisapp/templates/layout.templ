@@ -26,6 +26,9 @@ templ Layout(title string, active string) {
 				/* Page étroite (Upload) : formulaire + résultat centrés, comme
 				   avant la fusion (ex-cmd/jarvisweb). */
 				.page-narrow { max-width: 860px; margin: 2rem auto; padding: 0 1rem; }
+				/* Bibliothèque de documents : liste + aperçu PDF, un peu plus
+				   large que la page Upload. */
+				.page-wide { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
 				.card { border: 1px solid #8884; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; background: #fff; }
 				.merged-summary { border-left: 3px solid #48a; padding-left: .9rem; margin: 1rem 0 1.5rem; }
 				.merged-summary h3 { margin-top: 0; }
@@ -85,6 +88,7 @@ templ Layout(title string, active string) {
 				<h1>Jarvis</h1>
 				<nav>
 					<a href="/" class={ templ.KV("active", active == "upload") }>Upload</a>
+					<a href="/documents" class={ templ.KV("active", active == "documents") }>Documents</a>
 					<a href="/classes" class={ templ.KV("active", active == "classes") }>Classes</a>
 					<a href="/tests" class={ templ.KV("active", active == "tests") }>Tests</a>
 				</nav>

@@ -108,7 +108,14 @@ templ JobFragment(job webapp.Job, view ResultView) {
 		</div>
 	} else {
 		<div id={ "job-" + job.ID } class="card">
-			<p class="status-done">Terminé — { job.Filename } ({ view.DocType }, classification { fmt.Sprintf("%.2f", view.ClassificationConfidence) })</p>
+			<p class="status-done">
+				Terminé — { job.Filename } ({ view.DocType }
+				if view.ClassificationConfidence > 0 {
+					, classification { fmt.Sprintf("%.2f", view.ClassificationConfidence) }
+				} else {
+					, type assigné manuellement
+				})
+			</p>
 			<p class="muted">
 				Triage : score { fmt.Sprintf("%.2f", view.TriageScore) }, couche texte native { yesNo(view.HasTextLayer) }
 			</p>

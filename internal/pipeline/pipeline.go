@@ -154,6 +154,23 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 	}, nil
 }
 
+// RunWithType exécute le pipeline pour path avec un type de document
+// imposé explicitement (docType), sans classification — utilisé quand un
+// type est réattribué manuellement à un document déjà traité
+// (bibliothèque de documents, jalon 17). Requiert Registry (comme
+// RunAuto) pour résoudre docType en Registration ; simple enveloppe
+// autour de Run.
+func (p Pipeline) RunWithType(ctx context.Context, docType, path string) (Result, error) {
+	if p.Registry == nil {
+		return Result{}, fmt.Errorf("pipeline: RunWithType requires Registry to be set")
+	}
+	reg, ok := p.Registry.Get(docType)
+	if !ok {
+		return Result{}, fmt.Errorf("pipeline: unknown doc type %q", docType)
+	}
+	return p.Run(ctx, reg, path)
+}
+
 // prepare exécute Triage puis Parsing — la partie commune à Run et
 // RunAuto, indépendante du type de document.
 func (p Pipeline) prepare(ctx context.Context, path string) (triageResult triage.Result, parseResults []parsing.PageResult, merged []PageContent, pageTexts []triage.PageText, err error) {

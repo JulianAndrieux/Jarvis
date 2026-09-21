@@ -932,6 +932,85 @@ spécifique à `localhost`.
     vers `failed/`, collision de nom non écrasante, arrêt propre sur
     annulation de contexte, traitement immédiat au démarrage) + la
     validation réelle ci-dessus pour le câblage dans `cmd/jarvisapp`.
+- **Jalon 17 — bibliothèque de documents : fait, validé end-to-end.**
+  "Une page dans laquelle je puisse naviguer dans tous mes documents par
+  date [...] prévisualiser [...] ajouter des tags, changer le type [...]
+  une barre de recherche [...] voir les éléments extraits." Un
+  "document" de cette bibliothèque **est** un `webapp.Job` — même
+  donnée que le suivi d'upload, juste une seconde porte d'entrée
+  (naviguer par date/recherche plutôt que suivre l'upload qui vient de
+  se terminer). Aucun nouveau modèle de données dupliqué.
+  - **`internal/webapp.Store`** gagne `List(ctx, ListQuery)
+    ([]Job, error)` (`ListQuery{Search, Limit}, Limit=0 ->
+    DefaultListLimit=200`) — implémenté dans `FakeStore` (tri/filtre en
+    mémoire) et `MongoStore` (`$regex` insensible à la casse sur
+    `filename`/`doc_type`/`tags`, tri `created_at` décroissant ; pas
+    d'index plein texte dédié, la collection est petite et `$regex`
+    reste remplaçable en un jour si le volume grandit). `Job.Tags
+    []string` (nouveau champ, purement organisationnel, aucune
+    incidence sur le traitement) ; `Update` (Mongo) l'inclut désormais
+    dans son `$set`.
+  - **`pipeline.Pipeline.RunWithType(ctx, docType, path)`** (nouveau,
+    à côté de `Run`/`RunAuto`) : résout `docType` via `Registry` puis
+    délègue à `Run` — répond à "changer le type sur la base des types
+    existants" en relançant une vraie extraction avec le type choisi,
+    pas juste en réétiquetant le document. `webapp.Runner` gagne cette
+    méthode dans son interface (satisfaite par `pipeline.Pipeline` par
+    typage structurel, comme `RunAuto`).
+  - **`JobManager`** gagne trois méthodes : `List` (délègue à
+    `Store.List`), `SetTags(ctx, id, tags)` (charge, remplace `Tags`,
+    persiste), `Reprocess(ctx, id, docType)` (recharge le job, passe en
+    `StatusRunning`, **rematérialise `Content` déjà en base** — jamais
+    redemandé à l'utilisateur — puis appelle `runner.RunWithType` de
+    façon asynchrone, exactement comme `Submit`/`run` : mêmes
+    transitions de statut, même `finish()`, aucune logique dupliquée).
+  - **`cmd/jarvisapp`** : nouvelles routes `GET /documents` (liste +
+    recherche via `?q=`), `GET /documents/{id}` (détail),
+    `GET /documents/{id}/pdf` (octets bruts, `Content-Type:
+    application/pdf`, prévisualisable directement dans un `<embed>`),
+    `POST /documents/{id}/tags`, `POST /documents/{id}/reprocess`. Nav
+    partagée : nouvel onglet "Documents".
+  - **Réutilisation délibérée plutôt que duplication** : la page de
+    détail affiche le statut/l'extraction via `templates.JobFragment`
+    tel quel — celui déjà utilisé par le flux Upload. Un changement de
+    type déclenche une ré-extraction asynchrone dont le suivi (pending
+    → running → done, avec polling HTMX) passe par la route **existante**
+    `GET /jobs/{id}` : aucun mécanisme de polling supplémentaire écrit
+    pour la bibliothèque.
+  - **Correctif d'affichage trouvé en testant réellement une
+    ré-extraction** : `JobFragment` affichait "classification 0.00" à
+    côté d'un type réattribué manuellement — `RunWithType` ne classifie
+    jamais, `ClassificationConfidence` reste donc à sa valeur zéro, ce
+    qui se lisait comme "le système n'est pas sûr que ce soit une
+    facture" alors que l'utilisateur venait justement de le choisir
+    explicitement. Corrigé : le libellé affiche "type assigné
+    manuellement" quand `ClassificationConfidence == 0`, "classification
+    X.XX" sinon — heuristique pragmatique (une vraie classification
+    automatique à confiance exactement 0.00 est possible en théorie
+    mais rejetée par construction : `RunAuto` ne retient un `DocType`
+    que si le classifieur a positivement désigné un candidat).
+  - **Validé en conditions réelles, bout en bout** : upload d'une
+    facture réelle (`facture_ambigue.pdf`) → apparaît dans
+    `GET /documents`, trouvable par recherche sur son nom de fichier ;
+    aperçu PDF (`GET /documents/{id}/pdf`) confirmé octets bruts
+    corrects (`%PDF-1.4...`) ; tags ajoutés (`urgent, a-verifier`) puis
+    retrouvés par recherche sur le tag ; changement de type vers
+    "facture" (le seul déjà enregistré, donc revalidant surtout le
+    mécanisme plutôt qu'un vrai changement) déclenche une vraie
+    ré-extraction LLM qui retrouve les mêmes valeurs correctes connues
+    de ce document depuis le jalon 10 (`fournisseur: "Fournitures Bureau
+    Plus"`, `numero: "2026-0055"`, `total_ttc: 570`). Document de test
+    supprimé de la collection `jobs` réelle après coup.
+  - Testé : `internal/webapp` (`FakeStore.List` — tri, filtre
+    filename/doc_type/tags, sensibilité à la casse, limite ;
+    `JobManager.Reprocess`/`SetTags`/`List`), `internal/webapp/
+    mongo_store_test.go` (réel : `List` filtré+trié, `Update` persiste
+    `Tags`), `internal/pipeline` (`RunWithType` : succès, type inconnu,
+    Registry manquant), `cmd/jarvisapp` (les cinq routes, y compris
+    filtrage par recherche et fragment de polling retourné par
+    `reprocess`) + la validation réelle ci-dessus. Suite complète verte
+    (`gofmt`, `go vet`, `go build`, `go test ./... -race
+    -tags=integration`, `MONGO_URI` exporté).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

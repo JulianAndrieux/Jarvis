@@ -119,3 +119,64 @@ func TestMongoStore_Get_UnknownID_ReturnsFalse(t *testing.T) {
 		t.Error("Get() ok = true, want false for an unknown id")
 	}
 }
+
+func TestMongoStore_Update_PersistsTags(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+
+	job := Job{
+		ID:       "test-tags-" + time.Now().Format("20060102150405"),
+		Filename: "doc.pdf", Status: StatusPending, CreatedAt: time.Now(),
+	}
+	defer cleanupJob(t, store, job.ID)
+
+	created, err := store.Create(ctx, job)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	created.Tags = []string{"urgent", "a-revoir"}
+	if err := store.Update(ctx, created); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	got, ok, err := store.Get(ctx, job.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get() = %+v, %v, %v", got, ok, err)
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "urgent" || got.Tags[1] != "a-revoir" {
+		t.Errorf("Get().Tags = %v, want [urgent a-revoir]", got.Tags)
+	}
+}
+
+func TestMongoStore_List_FiltersBySearchAndSortsByDateDescending(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	base := time.Now()
+	suffix := time.Now().Format("20060102150405.000000")
+
+	older := Job{ID: "test-list-older-" + suffix, Filename: "ancien-facture.pdf", DocType: "facture", CreatedAt: base}
+	newer := Job{ID: "test-list-newer-" + suffix, Filename: "recent-facture.pdf", DocType: "facture", CreatedAt: base.Add(time.Hour)}
+	other := Job{ID: "test-list-other-" + suffix, Filename: "sans-rapport.pdf", DocType: "piece_identite", CreatedAt: base.Add(2 * time.Hour)}
+	for _, j := range []Job{older, newer, other} {
+		if _, err := store.Create(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+		defer cleanupJob(t, store, j.ID)
+	}
+
+	// Filtré ensuite aux seuls ID de ce test pour ignorer les données
+	// réelles éventuellement présentes dans jobs_test.
+	got, err := store.List(ctx, ListQuery{Search: "facture"})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	var ids []string
+	for _, j := range got {
+		if j.ID == older.ID || j.ID == newer.ID || j.ID == other.ID {
+			ids = append(ids, j.ID)
+		}
+	}
+	if len(ids) != 2 || ids[0] != newer.ID || ids[1] != older.ID {
+		t.Errorf("filtered+ordered ids = %v, want [%s %s] (recent facture, ancien facture — other excluded, newest first)", ids, newer.ID, older.ID)
+	}
+}

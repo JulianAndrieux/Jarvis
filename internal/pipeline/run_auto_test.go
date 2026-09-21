@@ -142,6 +142,63 @@ func TestPipeline_RunAuto_TriageExtractorError_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestPipeline_RunWithType_ExtractsWithGivenType(t *testing.T) {
+	extracted := json.RawMessage(`{
+		"numero": {"value": "F-1", "confidence": 0.9, "source_snippet": "F-1"},
+		"fournisseur": {"value": "Acme", "confidence": 0.9, "source_snippet": "Acme"},
+		"total_ttc": {"value": 1.0, "confidence": 0.9, "source_snippet": "1.0"}
+	}`)
+	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{
+		{Page: 1, Text: "Facture F-1, Acme, 1.0 EUR - " + longEnoughText()},
+	}}
+	llmClient := &llm.FakeClient{Results: map[int]llm.ExtractResult{1: {JSON: extracted}}}
+
+	p := Pipeline{
+		TextExtractor: textExtractor,
+		VLM:           &vlm.FakeClient{},
+		LLM:           llmClient,
+		Registry:      doctype.NewDefaultRegistry(),
+	}
+
+	got, err := p.RunWithType(context.Background(), "facture", "doc.pdf")
+	if err != nil {
+		t.Fatalf("RunWithType() error = %v, want nil", err)
+	}
+	if got.DocType != "facture" {
+		t.Errorf("DocType = %q, want facture", got.DocType)
+	}
+	if len(got.Extraction) != 1 || got.Extraction[0].Failed {
+		t.Fatalf("Extraction = %+v, want 1 successful result", got.Extraction)
+	}
+}
+
+func TestPipeline_RunWithType_UnknownDocType_ReturnsError(t *testing.T) {
+	p := Pipeline{
+		TextExtractor: triage.FakeExtractor{Pages: []triage.PageText{{Page: 1, Text: longEnoughText()}}},
+		VLM:           &vlm.FakeClient{},
+		LLM:           &llm.FakeClient{},
+		Registry:      doctype.NewDefaultRegistry(),
+	}
+
+	_, err := p.RunWithType(context.Background(), "ce-type-nexiste-pas", "doc.pdf")
+	if err == nil {
+		t.Fatal("RunWithType() error = nil, want non-nil for an unknown doc type")
+	}
+}
+
+func TestPipeline_RunWithType_MissingRegistry_ReturnsError(t *testing.T) {
+	p := Pipeline{
+		TextExtractor: triage.FakeExtractor{Pages: []triage.PageText{{Page: 1, Text: longEnoughText()}}},
+		VLM:           &vlm.FakeClient{},
+		LLM:           &llm.FakeClient{},
+	}
+
+	_, err := p.RunWithType(context.Background(), "facture", "doc.pdf")
+	if err == nil {
+		t.Fatal("RunWithType() error = nil, want non-nil when Registry is not configured")
+	}
+}
+
 func TestPipeline_RunAuto_ClassifierReceivesConcatenatedPageText(t *testing.T) {
 	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{
 		{Page: 1, Text: "page-un " + longEnoughText()},

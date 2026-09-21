@@ -44,16 +44,22 @@ type Job struct {
 	FinishedAt time.Time
 	Result     *pipeline.Result
 	Err        string
+	// Tags est librement éditable par l'utilisateur (bibliothèque de
+	// documents, jalon 17) — n'a aucune incidence sur le traitement.
+	Tags []string
 }
 
 // Runner exécute le pipeline complet pour un document, à partir d'un
 // chemin de fichier local (les outils sous-jacents — pdftotext, pdftoppm —
-// opèrent sur des fichiers), en déterminant lui-même le type de document
-// par classification automatique (voir pipeline.Pipeline.RunAuto, que
-// pipeline.Pipeline satisfait par typage structurel — une fake suffit
-// pour les tests, aucun modèle ni GPU requis).
+// opèrent sur des fichiers). RunAuto détermine lui-même le type de
+// document par classification automatique ; RunWithType l'impose
+// explicitement — utilisé quand l'utilisateur réattribue manuellement le
+// type d'un document (bibliothèque de documents, jalon 17). Les deux sont
+// satisfaites par pipeline.Pipeline par typage structurel — une fake
+// suffit pour les tests, aucun modèle ni GPU requis.
 type Runner interface {
 	RunAuto(ctx context.Context, path string) (pipeline.Result, error)
+	RunWithType(ctx context.Context, docType, path string) (pipeline.Result, error)
 }
 
 // JobManager orchestre la soumission et le traitement asynchrone des
@@ -174,6 +180,66 @@ func (m *JobManager) materialize(content []byte) (path string, cleanup func(), e
 // Get retourne le job id, s'il existe.
 func (m *JobManager) Get(ctx context.Context, id string) (Job, bool, error) {
 	return m.store.Get(ctx, id)
+}
+
+// List retourne les jobs correspondant à q (bibliothèque de documents,
+// jalon 17) — délègue directement à Store.List.
+func (m *JobManager) List(ctx context.Context, q ListQuery) ([]Job, error) {
+	return m.store.List(ctx, q)
+}
+
+// SetTags remplace les tags du job id — n'a aucune incidence sur le
+// traitement, purement de l'organisation côté utilisateur.
+func (m *JobManager) SetTags(ctx context.Context, id string, tags []string) error {
+	job, ok, err := m.store.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("webapp: set tags %s: get: %w", id, err)
+	}
+	if !ok {
+		return fmt.Errorf("webapp: set tags %s: not found", id)
+	}
+	job.Tags = tags
+	if err := m.store.Update(ctx, job); err != nil {
+		return fmt.Errorf("webapp: set tags %s: %w", id, err)
+	}
+	return nil
+}
+
+// Reprocess relance le traitement du job id avec un type de document
+// choisi explicitement (docType), sans repasser par la classification —
+// répond à "changer le type sur la base des types existants". Le PDF
+// source (déjà en base, dans job.Content) est rematérialisé ; jamais
+// redemandé à l'utilisateur. Asynchrone, comme Submit : retourne dès que
+// le job passe à StatusRunning, le résultat s'obtient via Get comme pour
+// un job normal.
+func (m *JobManager) Reprocess(ctx context.Context, id, docType string) error {
+	job, ok, err := m.store.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("webapp: reprocess %s: get: %w", id, err)
+	}
+	if !ok {
+		return fmt.Errorf("webapp: reprocess %s: not found", id)
+	}
+
+	job.Status = StatusRunning
+	if err := m.store.Update(ctx, job); err != nil {
+		fmt.Fprintf(os.Stderr, "webapp: update job %s to running: %v\n", job.ID, err)
+	}
+
+	go func() {
+		ctx := context.Background()
+		path, cleanup, err := m.materialize(job.Content)
+		if err != nil {
+			m.finish(ctx, job, pipeline.Result{}, fmt.Errorf("webapp: write temp file: %w", err))
+			return
+		}
+		defer cleanup()
+
+		result, err := m.runner.RunWithType(ctx, docType, path)
+		m.finish(ctx, job, result, err)
+	}()
+
+	return nil
 }
 
 func randomID() (string, error) {

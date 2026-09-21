@@ -2,11 +2,27 @@ package webapp
 
 import "context"
 
+// DefaultListLimit borne le nombre de jobs retournés par List quand
+// ListQuery.Limit vaut 0 — la bibliothèque de documents (jalon 17)
+// n'affiche jamais une liste non bornée.
+const DefaultListLimit = 200
+
+// ListQuery filtre/borne un appel à Store.List.
+type ListQuery struct {
+	// Search, si non vide, ne retient que les jobs dont Filename,
+	// DocType ou un des Tags contient cette sous-chaîne (insensible à la
+	// casse) — la barre de recherche de la bibliothèque de documents.
+	Search string
+	// Limit : 0 -> DefaultListLimit.
+	Limit int
+}
+
 // Store est le port de persistance des jobs : création, lecture, mise à
-// jour de statut/résultat. Même principe que triage.TextExtractor /
-// vlm.Client / llm.Client / bbox.Extractor — une implémentation réelle
-// (MongoStore) et une Fake en mémoire pour les tests (FakeStore), aucun
-// autre code du paquet ne connaît la différence.
+// jour de statut/résultat, liste (pour la bibliothèque de documents).
+// Même principe que triage.TextExtractor / vlm.Client / llm.Client /
+// bbox.Extractor — une implémentation réelle (MongoStore) et une Fake en
+// mémoire pour les tests (FakeStore), aucun autre code du paquet ne
+// connaît la différence.
 type Store interface {
 	// Create persiste job (déjà pourvu d'un ID par l'appelant) et retourne
 	// l'enregistrement tel que persisté.
@@ -15,10 +31,14 @@ type Store interface {
 	// "non trouvé" ; err non-nil signifie un échec de la couche de
 	// persistance elle-même.
 	Get(ctx context.Context, id string) (job Job, ok bool, err error)
-	// Update réécrit l'état d'un job déjà créé (statut, résultat, erreur,
-	// FinishedAt...). Une implémentation est libre de ne mettre à jour que
-	// les champs qui changent réellement après création (ex. ne pas
-	// retransmettre Content à chaque appel) : Update reçoit l'état complet
-	// souhaité, pas un diff.
+	// Update réécrit l'état d'un job déjà créé (statut, type de document,
+	// résultat, erreur, tags, FinishedAt...). Une implémentation est libre
+	// de ne mettre à jour que les champs qui changent réellement après
+	// création (ex. ne pas retransmettre Content à chaque appel) : Update
+	// reçoit l'état complet souhaité, pas un diff.
 	Update(ctx context.Context, job Job) error
+	// List retourne les jobs correspondant à q, triés du plus récent au
+	// plus ancien (CreatedAt décroissant) — la bibliothèque de documents,
+	// jalon 17.
+	List(ctx context.Context, q ListQuery) ([]Job, error)
 }

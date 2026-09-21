@@ -68,9 +68,9 @@ func (s *MongoStore) Get(ctx context.Context, id string) (Job, bool, error) {
 }
 
 // Update ne réécrit que les champs qui changent réellement après création
-// (statut, type de document, résultat, erreur, FinishedAt) via $set — pas
-// Content : pas de raison de retransmettre le PDF source (potentiellement
-// volumineux) à chaque transition de statut.
+// (statut, type de document, résultat, erreur, tags, FinishedAt) via
+// $set — pas Content : pas de raison de retransmettre le PDF source
+// (potentiellement volumineux) à chaque transition de statut.
 //
 // doc_type fait partie de ce $set depuis la classification automatique
 // (jalon 15) : il n'est plus connu à Create (job.DocType == "" à la
@@ -96,6 +96,7 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 		"finished_at": job.FinishedAt,
 		"result_json": resultJSON,
 		"err":         job.Err,
+		"tags":        job.Tags,
 	}}
 
 	res, err := s.Collection.UpdateByID(ctx, job.ID, update)
@@ -106,6 +107,52 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 		return fmt.Errorf("webapp: mongo update %s: job not found", job.ID)
 	}
 	return nil
+}
+
+// List retourne les jobs correspondant à q (bibliothèque de documents,
+// jalon 17), triés du plus récent au plus ancien. q.Search filtre sur
+// filename/doc_type/tags via une regex insensible à la casse — pas
+// d'index de recherche plein texte dédié : la collection est petite,
+// $regex suffit et reste remplaçable en un jour si le volume grandit.
+func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
+	limit := int64(q.Limit)
+	if limit == 0 {
+		limit = int64(DefaultListLimit)
+	}
+
+	filter := bson.M{}
+	if q.Search != "" {
+		re := bson.M{"$regex": q.Search, "$options": "i"}
+		filter["$or"] = bson.A{
+			bson.M{"filename": re},
+			bson.M{"doc_type": re},
+			bson.M{"tags": re},
+		}
+	}
+
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit)
+	cur, err := s.Collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("webapp: mongo list: %w", err)
+	}
+	defer cur.Close(ctx)
+
+	var jobs []Job
+	for cur.Next(ctx) {
+		var doc mongoJobDoc
+		if err := cur.Decode(&doc); err != nil {
+			return nil, fmt.Errorf("webapp: mongo list: decode: %w", err)
+		}
+		job, err := docToJob(doc)
+		if err != nil {
+			return nil, fmt.Errorf("webapp: mongo list: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+	if err := cur.Err(); err != nil {
+		return nil, fmt.Errorf("webapp: mongo list: %w", err)
+	}
+	return jobs, nil
 }
 
 // mongoJobDoc est la représentation BSON d'un Job. Result est stocké tel
@@ -125,6 +172,7 @@ type mongoJobDoc struct {
 	FinishedAt time.Time `bson:"finished_at,omitempty"`
 	ResultJSON []byte    `bson:"result_json,omitempty"`
 	Err        string    `bson:"err,omitempty"`
+	Tags       []string  `bson:"tags,omitempty"`
 }
 
 func jobToDoc(job Job) (mongoJobDoc, error) {
@@ -132,6 +180,7 @@ func jobToDoc(job Job) (mongoJobDoc, error) {
 		ID: job.ID, DocType: job.DocType, Filename: job.Filename,
 		Content: job.Content, Status: string(job.Status),
 		CreatedAt: job.CreatedAt, FinishedAt: job.FinishedAt, Err: job.Err,
+		Tags: job.Tags,
 	}
 	if job.Result != nil {
 		b, err := json.Marshal(job.Result)
@@ -148,6 +197,7 @@ func docToJob(doc mongoJobDoc) (Job, error) {
 		ID: doc.ID, DocType: doc.DocType, Filename: doc.Filename,
 		Content: doc.Content, Status: Status(doc.Status),
 		CreatedAt: doc.CreatedAt, FinishedAt: doc.FinishedAt, Err: doc.Err,
+		Tags: doc.Tags,
 	}
 	if len(doc.ResultJSON) > 0 {
 		var result pipeline.Result

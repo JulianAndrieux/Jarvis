@@ -1,0 +1,92 @@
+package templates
+
+import (
+	"strings"
+
+	"github.com/JulianAndrieux/Jarvis/internal/webapp"
+)
+
+// DocumentRow est l'entrée d'un document dans la liste de la
+// bibliothèque de documents (jalon 17).
+type DocumentRow struct {
+	ID        string
+	Filename  string
+	DocType   string
+	Status    string
+	Tags      []string
+	CreatedAt string // pré-formaté (le formatage de date reste une préoccupation d'affichage, pas de vue)
+}
+
+templ DocumentsPage(docs []DocumentRow, search string) {
+	@Layout("Jarvis — documents", "documents") {
+		<div class="page-wide">
+			<form class="card" method="get" action="/documents">
+				<label for="q">Recherche</label>
+				<input type="text" name="q" id="q" value={ search } placeholder="nom de fichier, type, tag..."/>
+				<button type="submit">Rechercher</button>
+			</form>
+			if len(docs) == 0 {
+				<p class="muted">Aucun document.</p>
+			} else {
+				<table>
+					<tr>
+						<th>Date</th>
+						<th>Fichier</th>
+						<th>Type</th>
+						<th>Statut</th>
+						<th>Tags</th>
+					</tr>
+					for _, d := range docs {
+						<tr>
+							<td class="muted">{ d.CreatedAt }</td>
+							<td><a href={ templ.SafeURL("/documents/" + d.ID) }>{ d.Filename }</a></td>
+							<td>
+								if d.DocType != "" {
+									{ d.DocType }
+								} else {
+									<span class="muted">—</span>
+								}
+							</td>
+							<td class={ "status-" + d.Status }>{ d.Status }</td>
+							<td class="muted">{ strings.Join(d.Tags, ", ") }</td>
+						</tr>
+					}
+				</table>
+			}
+		</div>
+	}
+}
+
+templ DocumentDetailPage(job webapp.Job, view ResultView, docTypes []string) {
+	@Layout("Jarvis — " + job.Filename, "documents") {
+		<div class="page-wide">
+			<p><a href="/documents">&larr; Tous les documents</a></p>
+			<div class="card">
+				<embed src={ templ.SafeURL("/documents/" + job.ID + "/pdf") } type="application/pdf" width="100%" height="480"/>
+			</div>
+			<div class="card" id="tags-section">
+				@TagsForm(job.ID, job.Tags)
+			</div>
+			<div class="card">
+				<form hx-post={ "/documents/" + job.ID + "/reprocess" } hx-target={ "#job-" + job.ID } hx-swap="outerHTML">
+					<label for="doc_type">Changer le type (relance l'extraction)</label>
+					<select name="doc_type" id="doc_type">
+						for _, dt := range docTypes {
+							<option value={ dt } selected?={ dt == job.DocType }>{ dt }</option>
+						}
+					</select>
+					<button type="submit">Ré-extraire avec ce type</button>
+				</form>
+			</div>
+			@JobFragment(job, view)
+		</div>
+	}
+}
+
+templ TagsForm(jobID string, tags []string) {
+	<form hx-post={ "/documents/" + jobID + "/tags" } hx-target="#tags-section" hx-swap="outerHTML">
+		<label for="tags">Tags (séparés par des virgules)</label>
+		<input type="text" name="tags" id="tags" value={ strings.Join(tags, ", ") }/>
+		<button type="submit">Enregistrer les tags</button>
+	</form>
+}

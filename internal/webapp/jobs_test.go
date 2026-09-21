@@ -23,8 +23,9 @@ type fakeRunner struct {
 	started chan struct{}
 	proceed chan struct{}
 
-	mu      sync.Mutex
-	gotPath string
+	mu         sync.Mutex
+	gotPath    string
+	gotDocType string
 }
 
 func (f *fakeRunner) RunAuto(ctx context.Context, path string) (pipeline.Result, error) {
@@ -40,10 +41,30 @@ func (f *fakeRunner) RunAuto(ctx context.Context, path string) (pipeline.Result,
 	return f.result, f.err
 }
 
+func (f *fakeRunner) RunWithType(ctx context.Context, docType, path string) (pipeline.Result, error) {
+	f.mu.Lock()
+	f.gotPath = path
+	f.gotDocType = docType
+	f.mu.Unlock()
+	if f.started != nil {
+		close(f.started)
+	}
+	if f.proceed != nil {
+		<-f.proceed
+	}
+	return f.result, f.err
+}
+
 func (f *fakeRunner) Path() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.gotPath
+}
+
+func (f *fakeRunner) DocType() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.gotDocType
 }
 
 func waitForStatus(t *testing.T, m *JobManager, id string, want Status) Job {
@@ -262,5 +283,109 @@ func TestJobManager_StoreUpdateFailure_DoesNotBlockProcessing(t *testing.T) {
 	case <-started:
 	case <-time.After(2 * time.Second):
 		t.Fatal("runner was never invoked despite a failing Store.Update")
+	}
+}
+
+// --- Reprocess (changement manuel de type, bibliothèque de documents,
+// jalon 17) ---
+
+func TestJobManager_Reprocess_RunsWithGivenTypeAndUpdatesDocType(t *testing.T) {
+	runner := &fakeRunner{result: pipeline.Result{Path: "somewhere", DocType: "facture"}}
+	m := newTestJobManager(runner)
+
+	job, err := m.Submit(context.Background(), "doc.pdf", []byte("%PDF-1.4 contenu"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, job.ID, StatusDone)
+
+	if err := m.Reprocess(context.Background(), job.ID, "facture"); err != nil {
+		t.Fatalf("Reprocess() error = %v, want nil", err)
+	}
+
+	done := waitForStatus(t, m, job.ID, StatusDone)
+	if done.DocType != "facture" {
+		t.Errorf("done.DocType = %q, want facture", done.DocType)
+	}
+	if runner.DocType() != "facture" {
+		t.Errorf("runner received docType %q, want facture", runner.DocType())
+	}
+}
+
+func TestJobManager_Reprocess_UnknownJobID_ReturnsError(t *testing.T) {
+	m := newTestJobManager(&fakeRunner{})
+
+	err := m.Reprocess(context.Background(), "does-not-exist", "facture")
+	if err == nil {
+		t.Fatal("Reprocess() error = nil, want non-nil for an unknown job id")
+	}
+}
+
+func TestJobManager_Reprocess_RunnerError_SetsStatusFailed(t *testing.T) {
+	runner := &fakeRunner{result: pipeline.Result{Path: "somewhere", DocType: "facture"}}
+	m := newTestJobManager(runner)
+	job, err := m.Submit(context.Background(), "doc.pdf", []byte("content"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, job.ID, StatusDone)
+
+	runner.err = errors.New("reprocess boom")
+	if err := m.Reprocess(context.Background(), job.ID, "facture"); err != nil {
+		t.Fatal(err)
+	}
+
+	failed := waitForStatus(t, m, job.ID, StatusFailed)
+	if failed.Err != "reprocess boom" {
+		t.Errorf("failed.Err = %q, want %q", failed.Err, "reprocess boom")
+	}
+}
+
+// --- SetTags / List (bibliothèque de documents, jalon 17) ---
+
+func TestJobManager_SetTags_UpdatesStoredTags(t *testing.T) {
+	m := newTestJobManager(&fakeRunner{})
+	job, err := m.Submit(context.Background(), "doc.pdf", []byte("content"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.SetTags(context.Background(), job.ID, []string{"urgent", "client-x"}); err != nil {
+		t.Fatalf("SetTags() error = %v, want nil", err)
+	}
+
+	got, ok, err := m.Get(context.Background(), job.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get() = %+v, %v, %v", got, ok, err)
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "urgent" || got.Tags[1] != "client-x" {
+		t.Errorf("got.Tags = %v, want [urgent client-x]", got.Tags)
+	}
+}
+
+func TestJobManager_SetTags_UnknownJobID_ReturnsError(t *testing.T) {
+	m := newTestJobManager(&fakeRunner{})
+
+	err := m.SetTags(context.Background(), "does-not-exist", []string{"x"})
+	if err == nil {
+		t.Fatal("SetTags() error = nil, want non-nil for an unknown job id")
+	}
+}
+
+func TestJobManager_List_DelegatesToStore(t *testing.T) {
+	m := newTestJobManager(&fakeRunner{})
+	if _, err := m.Submit(context.Background(), "a.pdf", []byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Submit(context.Background(), "b.pdf", []byte("b")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := m.List(context.Background(), ListQuery{})
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("len(List()) = %d, want 2", len(got))
 	}
 }
