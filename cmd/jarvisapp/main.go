@@ -48,7 +48,7 @@ func main() {
 	llmModel := flag.String("llm-model", "", "Identifiant du modèle LLM servi")
 	llmVersion := flag.String("llm-model-version", "", "Version/quantization du modèle LLM")
 	dpi := flag.Int("dpi", 200, "Résolution de rendu des pages (DPI)")
-	vlmTimeout := flag.Duration("vlm-timeout", 120*time.Second, "Timeout par appel VLM")
+	vlmTimeout := flag.Duration("vlm-timeout", 240*time.Second, "Timeout par appel VLM")
 	llmTimeout := flag.Duration("llm-timeout", 180*time.Second, "Timeout par appel LLM")
 	workDir := flag.String("work-dir", "", "Répertoire des fichiers temporaires de traitement (vide = répertoire temporaire du système)")
 	outDir := flag.String("out-dir", "", "Répertoire de persistance locale additionnelle des résultats (JSON par page + log de rejeu) ; vide = pas de copie locale")
@@ -58,7 +58,8 @@ func main() {
 	moduleDir := flag.String("module-dir", "", "Racine du module Go à analyser pour le navigateur de code (vide = répertoire courant)")
 	watchDir := flag.String("watch-dir", "", "Dossier surveillé pour l'ingestion automatique de PDF ; vide = désactivée")
 	watchInterval := flag.Duration("watch-interval", watch.DefaultInterval, "Intervalle de sondage de --watch-dir")
-	concurrency := flag.Int("concurrency", 4, "Nombre de pages traitées en parallèle (VLM et extraction) par document ; 1 = séquentiel. À aligner sur les slots parallèles des serveurs llama.cpp")
+	vlmConcurrency := flag.Int("vlm-concurrency", 1, "Nombre de pages traitées en parallèle pour le VLM, par document ; 1 (défaut) = séquentiel. Le VLM (appels multimodaux) sature vite en parallèle, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
+	llmConcurrency := flag.Int("llm-concurrency", 1, "Nombre de pages traitées en parallèle pour l'extraction LLM, par document ; 1 (défaut) = séquentiel. Un contenu dense (page transcrite par le VLM) peut faire échouer le serveur llama.cpp (\"Context size has been exceeded\") au-delà de 1 en parallèle sur ce type de matériel, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
 	flag.Parse()
 
 	if *vlmURL == "" || *vlmModel == "" {
@@ -102,11 +103,12 @@ func main() {
 		// automatique".
 		Classifier: classify.LLMClassifier{Client: llmClient},
 		Registry:   registry,
-		// Jalon 21 : les pages d'un même document sont désormais traitées
-		// en parallèle (VLM et extraction), bornées à --concurrency, au
-		// lieu d'une page à la fois quel que soit le nombre de slots
-		// disponibles côté serveur — voir CLAUDE.md.
-		Concurrency: *concurrency,
+		// Jalon 21 puis correction (voir CLAUDE.md) : VLM et extraction LLM
+		// ont chacun leur propre borne de parallélisme — le VLM (appels
+		// multimodaux) sature vite en parallèle sur ce matériel, l'extraction
+		// LLM (texte) reste sûre et bénéfique en parallèle.
+		VLMConcurrency: *vlmConcurrency,
+		LLMConcurrency: *llmConcurrency,
 	}
 
 	connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

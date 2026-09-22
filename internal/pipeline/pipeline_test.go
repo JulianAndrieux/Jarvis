@@ -108,7 +108,7 @@ func TestPipeline_Run_UnusablePage_GoesThroughVLM(t *testing.T) {
 	}
 }
 
-func TestPipeline_Run_FailedVLMPage_SkipsExtractionForThatPage(t *testing.T) {
+func TestPipeline_Run_FailedVLMPage_SurfacedAsFailedInExtraction(t *testing.T) {
 	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{{Page: 1, Text: ""}}}
 	renderer := fakeRenderer{err: errors.New("render boom")}
 	vlmClient := &vlm.FakeClient{}
@@ -128,8 +128,11 @@ func TestPipeline_Run_FailedVLMPage_SkipsExtractionForThatPage(t *testing.T) {
 	if len(got.Parsing) != 1 || !got.Parsing[0].Failed {
 		t.Fatalf("Parsing = %+v, want 1 failed result", got.Parsing)
 	}
-	if len(got.Extraction) != 0 {
-		t.Errorf("Extraction = %v, want empty (no usable content for the failed page)", got.Extraction)
+	// La page ne doit pas disparaître silencieusement de Extraction : elle
+	// y figure marquée Failed, avec la raison VLM, plutôt que d'être
+	// simplement absente sans aucun signal (cf. withVLMFailures).
+	if len(got.Extraction) != 1 || !got.Extraction[0].Failed {
+		t.Fatalf("Extraction = %+v, want 1 Failed result surfacing the VLM error", got.Extraction)
 	}
 	if len(llmClient.Calls) != 0 {
 		t.Errorf("LLM.Calls = %v, want empty (LLM should never be called for an unusable page)", llmClient.Calls)
@@ -169,9 +172,10 @@ func (f fakeRenderer) RenderPage(ctx context.Context, path string, page int, dpi
 	return f.png, nil
 }
 
-// --- Concurrency (jalon 21) : vérifie que Pipeline.Concurrency est bien
-// transmis aux deux étages qui en tirent parti (Parsing/VLM et
-// Extraction/LLM), pas seulement documenté sur le champ.
+// --- Concurrency (jalon 21, puis VLM/LLM séparés) : vérifie que
+// Pipeline.VLMConcurrency et Pipeline.LLMConcurrency sont bien transmis
+// chacun à son étage (Parsing/VLM et Extraction/LLM respectivement), de
+// façon indépendante — pas seulement documentés sur les champs.
 
 type maxConcurrencyLLM struct {
 	limit   int32
@@ -207,7 +211,7 @@ func TestPipeline_Run_ConcurrencyThreadedToExtraction(t *testing.T) {
 	}}
 	llmClient := &maxConcurrencyLLM{limit: 3}
 
-	p := Pipeline{TextExtractor: textExtractor, VLM: &vlm.FakeClient{}, LLM: llmClient, Concurrency: 3}
+	p := Pipeline{TextExtractor: textExtractor, VLM: &vlm.FakeClient{}, LLM: llmClient, LLMConcurrency: 3}
 
 	got, err := p.Run(context.Background(), factureRegistration(t), "doc.pdf")
 	if err != nil {
@@ -215,11 +219,11 @@ func TestPipeline_Run_ConcurrencyThreadedToExtraction(t *testing.T) {
 	}
 	for _, r := range got.Extraction {
 		if r.Failed {
-			t.Errorf("page %d failed: %s (Pipeline.Concurrency not respected)", r.Page, r.Error)
+			t.Errorf("page %d failed: %s (Pipeline.LLMConcurrency not respected)", r.Page, r.Error)
 		}
 	}
 	if atomic.LoadInt32(&llmClient.max) < 2 {
-		t.Errorf("max observed LLM concurrency = %d, want >= 2 (Pipeline.Concurrency was not threaded to extraction.Extractor)", llmClient.max)
+		t.Errorf("max observed LLM concurrency = %d, want >= 2 (Pipeline.LLMConcurrency was not threaded to extraction.Extractor)", llmClient.max)
 	}
 }
 
@@ -255,11 +259,11 @@ func TestPipeline_Run_ConcurrencyThreadedToParsing(t *testing.T) {
 	}}
 
 	p := Pipeline{
-		TextExtractor: textExtractor,
-		Renderer:      fakeRenderer{png: []byte("x")},
-		VLM:           vlmClient,
-		LLM:           llmClient,
-		Concurrency:   3,
+		TextExtractor:  textExtractor,
+		Renderer:       fakeRenderer{png: []byte("x")},
+		VLM:            vlmClient,
+		LLM:            llmClient,
+		VLMConcurrency: 3,
 	}
 
 	got, err := p.Run(context.Background(), factureRegistration(t), "doc.pdf")
@@ -268,10 +272,104 @@ func TestPipeline_Run_ConcurrencyThreadedToParsing(t *testing.T) {
 	}
 	for _, r := range got.Parsing {
 		if r.Failed {
-			t.Errorf("page %d failed: %s (Pipeline.Concurrency not respected)", r.Page, r.Error)
+			t.Errorf("page %d failed: %s (Pipeline.VLMConcurrency not respected)", r.Page, r.Error)
 		}
 	}
 	if atomic.LoadInt32(&vlmClient.max) < 2 {
-		t.Errorf("max observed VLM concurrency = %d, want >= 2 (Pipeline.Concurrency was not threaded to parsing.Parser)", vlmClient.max)
+		t.Errorf("max observed VLM concurrency = %d, want >= 2 (Pipeline.VLMConcurrency was not threaded to parsing.Parser)", vlmClient.max)
+	}
+}
+
+func TestPipeline_Run_VLMAndLLMConcurrencyAreIndependent(t *testing.T) {
+	// VLMConcurrency=1 (séquentiel) mais LLMConcurrency=3 (parallèle) :
+	// prouve que les deux champs ne sont pas liés — c'est exactement la
+	// configuration recommandée après le retest sur documents réels (VLM
+	// séquentiel, LLM parallèle), donc la plus importante à couvrir.
+	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{
+		{Page: 1, Text: ""}, {Page: 2, Text: ""}, {Page: 3, Text: ""},
+	}}
+	vlmClient := &maxConcurrencyVLM{limit: 1}
+	llmClient := &maxConcurrencyLLM{limit: 3}
+
+	p := Pipeline{
+		TextExtractor:  textExtractor,
+		Renderer:       fakeRenderer{png: []byte("x")},
+		VLM:            vlmClient,
+		LLM:            llmClient,
+		VLMConcurrency: 1,
+		LLMConcurrency: 3,
+	}
+
+	got, err := p.Run(context.Background(), factureRegistration(t), "doc.pdf")
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+	for _, r := range got.Parsing {
+		if r.Failed {
+			t.Errorf("parsing page %d failed: %s", r.Page, r.Error)
+		}
+	}
+	for _, r := range got.Extraction {
+		if r.Failed {
+			t.Errorf("extraction page %d failed: %s", r.Page, r.Error)
+		}
+	}
+	if atomic.LoadInt32(&vlmClient.max) > 1 {
+		t.Errorf("max observed VLM concurrency = %d, want <= 1 (VLMConcurrency=1 should stay sequential regardless of LLMConcurrency)", vlmClient.max)
+	}
+	if atomic.LoadInt32(&llmClient.max) < 2 {
+		t.Errorf("max observed LLM concurrency = %d, want >= 2 (LLMConcurrency=3 should parallelize regardless of VLMConcurrency)", llmClient.max)
+	}
+}
+
+// TestPipeline_Run_VLMFailureOnOnePage_StillSurfacedInExtraction reproduit
+// en bout en bout (pas seulement au niveau de withVLMFailures) le vrai
+// problème trouvé en retestant sur un document scanné réel : une page
+// dont le parsing VLM échoue disparaissait purement et simplement de
+// Result.Extraction, avec la page suivante ré-numérotée comme si de rien
+// n'était — aucun signal visible dans la sortie CLI ni l'UI web, malgré
+// l'erreur réelle déjà connue de internal/parsing.
+func TestPipeline_Run_VLMFailureOnOnePage_StillSurfacedInExtraction(t *testing.T) {
+	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{
+		{Page: 1, Text: ""}, {Page: 2, Text: ""},
+	}}
+	vlmClient := &vlm.FakeClient{Results: map[int]vlm.ParseResult{
+		1: {Markdown: "page 1 ok"},
+		// Page 2 volontairement absente : ParsePage échoue pour elle.
+	}}
+	llmClient := &llm.FakeClient{Results: map[int]llm.ExtractResult{
+		1: {JSON: json.RawMessage(`{}`)},
+		2: {JSON: json.RawMessage(`{}`)},
+	}}
+
+	p := Pipeline{
+		TextExtractor: textExtractor,
+		Renderer:      fakeRenderer{png: []byte("x")},
+		VLM:           vlmClient,
+		LLM:           llmClient,
+	}
+
+	got, err := p.Run(context.Background(), factureRegistration(t), "doc.pdf")
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil (une page en échec VLM ne doit pas faire échouer tout le document)", err)
+	}
+
+	if len(got.Extraction) != 2 {
+		t.Fatalf("len(Extraction) = %d, want 2 (page 2 ne doit pas disparaître silencieusement)", len(got.Extraction))
+	}
+	if got.Extraction[0].Page != 1 || got.Extraction[0].Failed {
+		t.Errorf("Extraction[0] = %+v, want page 1 successful", got.Extraction[0])
+	}
+	if got.Extraction[1].Page != 2 || !got.Extraction[1].Failed {
+		t.Errorf("Extraction[1] = %+v, want page 2 marked Failed", got.Extraction[1])
+	}
+	if got.Extraction[1].Error == "" {
+		t.Error("Extraction[1].Error is empty, want the VLM failure reason surfaced")
+	}
+
+	for _, call := range llmClient.Calls {
+		if call.Page == 2 {
+			t.Error("LLM was called for page 2, want it skipped (pas de contenu exploitable, jamais de valeur inventée)")
+		}
 	}
 }

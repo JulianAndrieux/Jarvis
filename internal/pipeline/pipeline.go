@@ -44,14 +44,35 @@ type Pipeline struct {
 	Classifier classify.Classifier
 	Registry   *doctype.Registry
 
-	// Concurrency borne le nombre de pages traitées en parallèle, pour le
-	// VLM (Parsing) ET pour l'extraction LLM — 0 ou 1 (par défaut) =
-	// séquentiel, comportement inchangé par rapport aux jalons précédents.
-	// À aligner sur les "slots" parallèles exposés par les serveurs
-	// llama.cpp (jalon 21 — un document multi-pages ne payait jusqu'ici
-	// aucun bénéfice des slots parallèles du serveur, traité une page à
-	// la fois quel que soit son nombre de slots disponibles).
-	Concurrency int
+	// VLMConcurrency et LLMConcurrency bornent (séparément) le nombre de
+	// pages traitées en parallèle pour le VLM (Parsing) et pour
+	// l'extraction LLM — 0 ou 1 (par défaut) = séquentiel, comportement
+	// inchangé par rapport aux jalons précédents.
+	//
+	// Jalon 21 puis correction (cf. CLAUDE.md) : un unique champ
+	// Concurrency partagé entre les deux étages a d'abord été introduit,
+	// validé uniquement sur un document 100% texte natif — donc sans
+	// appel VLM réel en parallèle, et avec un contenu par page trop
+	// court pour révéler quoi que ce soit côté LLM non plus. Le retest
+	// sur de vrais documents scannés a montré deux problèmes distincts de
+	// contention sous charge, sur ce matériel :
+	//   - VLM (appels multimodaux, images) : au-delà de 1 en parallèle,
+	//     le serveur a renvoyé des 500 ("failed to process mtmd chunk")
+	//     et des timeouts en cascade sur les pages suivantes.
+	//   - LLM (extraction texte) : sûr et ~30% plus rapide en parallèle
+	//     sur du texte natif court, mais au-delà de 1 en parallèle sur du
+	//     Markdown dense produit par le VLM (grand tableau de prix), le
+	//     serveur a renvoyé "Context size has been exceeded" sur la
+	//     plupart des pages — la même page extraite seule, sans
+	//     concurrence, réussit sans erreur. Contention réelle, pas une
+	//     limite de contexte par page.
+	// D'où deux champs indépendants, tous deux à 1 par défaut (séquentiel)
+	// tant que le comportement des deux serveurs sous charge n'est pas
+	// mieux compris — un appelant qui connaît son profil de contenu (texte
+	// natif court, jamais de VLM) peut relever LLMConcurrency en toute
+	// connaissance de cause.
+	VLMConcurrency int
+	LLMConcurrency int
 }
 
 // Result rassemble les résultats des trois étages pour un document, pour
@@ -97,6 +118,7 @@ func (p Pipeline) Run(ctx context.Context, reg doctype.Registration, path string
 	if err != nil {
 		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, err
 	}
+	extractionResults = withVLMFailures(extractionResults, parseResults)
 
 	if p.BBox != nil {
 		extractionResults = p.attachBBoxes(ctx, path, merged, extractionResults)
@@ -157,6 +179,7 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 	if err != nil {
 		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, err
 	}
+	extractionResults = withVLMFailures(extractionResults, parseResults)
 
 	if p.BBox != nil {
 		extractionResults = p.attachBBoxes(ctx, path, merged, extractionResults)
@@ -207,7 +230,7 @@ func (p Pipeline) prepare(ctx context.Context, path string) (triageResult triage
 	triageResult = triage.Score(nativePages, thresholds)
 
 	pagesToParse := parsing.PagesNeedingParsing(triageResult)
-	parser := parsing.Parser{Renderer: p.Renderer, VLM: p.VLM, DPI: p.DPI, Concurrency: p.Concurrency}
+	parser := parsing.Parser{Renderer: p.Renderer, VLM: p.VLM, DPI: p.DPI, Concurrency: p.VLMConcurrency}
 	parseResults, err = parser.ParsePages(ctx, path, pagesToParse)
 	if err != nil {
 		return triageResult, nil, nil, nil, fmt.Errorf("pipeline: parsing %s: %w", path, err)
@@ -224,7 +247,7 @@ func (p Pipeline) prepare(ctx context.Context, path string) (triageResult triage
 // extractPages appelle l'étage Extraction pour reg — factorisé entre Run
 // et RunAuto.
 func (p Pipeline) extractPages(ctx context.Context, reg doctype.Registration, pageTexts []triage.PageText) ([]extraction.Result, error) {
-	extractor := extraction.Extractor{LLM: p.LLM, ConfidenceThreshold: p.ConfidenceThreshold, Concurrency: p.Concurrency}
+	extractor := extraction.Extractor{LLM: p.LLM, ConfidenceThreshold: p.ConfidenceThreshold, Concurrency: p.LLMConcurrency}
 	results, err := extractor.ExtractPages(ctx, reg, pageTexts)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: extraction %s: %w", reg.Name, err)

@@ -38,8 +38,8 @@ func runParse(ctx context.Context, args []string, stdout io.Writer) error {
 	vlmModel := fs.String("vlm-model", "", "Identifiant du modèle servi (journalisé pour la reproductibilité)")
 	vlmVersion := fs.String("vlm-model-version", "", "Version/quantization du modèle (journalisé pour la reproductibilité)")
 	dpi := fs.Int("dpi", 200, "Résolution de rendu des pages (DPI)")
-	timeout := fs.Duration("vlm-timeout", 120*time.Second, "Timeout par appel VLM")
-	concurrency := fs.Int("concurrency", 4, "Nombre de pages traitées en parallèle ; 1 = séquentiel. À aligner sur les slots parallèles du serveur llama.cpp")
+	timeout := fs.Duration("vlm-timeout", 240*time.Second, "Timeout par appel VLM")
+	concurrency := fs.Int("vlm-concurrency", 1, "Nombre de pages traitées en parallèle ; 1 (défaut) = séquentiel. Le VLM (appels multimodaux) sature vite en parallèle, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

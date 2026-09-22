@@ -4,6 +4,10 @@
 package pipeline
 
 import (
+	"fmt"
+	"sort"
+
+	"github.com/JulianAndrieux/Jarvis/internal/extraction"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/triage"
 )
@@ -54,5 +58,38 @@ func Merge(native []triage.PageText, triageResult triage.Result, parsed []parsin
 			out = append(out, PageContent{Page: pr.Page, Text: pr.Markdown, Source: SourceVLM})
 		}
 	}
+	return out
+}
+
+// withVLMFailures complète extractionResults avec une entrée Failed pour
+// chaque page exclue par Merge faute de parsing VLM exploitable — sans
+// cela, une telle page disparaissait purement et simplement de
+// Result.Extraction (donc de la sortie CLI et de l'UI web), sans aucun
+// signal visible, malgré l'erreur réelle déjà disponible dans
+// parsing.PageResult.Error. Trouvé en retestant sur un vrai document
+// scanné (cf. CLAUDE.md) : une page sur cinq manquait silencieusement du
+// résultat final alors que le document se classifiait et s'affichait
+// comme un succès. Cohérent avec la façon dont un échec d'extraction
+// LLM est déjà signalé (extraction.Result.Failed) — ici la cause est en
+// amont (VLM), pas le LLM lui-même, d'où un message dédié.
+func withVLMFailures(extractionResults []extraction.Result, parseResults []parsing.PageResult) []extraction.Result {
+	present := make(map[int]bool, len(extractionResults))
+	for _, r := range extractionResults {
+		present[r.Page] = true
+	}
+
+	out := extractionResults
+	for _, pr := range parseResults {
+		if !pr.Failed || present[pr.Page] {
+			continue
+		}
+		out = append(out, extraction.Result{
+			Page:   pr.Page,
+			Failed: true,
+			Error:  fmt.Sprintf("page non extraite : échec du parsing VLM : %s", pr.Error),
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Page < out[j].Page })
 	return out
 }

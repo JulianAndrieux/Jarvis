@@ -72,10 +72,11 @@ func runProcess(ctx context.Context, args []string, stdout io.Writer) error {
 	docType := fs.String("doc-type", "", "Type de document enregistré (ex: facture)")
 	dpi := fs.Int("dpi", 200, "Résolution de rendu des pages (DPI)")
 	confidenceThreshold := fs.Float64("confidence-threshold", 0, "Seuil de confiance par champ (0 = défaut d'extraction.DefaultConfidenceThreshold)")
-	vlmTimeout := fs.Duration("vlm-timeout", 120*time.Second, "Timeout par appel VLM")
+	vlmTimeout := fs.Duration("vlm-timeout", 240*time.Second, "Timeout par appel VLM")
 	llmTimeout := fs.Duration("llm-timeout", 180*time.Second, "Timeout par appel LLM")
 	outDir := fs.String("out-dir", "", "Répertoire où persister les résultats (JSON par page + log de rejeu) ; vide = pas de persistance, stdout uniquement")
-	concurrency := fs.Int("concurrency", 4, "Nombre de pages traitées en parallèle (VLM et extraction) ; 1 = séquentiel. À aligner sur les slots parallèles du serveur llama.cpp")
+	vlmConcurrency := fs.Int("vlm-concurrency", 1, "Nombre de pages traitées en parallèle pour le VLM ; 1 (défaut) = séquentiel. Le VLM (appels multimodaux) sature vite en parallèle, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
+	llmConcurrency := fs.Int("llm-concurrency", 1, "Nombre de pages traitées en parallèle pour l'extraction LLM ; 1 (défaut) = séquentiel. Un contenu dense (page transcrite par le VLM) peut faire échouer le serveur llama.cpp (\"Context size has been exceeded\") au-delà de 1 en parallèle sur ce type de matériel, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -137,7 +138,8 @@ func runProcess(ctx context.Context, args []string, stdout io.Writer) error {
 			DisableThinking: true,
 		},
 		ConfidenceThreshold: *confidenceThreshold,
-		Concurrency:         *concurrency,
+		VLMConcurrency:      *vlmConcurrency,
+		LLMConcurrency:      *llmConcurrency,
 	}
 
 	result, err := p.Run(ctx, reg, path)

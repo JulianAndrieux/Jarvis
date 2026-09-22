@@ -1227,6 +1227,95 @@ spécifique à `localhost`.
     annulé retourne toujours une erreur même en mode parallèle),
     `internal/pipeline` (`Concurrency` bien transmis aux deux étages,
     pas seulement déclaré sur le champ) + la mesure réelle ci-dessus.
+- **Jalon 21 bis — correction après retest sur de vrais documents scannés
+  : fait, validé end-to-end.** Demandé explicitement ("Peux tu réessayer
+  avec tous les documents qu'on a dans MongoDB pour voir si ça
+  fonctionne") après l'upload d'un document réel resté "très long". Deux
+  problèmes réels trouvés, distincts de tout ce que la validation
+  synthétique du jalon 21 avait pu révéler — celle-ci ne portait que sur
+  un document 100% texte natif, donc sans aucun appel VLM réel en
+  parallèle, et avec un contenu par page trop court pour révéler quoi
+  que ce soit côté LLM non plus.
+  - **Finding 1 — `Pipeline.Concurrency` unique appliqué au VLM était
+    dangereux.** Sur `Devis 160-2026.pdf` (5 pages scannées, tableaux de
+    prix denses), `--concurrency 4` a fait échouer le serveur VLM :
+    `HTTP 500 "failed to process mtmd chunk"` sur la première page,
+    puis timeouts en cascade sur les suivantes (le serveur, débordé,
+    n'a jamais répondu dans le délai). Isolé en testant une page seule,
+    hors pipeline, hors concurrence : **156s pour une seule page**, déjà
+    au-delà de l'ancien défaut `--vlm-timeout` de 120s. Deux causes
+    distinctes, pas une seule : le VLM (appels multimodaux) ne supporte
+    pas la concurrence sur ce matériel, et une page dense peut
+    légitimement dépasser l'ancien timeout même seule.
+  - **Finding 2 — la concurrence côté LLM aussi, mais seulement sur du
+    contenu dense produit par le VLM.** Avec le VLM repassé à 1 (donc
+    plus de finding 1), `--llm-concurrency 4` a fait échouer l'extraction
+    sur 4 des 5 pages : `HTTP 500 "Context size has been exceeded"`.
+    Vérifié isolément : la même page, envoyée seule au LLM sans aucune
+    concurrence, s'extrait sans erreur en 31.8s. Donc pas une page trop
+    grosse pour le contexte du serveur (8192 tokens/slot, confirmé via
+    `/props` et `/slots` — largement suffisant pour ~900 tokens de
+    contenu) : une vraie contention sous charge, propre à ce matériel,
+    qui n'était simplement jamais apparue sur le document synthétique
+    tout-texte-natif utilisé au jalon 21 (pages bien trop courtes pour
+    la révéler).
+  - **Correctif : `Pipeline.Concurrency` (un seul champ) scindé en
+    `VLMConcurrency` et `LLMConcurrency` (`internal/pipeline/
+    pipeline.go`), tous deux à défaut **1** (séquentiel) désormais —
+    et non plus 4 pour le LLM.** `--concurrency` remplacé par
+    `--vlm-concurrency`/`--llm-concurrency` dans `cmd/jarvis process`,
+    `cmd/jarvis parse` (VLM seul) et `cmd/jarvisapp`. `--vlm-timeout`
+    par défaut relevé **120s → 240s** aux trois mêmes endroits (même
+    logique que le jalon 11 sur `--llm-timeout`, "filet de sécurité",
+    le vrai enseignement restant "ne pas paralléliser à l'aveugle sur du
+    matériel non caractérisé"). Le gain de ~30% mesuré au jalon 21 sur
+    du texte natif court reste valable pour qui le sait et relève
+    explicitement `--llm-concurrency` en connaissance de son profil de
+    contenu — mais ce n'est plus la valeur par défaut, faute de savoir
+    caractériser à l'avance "contenu assez dense pour poser problème".
+    Nouveau test `TestPipeline_Run_VLMAndLLMConcurrencyAreIndependent`
+    (`internal/pipeline/pipeline_test.go`) : preuve que les deux champs
+    sont bien indépendants (`VLMConcurrency=1` reste séquentiel pendant
+    que `LLMConcurrency=3` parallélise sur le même `Run`), pas seulement
+    documentée.
+  - **Finding 3 (trouvé en revalidant les findings 1 et 2) — une page en
+    échec VLM disparaissait silencieusement de `Result.Extraction`, sans
+    aucun signal.** `Merge()` (jalon 5) exclut délibérément une page dont
+    le parsing VLM a échoué — décision correcte en soi ("pas de fallback
+    silencieux sur un texte vide ou inventé"). Mais en aval, ni la sortie
+    CLI (`jarvis process`) ni l'UI web (`cmd/jarvisapp/viewmodel.go`,
+    `ResultView.Pages`) ne construisent leurs vues à partir d'autre chose
+    que `Result.Extraction` — qui ne contenait alors tout simplement
+    aucune entrée pour cette page. Concrètement : sur `Devis
+    160-2026.pdf`, la page 2 (un tableau de lignes de devis, ~1100€ de
+    postes) a réellement échoué une fois au VLM lors d'un run complet du
+    pipeline (probablement transitoire — la même page, testée seule
+    juste après, a réussi sans erreur), et le document s'est quand même
+    affiché comme un succès classifié, avec 4 pages sur 5 sans qu'aucune
+    trace de la page manquante n'apparaisse nulle part. Corrigé :
+    `pipeline.withVLMFailures` (`internal/pipeline/merge.go`) complète
+    `Result.Extraction` avec une entrée `Failed: true` (raison VLM
+    incluse) pour toute page exclue par `Merge`, appelé depuis `Run` et
+    `RunAuto` juste après l'étage Extraction — cohérent avec la façon
+    dont un échec d'extraction LLM est déjà signalé ailleurs. Testé :
+    `internal/pipeline/merge_test.go` (`withVLMFailures` isolément) +
+    `TestPipeline_Run_VLMFailureOnOnePage_StillSurfacedInExtraction`
+    (bout en bout, avec assertion que le LLM n'est jamais appelé pour la
+    page manquante — toujours "jamais de valeur inventée").
+  - **Revalidé en conditions réelles, sur le document qui avait
+    initialement révélé le problème** : `Devis 160-2026.pdf` (5 pages
+    scannées) traité de bout en bout avec `VLMConcurrency=1`,
+    `LLMConcurrency=1`, `--vlm-timeout 240s`, via le pipeline réel
+    contre les deux serveurs — classification `devis` (confiance 0.99,
+    cohérent avec le type assigné manuellement au jalon 20),
+    ~1068s (~18 min, cohérent avec 5 pages denses à 150-230s/page côté
+    VLM), 5 pages extraites, aucune erreur.
+  - **Leçon retenue pour la suite** : une validation "réelle" qui ne
+    couvre qu'un seul profil de contenu (ici : texte natif court) n'est
+    pas une validation réelle du système — elle valide ce profil-là.
+    Le parallélisme suffisamment sûr pour être un défaut doit être
+    revalidé sur le pire profil de contenu attendu (page scannée dense),
+    pas seulement sur le cas le plus simple à générer synthétiquement.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement
