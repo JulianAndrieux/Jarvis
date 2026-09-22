@@ -9,7 +9,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -23,13 +22,11 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/codemap"
 	"github.com/JulianAndrieux/Jarvis/internal/diagram"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
+	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/testmap"
 	"github.com/JulianAndrieux/Jarvis/internal/testrunner"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
-
-// maxUploadSize borne la taille d'un document accepté (64 Mio).
-const maxUploadSize = 64 << 20
 
 // Server expose les deux domaines fonctionnels sur un seul routeur :
 // upload/suivi de documents (Jobs/Registry, ex-jarvisweb) et navigateur
@@ -98,13 +95,16 @@ func (s *Server) Routes() chi.Router {
 
 	// Upload / suivi de documents (ex-cmd/jarvisweb).
 	r.Get("/", s.handleIndex)
-	r.Post("/jobs", s.handleSubmit)
+	r.Post("/jobs", s.handleSubmitFiles)
 	r.Get("/jobs/{id}", s.handleJobStatus)
 
 	// Bibliothèque de documents (jalon 17-18).
 	r.Get("/documents", s.handleDocuments)
 	r.Get("/documents/{id}", s.handleDocumentDetail)
 	r.Get("/documents/{id}/pdf", s.handleDocumentPDF)
+	r.Get("/documents/{id}/original", s.handleDocumentOriginal)
+	r.Get("/documents/{id}/view", s.handleDocumentView)
+	r.Get("/documents/{id}/image", s.handleDocumentImage)
 	r.Get("/documents/{id}/thumbnail", s.handleDocumentThumbnail)
 	r.Get("/documents/{id}/panel", s.handleDocumentPanel)
 	r.Post("/documents/{id}/tags", s.handleDocumentTags)
@@ -129,37 +129,6 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err := templates.Upload(s.Registry.Names()).Render(r.Context(), w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		http.Error(w, "formulaire invalide : "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "fichier manquant : "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, "impossible de lire le fichier : "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Le type de document n'est plus choisi ici : il est déterminé par
-	// classification automatique pendant le traitement (internal/classify,
-	// câblé dans pipeline.Pipeline.RunAuto — voir main.go).
-	job, err := s.Jobs.Submit(r.Context(), header.Filename, content)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	s.renderJob(w, r, job)
 }
 
 func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +165,8 @@ func (s *Server) renderJob(w http.ResponseWriter, r *http.Request, job webapp.Jo
 
 func (s *Server) handleDocuments(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("q")
-	jobs, err := s.Jobs.List(r.Context(), webapp.ListQuery{Search: search, SummaryOnly: true})
+	typeFilter := r.URL.Query().Get("type")
+	jobs, err := s.Jobs.List(r.Context(), webapp.ListQuery{Search: search, Format: typeFilter, SummaryOnly: true})
 	if err != nil {
 		http.Error(w, "erreur de lecture des documents : "+err.Error(), http.StatusInternalServerError)
 		return
@@ -204,17 +174,32 @@ func (s *Server) handleDocuments(w http.ResponseWriter, r *http.Request) {
 
 	rows := make([]templates.DocumentRow, len(jobs))
 	for i, j := range jobs {
+		fam := familyOf(j)
+		ext := strings.ToUpper(strings.TrimPrefix(fileExt(j.Filename), "."))
 		rows[i] = templates.DocumentRow{
 			ID: j.ID, Filename: j.Filename, DocType: j.DocType,
 			Status: string(j.Status), Tags: j.Tags,
-			CreatedAt: j.CreatedAt.Format("2006-01-02 15:04"),
+			CreatedAt:    j.CreatedAt.Format("2006-01-02 15:04"),
+			Family:       fam,
+			Ext:          ext,
+			HasThumbnail: fam.Pipeline(),
 		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.DocumentsPage(rows, search).Render(r.Context(), w); err != nil {
+	if err := templates.DocumentsPage(rows, search, typeFilters(typeFilter)).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render documents: %v\n", err)
 	}
+}
+
+// typeFilters : les filtres par type de la bibliothèque (jalon 25).
+func typeFilters(active string) []templates.TypeFilter {
+	families := []formats.Family{formats.PDF, formats.Word, formats.Sheet, formats.Slides, formats.CSV, formats.Text, formats.Image, formats.Email, formats.HTML, formats.Other}
+	out := []templates.TypeFilter{{Value: "", Label: "Tous", Active: active == ""}}
+	for _, f := range families {
+		out = append(out, templates.TypeFilter{Value: string(f), Label: f.Label(), Active: active == string(f)})
+	}
+	return out
 }
 
 func (s *Server) handleDocumentDetail(w http.ResponseWriter, r *http.Request) {
@@ -234,22 +219,6 @@ func (s *Server) handleDocumentDetail(w http.ResponseWriter, r *http.Request) {
 	if err := templates.DocumentDetailPage(job, view, s.Registry.Names()).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render document detail %s: %v\n", id, err)
 	}
-}
-
-func (s *Server) handleDocumentPDF(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	job, ok, err := s.Jobs.Get(r.Context(), id)
-	if err != nil {
-		http.Error(w, "erreur de lecture du document : "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/pdf")
-	w.Write(job.Content)
 }
 
 func (s *Server) handleDocumentTags(w http.ResponseWriter, r *http.Request) {
@@ -314,7 +283,7 @@ func (s *Server) handleDocumentThumbnail(w http.ResponseWriter, r *http.Request)
 	id := chi.URLParam(r, "id")
 	png, ok, err := s.Jobs.Thumbnail(r.Context(), id)
 	if err != nil {
-		http.Error(w, "miniature indisponible : "+err.Error(), http.StatusInternalServerError)
+		thumbnailError(w, r, err)
 		return
 	}
 	if !ok {

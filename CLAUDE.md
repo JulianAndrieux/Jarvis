@@ -1552,6 +1552,125 @@ spécifique à `localhost`.
     démarrage), captures Chrome headless des trois pages ; quatre défauts
     trouvés ainsi et corrigés (indentation, arrivées de flèches, type par
     défaut ×2, chevauchement d'en-tête).
+- **Jalon 25 — tous les types de fichiers (remplacement de Google
+  Drive) : fait, validé end-to-end (cf. mesure ci-dessous).** Demandé :
+  "gérer également d'autres types de fichier [...] txt, doc, docx, ppt,
+  pptx, excel (tous les types), etc. [...] Vérifie que la preview
+  fonctionne pour chaque type de document." Décisions de l'utilisateur
+  (questions posées) : **LibreOffice installé** (`brew install --cask
+  libreoffice`, MPL, local) ; types en plus : images, texte et données,
+  e-mails `.eml`, et **tout le reste stocké tel quel** ; **tous les
+  documents lisibles passent par classification + extraction** comme
+  les PDF.
+  - **Principe : une version PDF par fichier.** `internal/formats`
+    (nouveau) : `Detect(nom, premiers octets)` → famille (`pdf`, `word`,
+    `slides`, `sheet`, `csv`, `text`, `html`, `image`, `email`, `other`)
+    + MIME ; l'extension fait foi, sauf une signature PDF ; sans
+    extension connue, le contenu tranche (PDF, image, texte UTF-8 ou
+    Windows-1252, sinon stocké). Port `Converter` → `Rendition{PDF,
+    Preview}` ; `LocalConverter` : LibreOffice (profil dédié — sinon
+    échec silencieux si l'utilisateur a LibreOffice ouvert ; une instance
+    à la fois ; délai 3 min) pour Word/présentations/tableurs (+ aperçu
+    HTML de toutes les feuilles), CSV mis en tableau par Jarvis puis
+    PDF, texte ré-encodé en UTF-8 puis PDF (import "Text (encoded)"),
+    e-mail et page web **convertis via leur texte, jamais leur HTML**
+    (LibreOffice irait chercher les images distantes — pixels de suivi,
+    données hors de la machine) ; `sips` pour les images, **normalisées
+    en page A4** (2400 px à 205 DPI — sinon une photo de 4000 px devient
+    une page de 1,4 m rendue à 200 DPI pour le VLM), avec aperçu JPEG
+    pour HEIC/TIFF/BMP. Le pipeline (triage → VLM → LLM), les miniatures
+    et la recherche fonctionnent sur la version PDF **sans avoir été
+    modifiés**. Deux pièges LibreOffice trouvés en testant : un `.html`
+    s'ouvre en "Writer/Web", sans export Word/PDF (import `HTML
+    (StarWriter)` imposé) ; LibreOffice **sort en 0 même quand la
+    conversion échoue** ("source file could not be loaded") — c'est
+    l'absence du fichier produit qui fait foi, testé sur un docx tronqué.
+  - **Deux paquets confiés à des agents en parallèle** (proposition de
+    l'utilisateur, chacun dans un worktree isolé, spécification d'API
+    imposée, TDD, stdlib seule) puis intégrés : `internal/email`
+    (RFC 5322/MIME écrit à la main — `textproto`/`multipart`
+    abandonnent tout le message sur une ligne malformée ; base64/QP,
+    RFC 2047/2231, jeux de caractères Latin-1/9/Windows-1252 en tables,
+    noms de pièces jointes réduits à leur dernier composant, 17 `.eml`
+    de test, fuzzing) et `internal/textview` (décodage UTF-8/UTF-16/
+    Windows-1252, détection texte/binaire, CSV à séparateur deviné — `;`
+    des exports Excel français sans confondre les décimales `12,50`).
+  - **Stockage : fichiers dans GridFS** (bucket `<collection>_files`,
+    même driver) — la limite de 16 Mo d'un document MongoDB aurait
+    bloqué tout fichier lourd. `Store.WriteFile/ReadFile` (original,
+    version PDF, aperçu), **`Get` ne charge plus le fichier** (le volet
+    d'un document en cours le retéléchargeait depuis Atlas toutes les
+    2 s), `Delete` retire aussi les fichiers ; les jobs d'avant ce jalon
+    (PDF dans le champ `content`) restent lisibles sans migration.
+    `Job` gagne `Format`, `MIME`, `Size` et `SourceHash` (SHA-256, la
+    provenance du brief — la copie locale `--out-dir` l'utilise).
+    `ListQuery.Format` (filtre par type ; un job sans format est un PDF).
+  - **File d'attente globale** (`JobManager.Concurrency`, défaut 1) :
+    déposer 20 fichiers d'un coup ne lance plus 20 traitements
+    simultanés sur les modèles (cf. jalon 21 bis) ; les jobs attendent
+    en `pending`, `StartedAt` au démarrage réel. La conversion n'a lieu
+    qu'une fois : une ré-extraction réutilise la version PDF. Les
+    fichiers seulement stockés se terminent sans conversion ni pipeline.
+  - **Import** : plusieurs fichiers d'un coup, tous types, 512 Mio par
+    fichier. **Dossier surveillé** : tous les fichiers sauf cachés,
+    verrous d'Office (`~$`) et téléchargements en cours.
+  - **Aperçus** (vue détail, volet gauche) : PDF fidèle (PDF, Word,
+    présentations), tableau HTML de toutes les feuilles (tableurs), CSV
+    en tableau, texte, page web, e-mail (en-têtes, corps, pièces
+    jointes), image (JPEG de conversion pour HEIC/TIFF), fiche +
+    téléchargement pour le reste. Les aperçus natifs affichent du
+    contenu fourni par l'utilisateur : **servis avec une CSP stricte**
+    (`default-src 'none'` + `sandbox` — ni script ni ressource distante)
+    **dans une iframe en bac à sable**. Téléchargement de l'original
+    partout (nom UTF-8 conservé, RFC 5987). Bibliothèque : badge
+    d'extension, icône pour les fichiers sans miniature, filtres par type.
+  - **Corpus de test** `testdata/formats/` (22 fichiers, un par format :
+    docx, doc, odt, rtf, pptx, ppt, odp, xlsx, xls, ods, csv
+    Windows-1252, txt, md, json, html, jpg, png, heic, tiff, eml
+    multipart avec pièce jointe et en-têtes encodés, zip, pdf), généré
+    par `scripts/gen_format_fixtures.sh` à partir de sources écrites à
+    la main (aucun document personnel ; les formats vérifiés avec
+    `file`). Piège du script lui-même trouvé par les tests : le CSV
+    Windows-1252 importé avec le jeu de caractères UTF-8 (option 76 du
+    filtre CSV) cassait les accents des tableurs générés.
+  - Testé : unitaire (`formats` détection ; `webapp` stockage des
+    fichiers, file d'attente, conversion une seule fois, fichiers
+    stockés, miniatures, filtre par format ; `cmd/jarvisapp` import
+    multiple, téléchargement, aperçu de chaque famille avec CSP,
+    image/HEIC, vue détail par famille, grille ; `watch`) ;
+    intégration : **conversion réelle des 16 formats convertibles** avec
+    le texte attendu dans chaque PDF, aperçus des tableurs, images en
+    page A4 sans couche texte, docx tronqué → erreur explicite ;
+    `MongoStore` réel (**fichier de 17 Mio** via GridFS, écrasement,
+    suppression, job ancien à contenu inline).
+  - **Validé en conditions réelles** (binaire sur :8091, collection
+    `jobs_test`, vrais VLM/LLM) : **les 22 fichiers du corpus importés en
+    un seul envoi**, traités un par un par la file (00:15 → 00:30, 15
+    min), **aucun échec**. Pour chacun : original téléchargeable, PDF
+    servi (sauf le zip, voulu), aperçu natif (texte, Markdown, JSON, CSV,
+    page web, e-mail, 3 tableurs), image (HEIC servi en JPEG), miniature
+    (sauf le zip). **Les 13 déclinaisons de la même facture** (docx, doc,
+    odt, rtf, pdf, pptx, ppt, odp, html, eml, json et les 4 images lues
+    par le VLM, HEIC compris) **classées `facture` avec les mêmes valeurs
+    exactes** (Atelier Dubois SARL, FAC-2026-0917, 2317,20). Relevé
+    bancaire et liste de courses : aucun type, correct (type non
+    enregistré). Captures Chrome headless de chaque famille (le PDF en
+    iframe n'y est pas rendu : vérifié en extrayant le texte des PDF
+    servis). Données de test supprimées ensuite.
+  - **Deux défauts trouvés par cette validation, corrigés** : (1) **en
+    mode sombre, les aperçus natifs étaient illisibles** — la page
+    d'aperçu déclarait `color-scheme: light dark` dans une iframe à fond
+    blanc, le navigateur passait le texte en clair (cellules du CSV,
+    en-têtes de l'e-mail invisibles) ; couleurs claires imposées, testé.
+    (2) Le pixel de suivi de l'e-mail de test, **bien bloqué par la
+    CSP**, s'affichait comme une image cassée : les images distantes sont
+    masquées.
+  - **Constat, non corrigé** : le décodage d'un HEIC par `sips` passe par
+    le matériel graphique — **49 s quand le VLM occupe le GPU**, moins
+    d'une seconde sinon. Sans effet en usage normal (la file d'attente
+    ne convertit qu'un fichier à la fois, quand aucun autre traitement ne
+    tourne) ; à garder en tête si la file passe à plusieurs documents
+    simultanés.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

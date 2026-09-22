@@ -3,6 +3,7 @@
 package webapp
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"testing"
@@ -37,8 +38,12 @@ func cleanupJob(t *testing.T, store *MongoStore, id string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := store.Collection.DeleteOne(ctx, bson.M{"_id": id}); err != nil {
-		t.Logf("cleanup: delete %s: %v", id, err)
+	// Delete retire aussi les fichiers GridFS du job (jalon 25) ; repli
+	// sur la suppression brute du document si le job est déjà absent.
+	if err := store.Delete(ctx, id); err != nil {
+		if _, err := store.Collection.DeleteOne(ctx, bson.M{"_id": id}); err != nil {
+			t.Logf("cleanup: delete %s: %v", id, err)
+		}
 	}
 }
 
@@ -103,8 +108,12 @@ func TestMongoStore_CreateThenGet_RoundTrips(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("Get() = %+v, %v, %v", got, ok, err)
 	}
-	if got.Filename != "doc.pdf" || string(got.Content) != "%PDF-1.4 contenu" {
-		t.Errorf("Get() = %+v, want Filename=doc.pdf Content=%%PDF-1.4 contenu", got)
+	// Jalon 25 : le fichier vit dans GridFS, Get ne le charge plus.
+	if got.Filename != "doc.pdf" || got.Content != nil {
+		t.Errorf("Get() = %+v, want Filename=doc.pdf and no Content", got)
+	}
+	if data, ok, err := store.ReadFile(context.Background(), job.ID, FileOriginal); err != nil || !ok || string(data) != "%PDF-1.4 contenu" {
+		t.Errorf("ReadFile(original) = %q ok=%v err=%v, want the uploaded content", data, ok, err)
 	}
 }
 
@@ -372,5 +381,114 @@ func TestMongoStore_SetProgress_RoundTripsSurvivesUpdateAndClears(t *testing.T) 
 	got, _, _ = store.Get(ctx, id)
 	if got.Progress != nil {
 		t.Errorf("Progress = %+v, want nil after clearing", got.Progress)
+	}
+}
+
+// --- Jalon 25 : fichiers dans GridFS (plus de limite de 16 Mo) ---
+
+func TestMongoStore_LargeFileGoesToGridFSAndGetStaysLight(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	id := "test-gridfs-" + time.Now().Format("150405.000000")
+	defer cleanupJob(t, store, id)
+
+	big := bytes.Repeat([]byte("0123456789abcdef"), 17<<20/16) // 17 Mio : au-delà de la limite d'un document MongoDB
+	job := Job{ID: id, Filename: "gros.pptx", Content: big, Status: StatusPending, CreatedAt: time.Now(),
+		Format: "slides", MIME: "application/vnd.openxmlformats-officedocument.presentationml.presentation", Size: int64(len(big)), SourceHash: "abc"}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatalf("Create(17 MiB) error = %v, want success (GridFS)", err)
+	}
+
+	got, ok, err := store.Get(ctx, id)
+	if err != nil || !ok {
+		t.Fatalf("Get() ok=%v err=%v", ok, err)
+	}
+	if got.Content != nil {
+		t.Errorf("Get() returned %d bytes of content, want none (loaded on demand only)", len(got.Content))
+	}
+	if got.Format != "slides" || got.Size != int64(len(big)) || got.MIME == "" || got.SourceHash != "abc" {
+		t.Errorf("Get() metadata = format %q size %d mime %q hash %q", got.Format, got.Size, got.MIME, got.SourceHash)
+	}
+	data, ok, err := store.ReadFile(ctx, id, FileOriginal)
+	if err != nil || !ok || !bytes.Equal(data, big) {
+		t.Errorf("ReadFile(original) = %d bytes ok=%v err=%v, want the 17 MiB back intact", len(data), ok, err)
+	}
+}
+
+func TestMongoStore_WriteFileOverwritesAndDeleteRemovesFiles(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	id := "test-files-" + time.Now().Format("150405.000000")
+
+	if _, err := store.Create(ctx, Job{ID: id, Filename: "a.docx", Content: []byte("docx"), CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := store.ReadFile(ctx, id, FileRendition); ok {
+		t.Error("ReadFile(rendition) ok = true before any WriteFile")
+	}
+	for _, v := range []string{"%PDF-v1", "%PDF-v2"} {
+		if err := store.WriteFile(ctx, id, FileRendition, []byte(v)); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", v, err)
+		}
+	}
+	if data, _, _ := store.ReadFile(ctx, id, FileRendition); string(data) != "%PDF-v2" {
+		t.Errorf("ReadFile(rendition) = %q, want the last write", data)
+	}
+
+	if err := store.Delete(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []FileName{FileOriginal, FileRendition} {
+		if _, ok, err := store.ReadFile(ctx, id, name); ok || err != nil {
+			t.Errorf("ReadFile(%s) after Delete: ok=%v err=%v, want not found", name, ok, err)
+		}
+	}
+}
+
+// Les documents créés avant le jalon 25 ont leur PDF dans le champ
+// "content" du document : toujours lisibles, sans migration.
+func TestMongoStore_ReadFile_LegacyInlineContent(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	id := "test-legacy-" + time.Now().Format("150405.000000")
+	defer cleanupJob(t, store, id)
+
+	if _, err := store.Collection.InsertOne(ctx, bson.M{"_id": id, "filename": "ancien.pdf", "content": []byte("%PDF-ancien"), "status": "done", "created_at": time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := store.Get(ctx, id)
+	if err != nil || !ok || got.Content != nil {
+		t.Fatalf("Get(legacy) ok=%v err=%v content=%d, want found without content", ok, err, len(got.Content))
+	}
+	data, ok, err := store.ReadFile(ctx, id, FileOriginal)
+	if err != nil || !ok || string(data) != "%PDF-ancien" {
+		t.Errorf("ReadFile(original) on a legacy job = %q ok=%v err=%v, want the inline content", data, ok, err)
+	}
+}
+
+func TestMongoStore_List_FiltersByFormatIncludingLegacyPDFs(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	stamp := time.Now().Format("150405.000000")
+	for _, j := range []Job{
+		{ID: "fmt-sheet-" + stamp, Filename: "fmt-" + stamp + ".xlsx", Format: "sheet", CreatedAt: time.Now()},
+		{ID: "fmt-pdf-" + stamp, Filename: "fmt-" + stamp + ".pdf", Format: "pdf", CreatedAt: time.Now()},
+		{ID: "fmt-legacy-" + stamp, Filename: "fmt-" + stamp + "-old.pdf", CreatedAt: time.Now()},
+	} {
+		if _, err := store.Create(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+		defer cleanupJob(t, store, j.ID)
+	}
+	pdfs, err := store.List(ctx, ListQuery{Search: "fmt-" + stamp, Format: "pdf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pdfs) != 2 {
+		t.Errorf("List(Format=pdf) = %d, want 2 (legacy job without format counts as PDF)", len(pdfs))
+	}
+	sheets, _ := store.List(ctx, ListQuery{Search: "fmt-" + stamp, Format: "sheet"})
+	if len(sheets) != 1 {
+		t.Errorf("List(Format=sheet) = %d, want 1", len(sheets))
 	}
 }

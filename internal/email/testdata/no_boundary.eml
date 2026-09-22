@@ -1,0 +1,11 @@
+From: bogus@example.com
+To: someone@example.com
+Subject: Boundary absente
+MIME-Version: 1.0
+Content-Type: multipart/mixed
+
+--XyZ123
+Content-Type: text/plain; charset=us-ascii
+
+Texte retrouve malgre l'absence de boundary.
+--XyZ123--

@@ -20,12 +20,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
+	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
@@ -120,6 +122,13 @@ func main() {
 
 	jobs := webapp.NewJobManager(jobStore, runner)
 	jobs.Renderer = parsing.PdftoppmRenderer{}
+	// Jalon 25 : conversion locale des fichiers non-PDF (LibreOffice,
+	// sips). Sans LibreOffice, ces fichiers échouent avec un message
+	// explicite — signalé dès le démarrage.
+	jobs.Converter = &formats.LocalConverter{}
+	if _, err := exec.LookPath("soffice"); err != nil {
+		log.Printf("jarvisapp: ATTENTION — soffice (LibreOffice) introuvable : Word, Excel, PowerPoint, CSV et texte ne pourront pas être convertis (brew install --cask libreoffice)")
+	}
 	jobs.WorkDir = *workDir
 	if *outDir != "" {
 		jobs.OnFinish = persistJobLocally(*outDir)
@@ -203,7 +212,7 @@ func persistJobLocally(outDir string) func(webapp.Job) {
 		if job.Status != webapp.StatusDone || job.Result == nil {
 			return
 		}
-		hash := store.HashBytes(job.Content)
+		hash := job.SourceHash
 		doc, pages := store.BuildRecords(hash, job.Filename, job.DocType, time.Now().UTC(), *job.Result)
 		if err := store.WriteRecords(outDir, doc, pages); err != nil {
 			fmt.Fprintf(os.Stderr, "jarvisapp: write records for %s: %v\n", job.Filename, err)

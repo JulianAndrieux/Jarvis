@@ -1,6 +1,7 @@
 package webapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,12 @@ import (
 // --out-dir`) sont inchangés et n'envoient toujours rien nulle part.
 type MongoStore struct {
 	Collection *mongo.Collection
+	// Files est le bucket GridFS des fichiers des jobs (original, version
+	// PDF, aperçu) — jalon 25 : plus de limite de 16 Mo par document, et
+	// Get ne transfère plus le fichier à chaque lecture (le volet d'un
+	// document en cours le relisait toutes les 2 s). Nommé
+	// "<collection>_files" pour que la collection de test ait le sien.
+	Files *mongo.GridFSBucket
 }
 
 // NewMongoStore se connecte à uri et retourne un MongoStore prêt à
@@ -37,7 +44,11 @@ func NewMongoStore(ctx context.Context, uri, database, collection string) (*Mong
 	if err := client.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("webapp: ping mongodb: %w", err)
 	}
-	return &MongoStore{Collection: client.Database(database).Collection(collection)}, nil
+	db := client.Database(database)
+	return &MongoStore{
+		Collection: db.Collection(collection),
+		Files:      db.GridFSBucket(options.GridFSBucket().SetName(collection + "_files")),
+	}, nil
 }
 
 func (s *MongoStore) Create(ctx context.Context, job Job) (Job, error) {
@@ -45,15 +56,88 @@ func (s *MongoStore) Create(ctx context.Context, job Job) (Job, error) {
 	if err != nil {
 		return Job{}, fmt.Errorf("webapp: mongo create %s: %w", job.ID, err)
 	}
+	// Le fichier d'abord : un job n'existe jamais sans son original. Si
+	// l'insertion échoue ensuite, le fichier orphelin est retiré.
+	if job.Content != nil {
+		if err := s.putFile(ctx, job.ID, FileOriginal, job.Content); err != nil {
+			return Job{}, fmt.Errorf("webapp: mongo create %s: %w", job.ID, err)
+		}
+	}
 	if _, err := s.Collection.InsertOne(ctx, doc); err != nil {
+		_ = s.deleteFile(ctx, job.ID, FileOriginal)
 		return Job{}, fmt.Errorf("webapp: mongo create %s: %w", job.ID, err)
 	}
 	return job, nil
 }
 
+func fileID(id string, name FileName) string { return id + "/" + string(name) }
+
+// putFile remplace le fichier name du job id dans GridFS.
+func (s *MongoStore) putFile(ctx context.Context, id string, name FileName, data []byte) error {
+	if err := s.deleteFile(ctx, id, name); err != nil {
+		return err
+	}
+	if err := s.Files.UploadFromStreamWithID(ctx, fileID(id, name), string(name), bytes.NewReader(data)); err != nil {
+		return fmt.Errorf("upload %s: %w", name, err)
+	}
+	return nil
+}
+
+func (s *MongoStore) deleteFile(ctx context.Context, id string, name FileName) error {
+	err := s.Files.Delete(ctx, fileID(id, name))
+	if err != nil && !errors.Is(err, mongo.ErrFileNotFound) {
+		return fmt.Errorf("delete %s: %w", name, err)
+	}
+	return nil
+}
+
+func (s *MongoStore) WriteFile(ctx context.Context, id string, name FileName, data []byte) error {
+	n, err := s.Collection.CountDocuments(ctx, bson.M{"_id": id})
+	if err != nil {
+		return fmt.Errorf("webapp: mongo write %s/%s: %w", id, name, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("webapp: mongo write %s/%s: job not found", id, name)
+	}
+	if err := s.putFile(ctx, id, name, data); err != nil {
+		return fmt.Errorf("webapp: mongo write %s/%s: %w", id, name, err)
+	}
+	return nil
+}
+
+func (s *MongoStore) ReadFile(ctx context.Context, id string, name FileName) ([]byte, bool, error) {
+	var buf bytes.Buffer
+	_, err := s.Files.DownloadToStream(ctx, fileID(id, name), &buf)
+	if err == nil {
+		return buf.Bytes(), true, nil
+	}
+	if !errors.Is(err, mongo.ErrFileNotFound) {
+		return nil, false, fmt.Errorf("webapp: mongo read %s/%s: %w", id, name, err)
+	}
+	if name != FileOriginal {
+		return nil, false, nil
+	}
+	// Job créé avant le jalon 25 : le PDF est dans le champ "content" du
+	// document. Lu tel quel, sans migration.
+	var legacy struct {
+		Content []byte `bson:"content"`
+	}
+	err = s.Collection.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"content": 1})).Decode(&legacy)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("webapp: mongo read legacy content %s: %w", id, err)
+	}
+	if len(legacy.Content) == 0 {
+		return nil, false, nil
+	}
+	return legacy.Content, true, nil
+}
+
 func (s *MongoStore) Get(ctx context.Context, id string) (Job, bool, error) {
 	var doc mongoJobDoc
-	err := s.Collection.FindOne(ctx, bson.M{"_id": id}).Decode(&doc)
+	err := s.Collection.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"content": 0})).Decode(&doc)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return Job{}, false, nil
 	}
@@ -151,6 +235,11 @@ func (s *MongoStore) Delete(ctx context.Context, id string) error {
 	if res.DeletedCount == 0 {
 		return fmt.Errorf("webapp: mongo delete %s: job not found", id)
 	}
+	for _, name := range []FileName{FileOriginal, FileRendition, FilePreview} {
+		if err := s.deleteFile(ctx, id, name); err != nil {
+			return fmt.Errorf("webapp: mongo delete %s: %w", id, err)
+		}
+	}
 	return nil
 }
 
@@ -166,21 +255,39 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 		limit = int64(DefaultListLimit)
 	}
 
-	filter := bson.M{}
+	var and bson.A
 	if q.Search != "" {
 		re := bson.M{"$regex": q.Search, "$options": "i"}
-		filter["$or"] = bson.A{
+		and = append(and, bson.M{"$or": bson.A{
 			bson.M{"filename": re},
 			bson.M{"doc_type": re},
 			bson.M{"tags": re},
 			bson.M{"search_text": re},
-		}
+		}})
 	}
 	if q.Status != "" {
-		filter["status"] = string(q.Status)
+		and = append(and, bson.M{"status": string(q.Status)})
+	}
+	switch q.Format {
+	case "":
+	case "pdf":
+		// Un job antérieur au jalon 25 n'a pas de format : c'était un PDF.
+		and = append(and, bson.M{"$or": bson.A{
+			bson.M{"format": "pdf"},
+			bson.M{"format": bson.M{"$exists": false}},
+			bson.M{"format": ""},
+		}})
+	default:
+		and = append(and, bson.M{"format": q.Format})
+	}
+	filter := bson.M{}
+	if len(and) > 0 {
+		filter["$and"] = and
 	}
 
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit)
+	// Le contenu inline des jobs d'avant le jalon 25 n'est jamais rechargé
+	// par une liste.
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit).SetProjection(bson.M{"content": 0})
 	if q.SummaryOnly {
 		opts.SetProjection(bson.M{"content": 0, "result_json": 0, "thumbnail": 0, "progress_json": 0})
 	}
@@ -232,14 +339,20 @@ type mongoJobDoc struct {
 	// ProgressJSON : pipeline.Progress sérialisé (jalon 23), même
 	// principe que ResultJSON.
 	ProgressJSON []byte `bson:"progress_json,omitempty"`
+
+	Format     string `bson:"format,omitempty"`
+	MIME       string `bson:"mime,omitempty"`
+	Size       int64  `bson:"size,omitempty"`
+	SourceHash string `bson:"source_hash,omitempty"`
 }
 
 func jobToDoc(job Job) (mongoJobDoc, error) {
 	doc := mongoJobDoc{
 		ID: job.ID, DocType: job.DocType, Filename: job.Filename,
-		Content: job.Content, Status: string(job.Status),
+		Status:    string(job.Status),
 		CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, FinishedAt: job.FinishedAt, Err: job.Err,
 		Tags: job.Tags, SearchText: job.SearchText, Thumbnail: job.Thumbnail,
+		Format: job.Format, MIME: job.MIME, Size: job.Size, SourceHash: job.SourceHash,
 	}
 	if job.Result != nil {
 		b, err := json.Marshal(job.Result)
@@ -261,9 +374,10 @@ func jobToDoc(job Job) (mongoJobDoc, error) {
 func docToJob(doc mongoJobDoc) (Job, error) {
 	job := Job{
 		ID: doc.ID, DocType: doc.DocType, Filename: doc.Filename,
-		Content: doc.Content, Status: Status(doc.Status),
+		Status:    Status(doc.Status),
 		CreatedAt: doc.CreatedAt, StartedAt: doc.StartedAt, FinishedAt: doc.FinishedAt, Err: doc.Err,
 		Tags: doc.Tags, SearchText: doc.SearchText, Thumbnail: doc.Thumbnail,
+		Format: doc.Format, MIME: doc.MIME, Size: doc.Size, SourceHash: doc.SourceHash,
 	}
 	if len(doc.ResultJSON) > 0 {
 		var result pipeline.Result

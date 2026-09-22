@@ -2,12 +2,17 @@ package webapp
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 )
 
@@ -685,5 +690,291 @@ func TestJobManager_RecoverOrphaned_KeepsPartialProgress(t *testing.T) {
 	got, _, _ := store.Get(ctx, "a")
 	if got.Status != StatusFailed || got.Progress == nil || got.Progress.Pages[0].Text != "déjà lu" {
 		t.Errorf("after recovery: status=%s progress=%+v, want failed with progress kept", got.Status, got.Progress)
+	}
+}
+
+// --- Jalon 25 : tous les types de fichiers, file d'attente globale ---
+
+// fakeConverter simule formats.Converter : enregistre les appels (format,
+// contenu du fichier source, extension du chemin) et l'étape
+// d'avancement visible en base au moment de l'appel.
+type fakeConverter struct {
+	store     *FakeStore
+	rendition formats.Rendition
+	err       error
+
+	mu        sync.Mutex
+	calls     int
+	gotFamily formats.Family
+	gotSrc    []byte
+	gotExt    string
+	gotStage  pipeline.Stage
+}
+
+func (c *fakeConverter) Convert(ctx context.Context, f formats.Format, srcPath string) (formats.Rendition, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls++
+	c.gotFamily = f.Family
+	c.gotSrc, _ = os.ReadFile(srcPath)
+	c.gotExt = filepath.Ext(srcPath)
+	if c.store != nil {
+		for _, j := range c.store.jobs {
+			if j.Progress != nil {
+				c.gotStage = j.Progress.Stage
+			}
+		}
+	}
+	return c.rendition, c.err
+}
+
+func (c *fakeConverter) Calls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func waitStatus(t *testing.T, store *FakeStore, id string, want Status) Job {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		j, _, _ := store.Get(context.Background(), id)
+		if j.Status == want {
+			return j
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	j, _, _ := store.Get(context.Background(), id)
+	t.Fatalf("job %s status = %s, want %s (err %q)", id, j.Status, want, j.Err)
+	return j
+}
+
+func TestJobManager_Submit_DetectsFormatSizeAndHash(t *testing.T) {
+	store := NewFakeStore()
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	m.Converter = &fakeConverter{rendition: formats.Rendition{PDF: []byte("%PDF")}}
+
+	job, err := m.Submit(context.Background(), "Budget 2026.xlsx", []byte("xlsx-bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := store.Get(context.Background(), job.ID)
+	if got.Format != "sheet" || got.MIME != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || got.Size != 10 {
+		t.Errorf("stored job format=%q mime=%q size=%d", got.Format, got.MIME, got.Size)
+	}
+	if want := fmt.Sprintf("%x", sha256.Sum256([]byte("xlsx-bytes"))); got.SourceHash != want {
+		t.Errorf("SourceHash = %q, want sha256 %q", got.SourceHash, want)
+	}
+	waitStatus(t, store, job.ID, StatusDone)
+}
+
+// Un Word est converti en PDF (extension d'origine conservée pour que
+// LibreOffice choisisse le bon filtre), la version PDF et l'aperçu sont
+// enregistrés, et c'est le PDF qui part dans le pipeline.
+func TestJobManager_ConvertsThenRunsPipelineOnRendition(t *testing.T) {
+	store := NewFakeStore()
+	runner := &fakeRunner{result: pipeline.Result{DocType: "facture"}}
+	conv := &fakeConverter{store: store, rendition: formats.Rendition{PDF: []byte("%PDF-rendition"), Preview: []byte("<table>"), PreviewMIME: "text/html"}}
+	m := NewJobManager(store, runner)
+	m.WorkDir = t.TempDir()
+	m.Converter = conv
+
+	job, _ := m.Submit(context.Background(), "lettre.docx", []byte("docx-bytes"))
+	waitStatus(t, store, job.ID, StatusDone)
+
+	if conv.gotFamily != formats.Word || string(conv.gotSrc) != "docx-bytes" || conv.gotExt != ".docx" {
+		t.Errorf("converter got family=%s src=%q ext=%q", conv.gotFamily, conv.gotSrc, conv.gotExt)
+	}
+	if conv.gotStage != pipeline.StageConverting {
+		t.Errorf("progress during conversion = %q, want %q", conv.gotStage, pipeline.StageConverting)
+	}
+	if pdf, ok, _ := store.ReadFile(context.Background(), job.ID, FileRendition); !ok || string(pdf) != "%PDF-rendition" {
+		t.Errorf("stored rendition = %q ok=%v", pdf, ok)
+	}
+	if prev, ok, _ := store.ReadFile(context.Background(), job.ID, FilePreview); !ok || string(prev) != "<table>" {
+		t.Errorf("stored preview = %q ok=%v", prev, ok)
+	}
+	if got, _ := os.ReadFile(runner.Path()); got != nil {
+		t.Errorf("runner temp file should be cleaned up after the run")
+	}
+	if filepath.Ext(runner.Path()) != ".pdf" {
+		t.Errorf("runner path = %q, want a .pdf (the rendition)", runner.Path())
+	}
+}
+
+func TestJobManager_ConversionErrorFailsJobWithoutRunningPipeline(t *testing.T) {
+	store := NewFakeStore()
+	runner := &fakeRunner{}
+	m := NewJobManager(store, runner)
+	m.WorkDir = t.TempDir()
+	m.Converter = &fakeConverter{err: errors.New("soffice: boom")}
+
+	job, _ := m.Submit(context.Background(), "deck.pptx", []byte("pptx"))
+	got := waitStatus(t, store, job.ID, StatusFailed)
+	if !strings.Contains(got.Err, "conversion") || !strings.Contains(got.Err, "soffice: boom") {
+		t.Errorf("Err = %q, want a conversion error with the cause", got.Err)
+	}
+	if runner.Path() != "" {
+		t.Error("pipeline must not run when conversion failed")
+	}
+}
+
+func TestJobManager_NoConverterForADocument_FailsExplicitly(t *testing.T) {
+	store := NewFakeStore()
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+
+	job, _ := m.Submit(context.Background(), "deck.pptx", []byte("pptx"))
+	got := waitStatus(t, store, job.ID, StatusFailed)
+	if !strings.Contains(got.Err, "convert") {
+		t.Errorf("Err = %q, want an explicit 'no converter' error", got.Err)
+	}
+}
+
+// Un zip, un dmg... sont stockés et téléchargeables, sans conversion ni
+// pipeline : le job se termine tout de suite, sans résultat.
+func TestJobManager_OtherFilesAreStoredOnly(t *testing.T) {
+	store := NewFakeStore()
+	runner := &fakeRunner{}
+	conv := &fakeConverter{}
+	m := NewJobManager(store, runner)
+	m.WorkDir = t.TempDir()
+	m.Converter = conv
+
+	job, _ := m.Submit(context.Background(), "photos.zip", []byte("PK\x03\x04"))
+	got := waitStatus(t, store, job.ID, StatusDone)
+	if got.Result != nil || got.Err != "" {
+		t.Errorf("stored-only job = result %v err %q, want neither", got.Result, got.Err)
+	}
+	if conv.Calls() != 0 || runner.Path() != "" {
+		t.Error("neither conversion nor pipeline should run for a stored-only file")
+	}
+	if data, ok, _ := store.ReadFile(context.Background(), job.ID, FileOriginal); !ok || string(data) != "PK\x03\x04" {
+		t.Errorf("original not kept: %q", data)
+	}
+}
+
+// Changer le type relance l'extraction, pas la conversion : la version
+// PDF déjà produite est réutilisée.
+func TestJobManager_ReprocessReusesRendition(t *testing.T) {
+	store := NewFakeStore()
+	conv := &fakeConverter{rendition: formats.Rendition{PDF: []byte("%PDF-r")}}
+	m := NewJobManager(store, &fakeRunner{result: pipeline.Result{DocType: "devis"}})
+	m.WorkDir = t.TempDir()
+	m.Converter = conv
+
+	job, _ := m.Submit(context.Background(), "devis.docx", []byte("docx"))
+	waitStatus(t, store, job.ID, StatusDone)
+	if err := m.Reprocess(context.Background(), job.ID, "devis"); err != nil {
+		t.Fatal(err)
+	}
+	waitStatus(t, store, job.ID, StatusDone)
+	time.Sleep(20 * time.Millisecond)
+	if conv.Calls() != 1 {
+		t.Errorf("converter called %d times, want 1 (reprocess must reuse the rendition)", conv.Calls())
+	}
+}
+
+// File d'attente globale : un seul document traité à la fois par
+// défaut — déposer 20 fichiers d'un coup ne doit pas envoyer 20 appels
+// simultanés aux modèles (cf. jalon 21 bis).
+func TestJobManager_QueueProcessesOneJobAtATimeByDefault(t *testing.T) {
+	store := NewFakeStore()
+	runner := &countingRunner{proceed: make(chan struct{})}
+	m := NewJobManager(store, runner)
+	m.WorkDir = t.TempDir()
+
+	a, _ := m.Submit(context.Background(), "a.pdf", []byte("%PDF-a"))
+	b, _ := m.Submit(context.Background(), "b.pdf", []byte("%PDF-b"))
+	time.Sleep(50 * time.Millisecond)
+
+	if runner.Max() != 1 {
+		t.Errorf("max concurrent runs = %d, want 1", runner.Max())
+	}
+	ja, _, _ := store.Get(context.Background(), a.ID)
+	jb, _, _ := store.Get(context.Background(), b.ID)
+	running, pending := ja, jb
+	if ja.Status == StatusPending {
+		running, pending = jb, ja
+	}
+	if running.Status != StatusRunning || pending.Status != StatusPending || !pending.StartedAt.IsZero() {
+		t.Errorf("statuses = %s/%s (pending StartedAt %v), want one running and one pending not started", ja.Status, jb.Status, pending.StartedAt)
+	}
+	close(runner.proceed)
+	waitStatus(t, store, a.ID, StatusDone)
+	waitStatus(t, store, b.ID, StatusDone)
+	if runner.Max() != 1 {
+		t.Errorf("max concurrent runs = %d, want 1", runner.Max())
+	}
+}
+
+type countingRunner struct {
+	proceed chan struct{}
+	mu      sync.Mutex
+	cur     int
+	max     int
+}
+
+func (r *countingRunner) enter() {
+	r.mu.Lock()
+	r.cur++
+	if r.cur > r.max {
+		r.max = r.cur
+	}
+	r.mu.Unlock()
+}
+
+func (r *countingRunner) leave() {
+	r.mu.Lock()
+	r.cur--
+	r.mu.Unlock()
+}
+
+func (r *countingRunner) Max() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.max
+}
+
+func (r *countingRunner) RunAuto(ctx context.Context, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error) {
+	r.enter()
+	defer r.leave()
+	<-r.proceed
+	return pipeline.Result{}, nil
+}
+
+func (r *countingRunner) RunWithType(ctx context.Context, docType, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error) {
+	return r.RunAuto(ctx, path, onProgress)
+}
+
+func TestJobManager_Thumbnail_UsesRenditionForConvertedFormats(t *testing.T) {
+	store := NewFakeStore()
+	renderer := &fakeThumbRenderer{png: []byte("thumb")}
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	m.Renderer = renderer
+	m.Converter = &fakeConverter{rendition: formats.Rendition{PDF: []byte("%PDF-rendition")}}
+
+	job, _ := m.Submit(context.Background(), "deck.pptx", []byte("pptx"))
+	waitStatus(t, store, job.ID, StatusDone)
+	if _, ok, err := m.Thumbnail(context.Background(), job.ID); !ok || err != nil {
+		t.Fatalf("Thumbnail() ok=%v err=%v", ok, err)
+	}
+	if string(renderer.gotPDF) != "%PDF-rendition" {
+		t.Errorf("thumbnail rendered from %q, want the PDF rendition", renderer.gotPDF)
+	}
+}
+
+func TestJobManager_Thumbnail_StoredOnlyFileHasNone(t *testing.T) {
+	store := NewFakeStore()
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	m.Renderer = &fakeThumbRenderer{png: []byte("thumb")}
+
+	job, _ := m.Submit(context.Background(), "photos.zip", []byte("PK"))
+	waitStatus(t, store, job.ID, StatusDone)
+	if _, _, err := m.Thumbnail(context.Background(), job.ID); !errors.Is(err, ErrNoThumbnail) {
+		t.Errorf("Thumbnail(zip) err = %v, want ErrNoThumbnail", err)
 	}
 }

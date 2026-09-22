@@ -1,0 +1,38 @@
+Date: Tue, 15 Sep 2026 10:00:00 +0200
+From: compta@example.fr
+To: archive@example.fr
+Subject: Pieces diverses
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="=_names_"
+
+--=_names_
+Content-Type: text/plain; charset=us-ascii
+
+Voir les pieces jointes.
+--=_names_
+Content-Type: application/pdf
+Content-Disposition: attachment; filename*=UTF-8''facture%20n%C2%B0%2012.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQK
+--=_names_
+Content-Type: text/plain; charset=utf-8; name="=?UTF-8?B?csOpc3Vtw6kudHh0?="
+Content-Disposition: attachment
+Content-Transfer-Encoding: base64
+
+Q29udGVudSBkdSByw6lzdW3DqQo=
+--=_names_
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+Content-Disposition: attachment;
+ filename*0*=UTF-8''rapport%20;
+ filename*1="annuel.xlsx"
+Content-Transfer-Encoding: base64
+
+UEsDBA==
+--=_names_
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="../../etc/devis final.docx"
+Content-Transfer-Encoding: base64
+
+UEsDBA==
+--=_names_--

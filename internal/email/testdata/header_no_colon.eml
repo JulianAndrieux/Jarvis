@@ -1,0 +1,9 @@
+From MAILER-DAEMON Tue Sep 22 09:00:00 2026
+From: Robert <robert@example.com>
+To: someone@example.com
+Cette ligne d'en-tete n'a pas de deux-points
+Subject: En-tete malforme
+Date: pas une date du tout
+Content-Type: text/plain; charset=utf-8
+
+Le corps reste lisible.

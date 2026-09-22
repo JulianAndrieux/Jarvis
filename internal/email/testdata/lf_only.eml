@@ -1,0 +1,21 @@
+From: Alice <alice@example.com>
+To: bob@example.com
+Subject: Fins de ligne Unix
+Date: Sat, 12 Sep 2026 12:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary=simple
+
+--simple
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Ligne un avec un saut doux=
+ au milieu.
+Ligne deux : caf=C3=A9.
+--simple
+Content-Type: text/csv; name=donnees.csv
+Content-Disposition: attachment; filename=donnees.csv
+
+a;b
+1;2
+--simple--

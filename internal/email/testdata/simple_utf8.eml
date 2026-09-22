@@ -1,0 +1,20 @@
+Return-Path: <jean.dupont@example.fr>
+Received: from mail.example.fr (mail.example.fr [192.0.2.10])
+	by mx.example.com with ESMTPS id 4F2A1B3C
+	for <marie@example.com>; Tue, 22 Sep 2026 09:14:02 +0200
+Message-ID: <20260922091402.1234@example.fr>
+Date: Tue, 22 Sep 2026 09:14:00 +0200
+From: Jean Dupont <jean.dupont@example.fr>
+To: Marie Curie <marie@example.com>, paul@example.com
+Cc: "Service Comptabilité" <compta@example.fr>
+Subject: Réunion de lundi
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Bonjour Marie,
+
+La réunion de lundi est déplacée à 14h, salle Été.
+Merci de prévenir l'équipe.
+
+Jean

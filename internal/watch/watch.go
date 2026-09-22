@@ -1,4 +1,4 @@
-// Package watch surveille un dossier local et confie chaque nouveau PDF
+// Package watch surveille un dossier local et confie chaque nouveau fichier
 // trouvé à une fonction de traitement — l'ingestion automatique demandée
 // ("un job qui tourne à chaque fois qu'un document est uploadé dans un
 // dossier"). Aucune dépendance de notification système (fsnotify...) :
@@ -21,7 +21,7 @@ import (
 const DefaultInterval = 5 * time.Second
 
 // Watcher sonde Dir à intervalles réguliers pour de nouveaux fichiers
-// *.pdf et les confie à OnFile. Aucun état persistant n'est nécessaire
+// (de tout type, cf. isDocument) et les confie à OnFile. Aucun état persistant n'est nécessaire
 // pour savoir quels fichiers ont déjà été traités : un fichier trouvé
 // est immédiatement déplacé hors de Dir (voir processFile), donc un
 // fichier encore présent à un sondage est forcément nouveau.
@@ -61,11 +61,26 @@ func (w *Watcher) tick(ctx context.Context) {
 		return
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".pdf") {
+		if e.IsDir() || !isDocument(e.Name()) {
 			continue
 		}
 		w.processFile(ctx, e.Name())
 	}
+}
+
+// isDocument écarte ce qui n'est pas (encore) un document à ingérer :
+// fichiers cachés (.DS_Store, verrous LibreOffice ".~lock..."), verrous
+// d'Office ("~$..."), téléchargements ou copies en cours. Tout le reste
+// est ingéré, quel que soit son type (jalon 25).
+func isDocument(name string) bool {
+	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "~$") {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".crdownload", ".part", ".download", ".tmp":
+		return false
+	}
+	return true
 }
 
 // processFile déplace name hors de Dir avant même de le lire (protège

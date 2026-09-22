@@ -1,0 +1,18 @@
+Date: Mon, 07 Sep 2026 07:30:00 +0200
+From: "Banque Exemple" <noreply@banque.example>
+To: client@example.com
+Subject: Votre relevé est disponible
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html>
+<head><style>p { color: red; }</style><title>Relevé</title></head>
+<body>
+<script>trackOpen();</script>
+<div>Bonjour,</div>
+<p>Votre relev&eacute; de septembre est disponible.<br>Solde : 1&nbsp;234,56 &#8364;</p>
+<table><tr><td>Débit</td><td>12,00</td></tr><tr><td>Crédit</td><td>40,00</td></tr></table>
+</body>
+</html>

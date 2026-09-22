@@ -248,7 +248,7 @@ func TestFakeStore_List_SummaryOnly_OmitsHeavyFields(t *testing.T) {
 	}
 
 	full, _ := s.List(ctx, ListQuery{})
-	if full[0].Content == nil || full[0].Result == nil {
+	if full[0].Result == nil {
 		t.Error("List() without SummaryOnly must still return full jobs (RecoverOrphaned relies on it)")
 	}
 }
@@ -313,5 +313,61 @@ func TestFakeStore_List_SummaryOnly_OmitsProgress(t *testing.T) {
 	got, _ := s.List(ctx, ListQuery{SummaryOnly: true})
 	if got[0].Progress != nil {
 		t.Errorf("List(SummaryOnly).Progress = %+v, want nil", got[0].Progress)
+	}
+}
+
+// --- Jalon 25 : fichiers séparés des métadonnées ---
+
+func TestFakeStore_CreateMovesContentToFilesAndGetStaysLight(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	if _, err := s.Create(ctx, Job{ID: "a", Filename: "a.docx", Content: []byte("docx-bytes")}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := s.Get(ctx, "a")
+	if got.Content != nil {
+		t.Errorf("Get().Content = %q, want nil (read on demand with ReadFile)", got.Content)
+	}
+	data, ok, err := s.ReadFile(ctx, "a", FileOriginal)
+	if err != nil || !ok || string(data) != "docx-bytes" {
+		t.Errorf("ReadFile(original) = %q ok=%v err=%v", data, ok, err)
+	}
+}
+
+func TestFakeStore_WriteReadDeleteFiles(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	s.Create(ctx, Job{ID: "a", Content: []byte("x")})
+
+	if _, ok, _ := s.ReadFile(ctx, "a", FileRendition); ok {
+		t.Error("rendition should not exist yet")
+	}
+	s.WriteFile(ctx, "a", FileRendition, []byte("v1"))
+	s.WriteFile(ctx, "a", FileRendition, []byte("v2"))
+	if data, _, _ := s.ReadFile(ctx, "a", FileRendition); string(data) != "v2" {
+		t.Errorf("rendition = %q, want v2", data)
+	}
+	if err := s.WriteFile(ctx, "nope", FileRendition, []byte("x")); err == nil {
+		t.Error("WriteFile on unknown job: error = nil")
+	}
+	s.Delete(ctx, "a")
+	if _, ok, _ := s.ReadFile(ctx, "a", FileOriginal); ok {
+		t.Error("files should be gone after Delete")
+	}
+}
+
+func TestFakeStore_List_FiltersByFormat(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	s.Create(ctx, Job{ID: "a", Filename: "a.xlsx", Format: "sheet"})
+	s.Create(ctx, Job{ID: "b", Filename: "b.pdf", Format: "pdf"})
+	s.Create(ctx, Job{ID: "c", Filename: "c.pdf"}) // antérieur au jalon 25 : un PDF
+
+	got, _ := s.List(ctx, ListQuery{Format: "pdf"})
+	if len(got) != 2 {
+		t.Errorf("List(Format=pdf) = %d jobs, want 2 (including the legacy one without Format)", len(got))
+	}
+	if got, _ := s.List(ctx, ListQuery{Format: "sheet"}); len(got) != 1 || got[0].ID != "a" {
+		t.Errorf("List(Format=sheet) = %+v", got)
 	}
 }

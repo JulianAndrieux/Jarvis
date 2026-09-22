@@ -121,12 +121,13 @@ func TestHandleSubmit_ValidUpload_ReturnsRunningFragment(t *testing.T) {
 	}
 
 	id := extractJobID(t, rec.Body.String())
-	stored, ok, err := fakeStore.Get(context.Background(), id)
+	// Jalon 25 : le fichier est stocké à part (FileOriginal), plus dans le job.
+	stored, ok, err := fakeStore.ReadFile(context.Background(), id, webapp.FileOriginal)
 	if err != nil || !ok {
-		t.Fatalf("fakeStore.Get(%s) = %+v, %v, %v", id, stored, ok, err)
+		t.Fatalf("fakeStore.ReadFile(%s) = ok %v, err %v", id, ok, err)
 	}
-	if string(stored.Content) != "%PDF-1.4 fake" {
-		t.Errorf("stored content = %q, want the uploaded bytes", stored.Content)
+	if string(stored) != "%PDF-1.4 fake" {
+		t.Errorf("stored content = %q, want the uploaded bytes", stored)
 	}
 }
 

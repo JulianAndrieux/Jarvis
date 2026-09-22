@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
@@ -16,9 +17,61 @@ type DocumentRow struct {
 	Status    string
 	Tags      []string
 	CreatedAt string // pré-formaté (le formatage de date reste une préoccupation d'affichage, pas de vue)
+	// Jalon 25 : famille du fichier, extension affichée en badge, et si
+	// une miniature peut exister (sinon : icône).
+	Family       formats.Family
+	Ext          string
+	HasThumbnail bool
 }
 
-templ DocumentsPage(docs []DocumentRow, search string) {
+// TypeFilter est un filtre par type de la bibliothèque.
+type TypeFilter struct {
+	Value  string // famille ("" : tous)
+	Label  string
+	Active bool
+}
+
+// familyIcon : icône d'un fichier sans miniature (ou en attendant la
+// sienne).
+func familyIcon(f formats.Family) string {
+	switch f {
+	case formats.PDF:
+		return "📕"
+	case formats.Word:
+		return "📝"
+	case formats.Slides:
+		return "📊"
+	case formats.Sheet:
+		return "📗"
+	case formats.CSV:
+		return "🧾"
+	case formats.Text:
+		return "📄"
+	case formats.HTML:
+		return "🌐"
+	case formats.Image:
+		return "🖼️"
+	case formats.Email:
+		return "✉️"
+	default:
+		return "📦"
+	}
+}
+
+func filterURL(value, search string) string {
+	u := "/documents"
+	sep := "?"
+	if value != "" {
+		u += sep + "type=" + value
+		sep = "&"
+	}
+	if search != "" {
+		u += sep + "q=" + search
+	}
+	return u
+}
+
+templ DocumentsPage(docs []DocumentRow, search string, filters []TypeFilter) {
 	@Layout("Jarvis — documents", "documents") {
 		<div class="page-wide">
 			<div class="page-title">
@@ -27,8 +80,18 @@ templ DocumentsPage(docs []DocumentRow, search string) {
 			</div>
 			<form class="search-bar" method="get" action="/documents">
 				<input type="text" name="q" id="q" value={ search } placeholder="Rechercher : nom, type, tag, ou contenu du document…"/>
+				for _, f := range filters {
+					if f.Active && f.Value != "" {
+						<input type="hidden" name="type" value={ f.Value }/>
+					}
+				}
 				<button type="submit">Rechercher</button>
 			</form>
+			<div class="type-filters">
+				for _, f := range filters {
+					<a class={ "chip", "filter-chip", templ.KV("active", f.Active) } href={ templ.SafeURL(filterURL(f.Value, search)) }>{ f.Label }</a>
+				}
+			</div>
 			if len(docs) == 0 {
 				<div class="empty-state">
 					if search != "" {
@@ -44,7 +107,13 @@ templ DocumentsPage(docs []DocumentRow, search string) {
 					for _, d := range docs {
 						<a class="doc-card" href={ templ.SafeURL("/documents/" + d.ID) }>
 							<div class="doc-thumb">
-								<img src={ "/documents/" + d.ID + "/thumbnail" } alt={ "Aperçu de " + d.Filename } loading="lazy"/>
+								if d.HasThumbnail {
+									<img src={ "/documents/" + d.ID + "/thumbnail" } alt={ "Aperçu de " + d.Filename } loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"/>
+								}
+								<div class="doc-icon" hidden?={ d.HasThumbnail }>{ familyIcon(d.Family) }</div>
+								if d.Ext != "" {
+									<span class="ext-badge">{ d.Ext }</span>
+								}
 							</div>
 							<div class="doc-card-body">
 								<div class="doc-name" title={ d.Filename }>{ d.Filename }</div>
@@ -84,15 +153,63 @@ templ DocumentDetailPage(job webapp.Job, view ResultView, docTypes []string) {
 	@Layout("Jarvis — " + job.Filename, "documents") {
 		<div class="doc-shell">
 			<section class="doc-preview">
-				<iframe src={ "/documents/" + job.ID + "/pdf#view=FitH" } title={ "Aperçu de " + job.Filename }></iframe>
+				@previewPane(job)
 			</section>
 			@DocumentPanel(job, view, docTypes)
 		</div>
 	}
 }
 
+func fileFamily(job webapp.Job) formats.Family {
+	if job.Format == "" {
+		return formats.PDF
+	}
+	return formats.Family(job.Format)
+}
+
+func fileExtLabel(filename string) string {
+	if i := strings.LastIndex(filename, "."); i > 0 && i < len(filename)-1 {
+		return strings.ToUpper(filename[i+1:])
+	}
+	return ""
+}
+
+// HumanSize : taille lisible ("1,2 Mo").
+func HumanSize(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return strings.Replace(fmt.Sprintf("%.1f Go", float64(n)/(1<<30)), ".", ",", 1)
+	case n >= 1<<20:
+		return strings.Replace(fmt.Sprintf("%.1f Mo", float64(n)/(1<<20)), ".", ",", 1)
+	case n >= 1<<10:
+		return fmt.Sprintf("%d Ko", n>>10)
+	default:
+		return fmt.Sprintf("%d o", n)
+	}
+}
+
+// previewReady : l'aperçu d'une famille qui passe par la conversion
+// (Word, tableur, présentation, image HEIC/TIFF) n'existe qu'une fois le
+// traitement terminé ; les autres (PDF, texte, CSV, page web, e-mail,
+// image affichable) se lisent directement dans l'original.
+func previewReady(job webapp.Job) bool {
+	if job.Status != webapp.StatusPending && job.Status != webapp.StatusRunning {
+		return true
+	}
+	switch fileFamily(job) {
+	case formats.Word, formats.Slides, formats.Sheet:
+		return false
+	case formats.Image:
+		return formats.BrowserDisplayable(job.MIME)
+	}
+	return true
+}
+
 func documentMeta(job webapp.Job, view ResultView) []string {
 	meta := []string{"Importé le " + job.CreatedAt.Format("02/01/2006 à 15:04")}
+	if job.Size > 0 {
+		meta = append(meta, HumanSize(job.Size))
+	}
 	if view.PageCount > 0 {
 		meta = append(meta, fmt.Sprintf("%d page(s)", view.PageCount))
 	}
@@ -102,6 +219,39 @@ func documentMeta(job webapp.Job, view ResultView) []string {
 		}
 	}
 	return meta
+}
+
+// previewPane : l'aperçu adapté à chaque famille de fichier (jalon 25).
+// Les aperçus natifs (/view) viennent de contenu fourni par
+// l'utilisateur : iframe en bac à sable, en plus de la CSP du serveur.
+templ previewPane(job webapp.Job) {
+	if !previewReady(job) {
+		<div class="preview-placeholder">
+			<div class="doc-icon">{ familyIcon(fileFamily(job)) }</div>
+			<p>Aperçu disponible dès la fin de la conversion…</p>
+		</div>
+	} else {
+		switch fileFamily(job) {
+			case formats.Image:
+				<div class="preview-image-wrap">
+					<img class="preview-image" src={ "/documents/" + job.ID + "/image" } alt={ job.Filename }/>
+				</div>
+			case formats.Sheet, formats.CSV, formats.Text, formats.HTML, formats.Email:
+				<div class="preview-stack">
+					<iframe sandbox="" src={ "/documents/" + job.ID + "/view" } title={ "Aperçu de " + job.Filename }></iframe>
+					<a class="preview-alt" href={ templ.SafeURL("/documents/" + job.ID + "/pdf") } target="_blank">Version PDF ↗</a>
+				</div>
+			case formats.Other:
+				<div class="preview-placeholder">
+					<div class="doc-icon">{ familyIcon(formats.Other) }</div>
+					<p><strong>{ job.Filename }</strong></p>
+					<p class="muted">{ HumanSize(job.Size) } · Aperçu indisponible pour ce type de fichier.</p>
+					<a class="button button-primary" href={ templ.SafeURL("/documents/" + job.ID + "/original") }>Télécharger</a>
+				</div>
+			default:
+				<iframe src={ "/documents/" + job.ID + "/pdf#view=FitH" } title={ "Aperçu de " + job.Filename }></iframe>
+		}
+	}
 }
 
 templ DocumentPanel(job webapp.Job, view ResultView, docTypes []string) {
@@ -149,6 +299,7 @@ templ panelHeader(job webapp.Job, view ResultView) {
 	<a class="panel-back" href="/documents">← Documents</a>
 	<h1 class="panel-title">{ job.Filename }</h1>
 	<div class="panel-badges">
+		<span class="chip">{ fileFamily(job).Label() }</span>
 		if job.DocType != "" {
 			<span class="chip chip-type">{ job.DocType }</span>
 		}
@@ -172,10 +323,15 @@ templ panelHeader(job webapp.Job, view ResultView) {
 			<span>{ m }</span>
 		}
 	</div>
+	<div class="panel-actions">
+		<a class="button" href={ templ.SafeURL("/documents/" + job.ID + "/original") }>⬇ Télécharger l'original</a>
+	</div>
 }
 
 templ dataTab(job webapp.Job, view ResultView) {
-	if job.Status == webapp.StatusFailed {
+	if fileFamily(job) == formats.Other && job.Status == webapp.StatusDone {
+		<p class="muted">Fichier stocké tel quel : pas d'aperçu ni d'extraction de données pour ce type de fichier. Il reste téléchargeable et retrouvable par son nom et ses tags.</p>
+	} else if job.Status == webapp.StatusFailed {
 		<div class="error-box">{ job.Err }</div>
 	} else if view.DocType == "" {
 		<p class="warn-box">

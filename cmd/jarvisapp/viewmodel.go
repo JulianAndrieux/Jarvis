@@ -143,6 +143,8 @@ func progressOnlyView(p *pipeline.Progress) templates.ResultView {
 // compteur "X/Y" et pourcentage de l'étape.
 func progressViewFrom(p pipeline.Progress) *templates.ProgressView {
 	switch p.Stage {
+	case pipeline.StageConverting:
+		return &templates.ProgressView{Label: "Conversion en PDF", Percent: 100}
 	case pipeline.StageClassifying:
 		return &templates.ProgressView{Label: "Classification du type de document", Percent: 100}
 	case pipeline.StageExtracting:

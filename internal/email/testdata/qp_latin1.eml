@@ -1,0 +1,11 @@
+From: Test <test@example.fr>
+To: dest@example.fr
+Date: Tue, 22 Sep 2026 10:00:00 +0200
+MIME-Version: 1.0
+Subject: QP latin-1
+Content-Type: text/plain; charset=iso-8859-1
+Content-Transfer-Encoding: quoted-printable
+
+Voici un tr=E8s long texte qui d=E9passe la limite de soixante-seize caract=
+=E8res par ligne.
+Fin=E9e =3D ok.

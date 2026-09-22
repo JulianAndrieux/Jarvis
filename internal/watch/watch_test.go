@@ -47,23 +47,49 @@ func TestWatcher_Tick_ProcessesExistingPDFFilesAndMovesToProcessed(t *testing.T)
 	}
 }
 
-func TestWatcher_Tick_IgnoresNonPDFFiles(t *testing.T) {
+// Jalon 25 : tous les types de fichiers sont ingérés (Word, Excel,
+// images...), comme par l'import web.
+func TestWatcher_Tick_ProcessesAnyDocumentType(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, "notes.txt", "pas un pdf")
+	for _, name := range []string{"notes.txt", "budget.xlsx", "photo.HEIC", "archive.zip"} {
+		writeFile(t, dir, name, "contenu "+name)
+	}
+
+	var got []string
+	w := &Watcher{Dir: dir, OnFile: func(ctx context.Context, filename string, content []byte) error {
+		got = append(got, filename)
+		return nil
+	}}
+	w.tick(context.Background())
+
+	if len(got) != 4 {
+		t.Errorf("OnFile called for %v, want all 4 files", got)
+	}
+}
+
+// Ce qui n'est pas (encore) un document est laissé en place : fichiers
+// cachés (.DS_Store), verrous d'Office (~$...), téléchargements en cours.
+func TestWatcher_Tick_IgnoresHiddenLockAndPartialFiles(t *testing.T) {
+	dir := t.TempDir()
+	ignored := []string{".DS_Store", ".~lock.budget.xlsx#", "~$budget.xlsx", "rapport.pdf.crdownload", "video.mp4.part", "film.download", "gros.tmp"}
+	for _, name := range ignored {
+		writeFile(t, dir, name, "x")
+	}
 
 	called := false
 	w := &Watcher{Dir: dir, OnFile: func(ctx context.Context, filename string, content []byte) error {
 		called = true
 		return nil
 	}}
-
 	w.tick(context.Background())
 
 	if called {
-		t.Error("OnFile was called for a non-PDF file")
+		t.Error("OnFile was called for a hidden, lock or partial file")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "notes.txt")); err != nil {
-		t.Errorf("notes.txt should remain untouched: %v", err)
+	for _, name := range ignored {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s should remain untouched: %v", name, err)
+		}
 	}
 }
 

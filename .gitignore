@@ -12,3 +12,6 @@
 
 # macOS
 .DS_Store
+
+# Copies de travail des agents Claude Code (jalon 25)
+.claude/worktrees/

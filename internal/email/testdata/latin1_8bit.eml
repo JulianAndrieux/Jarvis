@@ -1,0 +1,9 @@
+From: Test <test@example.fr>
+To: dest@example.fr
+Date: Tue, 22 Sep 2026 10:00:00 +0200
+MIME-Version: 1.0
+Subject: Latin-1
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 8bit
+
+Café crème, à bientôt. Symbole : ¤

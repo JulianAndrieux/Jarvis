@@ -1,0 +1,23 @@
+Date: Mon, 21 Sep 2026 17:45:12 +0000
+From: "Boutique Exemple" <commandes@boutique.example>
+To: client@example.com
+Subject: Confirmation de commande
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="----=_Part_42_1234567890"
+
+Ceci est un message au format MIME.
+
+------=_Part_42_1234567890
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Votre commande n=C2=B0 1234 a bien =C3=A9t=C3=A9 enregistr=C3=A9e. Elle sera=
+ exp=C3=A9di=C3=A9e sous 48h.
+------=_Part_42_1234567890
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<html><head><title>Commande</title></head><body><p>Votre commande n&deg; 1234 a bien &eacute;t&eacute; enregistr&eacute;e.</p></body></html>
+------=_Part_42_1234567890--
+
+Épilogue ignoré.

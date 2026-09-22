@@ -12,6 +12,9 @@ import (
 type Stage string
 
 const (
+	// StageConverting : conversion du fichier déposé en PDF (Word, Excel,
+	// image...) avant le pipeline — étape de internal/webapp, jalon 25.
+	StageConverting  Stage = "conversion"
 	StageParsing     Stage = "parsing"
 	StageClassifying Stage = "classification"
 	StageExtracting  Stage = "extraction"

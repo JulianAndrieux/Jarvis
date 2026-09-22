@@ -14,19 +14,45 @@ import (
 // base requise. Les jobs sont perdus à la fin du process — attendu pour
 // un test.
 type FakeStore struct {
-	mu   sync.Mutex
-	jobs map[string]Job
+	mu    sync.Mutex
+	jobs  map[string]Job
+	files map[string]map[FileName][]byte
 }
 
 func NewFakeStore() *FakeStore {
-	return &FakeStore{jobs: map[string]Job{}}
+	return &FakeStore{jobs: map[string]Job{}, files: map[string]map[FileName][]byte{}}
 }
 
+// Create, comme MongoStore : le contenu devient le fichier original et
+// n'est plus porté par le job enregistré (Get ne le rend jamais).
 func (s *FakeStore) Create(ctx context.Context, job Job) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.jobs[job.ID] = job
+	s.files[job.ID] = map[FileName][]byte{}
+	if job.Content != nil {
+		s.files[job.ID][FileOriginal] = job.Content
+	}
+	stored := job
+	stored.Content = nil
+	s.jobs[job.ID] = stored
 	return job, nil
+}
+
+func (s *FakeStore) WriteFile(ctx context.Context, id string, name FileName, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.jobs[id]; !ok {
+		return fmt.Errorf("webapp: fake store: job %s not found", id)
+	}
+	s.files[id][name] = append([]byte(nil), data...)
+	return nil
+}
+
+func (s *FakeStore) ReadFile(ctx context.Context, id string, name FileName) ([]byte, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, ok := s.files[id][name]
+	return data, ok, nil
 }
 
 func (s *FakeStore) Get(ctx context.Context, id string) (Job, bool, error) {
@@ -44,8 +70,8 @@ func (s *FakeStore) Update(ctx context.Context, job Job) error {
 		return fmt.Errorf("webapp: fake store: job %s not found", job.ID)
 	}
 	// Comme MongoStore : Update n'écrit ni la miniature ni l'avancement
-	// (SetThumbnail/SetProgress), ni le contenu (écrit une fois à Create).
-	job.Content, job.Thumbnail, job.Progress = existing.Content, existing.Thumbnail, existing.Progress
+	// (SetThumbnail/SetProgress), ni les fichiers (Create/WriteFile).
+	job.Content, job.Thumbnail, job.Progress = nil, existing.Thumbnail, existing.Progress
 	s.jobs[job.ID] = job
 	return nil
 }
@@ -57,6 +83,7 @@ func (s *FakeStore) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("webapp: fake store: job %s not found", id)
 	}
 	delete(s.jobs, id)
+	delete(s.files, id)
 	return nil
 }
 
@@ -73,6 +100,9 @@ func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	matched := make([]Job, 0, len(s.jobs))
 	for _, j := range s.jobs {
 		if q.Status != "" && j.Status != q.Status {
+			continue
+		}
+		if q.Format != "" && string(familyOf(j)) != q.Format {
 			continue
 		}
 		if search == "" || jobMatchesSearch(j, search) {

@@ -32,6 +32,11 @@ type ListQuery struct {
 	// gaspillage. Un job ainsi chargé ne doit jamais être repassé tel quel
 	// à Update (il écraserait Result par nil).
 	SummaryOnly bool
+	// Format, si non vide, ne retient que les fichiers de cette famille
+	// ("pdf", "sheet"... cf. internal/formats) — filtre par type de la
+	// bibliothèque (jalon 25). Un job antérieur au jalon 25, sans format
+	// enregistré, est un PDF.
+	Format string
 }
 
 // Store est le port de persistance des jobs : création, lecture, mise à
@@ -42,7 +47,8 @@ type ListQuery struct {
 // connaît la différence.
 type Store interface {
 	// Create persiste job (déjà pourvu d'un ID par l'appelant) et retourne
-	// l'enregistrement tel que persisté.
+	// l'enregistrement tel que persisté. job.Content est écrit comme
+	// FileOriginal ; Get ne le recharge jamais (voir ReadFile).
 	Create(ctx context.Context, job Job) (Job, error)
 	// Get retourne le job id, s'il existe. ok=false (err=nil) signifie
 	// "non trouvé" ; err non-nil signifie un échec de la couche de
@@ -73,4 +79,28 @@ type Store interface {
 	// l'avancement, pour qu'un Job en mémoire (qui ne le porte pas) ne
 	// l'efface pas en terminant. Erreur si id n'existe pas.
 	SetProgress(ctx context.Context, id string, progress *pipeline.Progress) error
+
+	// WriteFile enregistre (ou remplace) le fichier name du job id —
+	// jalon 25 : les fichiers vivent à part des métadonnées (GridFS côté
+	// MongoStore), sans limite de 16 Mo ni rechargement à chaque lecture
+	// du job. Erreur si id n'existe pas.
+	WriteFile(ctx context.Context, id string, name FileName, data []byte) error
+	// ReadFile lit le fichier name du job id ; ok=false (err=nil) s'il
+	// n'existe pas.
+	ReadFile(ctx context.Context, id string, name FileName) (data []byte, ok bool, err error)
 }
+
+// FileName désigne un des fichiers rattachés à un job.
+type FileName string
+
+const (
+	// FileOriginal est le fichier tel que déposé — écrit par Create à
+	// partir de Job.Content.
+	FileOriginal FileName = "original"
+	// FileRendition est la version PDF d'un fichier non-PDF (aperçu,
+	// miniature, entrée du pipeline).
+	FileRendition FileName = "rendition.pdf"
+	// FilePreview est l'aperçu natif éventuel (feuilles de calcul en
+	// HTML, image HEIC/TIFF en JPEG).
+	FilePreview FileName = "preview"
+)

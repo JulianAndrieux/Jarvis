@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
@@ -251,6 +252,13 @@ templ JobFragment(job webapp.Job, view ResultView) {
 			<p class="muted">{ formatDuration(job) }</p>
 			@persistedNote(job.ID)
 			<a class="button" href={ templ.SafeURL("/documents/" + job.ID) }>Ouvrir le document →</a>
+		</div>
+	} else if fileFamily(job) == formats.Other {
+		<div id={ "job-" + job.ID } class="card">
+			<p class="status-done">Stocké — <strong>{ job.Filename }</strong> <span class="muted">({ HumanSize(job.Size) })</span></p>
+			<p class="muted">Pas d'aperçu ni d'extraction pour ce type de fichier ; il reste téléchargeable depuis la bibliothèque.</p>
+			@persistedNote(job.ID)
+			<a class="button" href={ templ.SafeURL("/documents/" + job.ID) }>Ouvrir →</a>
 		</div>
 	} else if view.DocType == "" {
 		<div id={ "job-" + job.ID } class="card">

@@ -1,0 +1,31 @@
+Date: Wed, 16 Sep 2026 11:02:33 +0200
+From: Fournisseur SA <factures@fournisseur.example>
+To: Julien Martin <julien@example.com>
+Subject: Votre facture de septembre
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed-b1"
+
+--mixed-b1
+Content-Type: multipart/alternative; boundary="alt-b2"
+
+--alt-b2
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: base64
+
+Qm9uam91ciDDoCB0b3VzLApMZSBmaWNoaWVyIGVzdCBqb2ludC4K
+--alt-b2
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+<p>Bonjour =C3=A0 tous,<br>Le fichier est joint.</p>
+--alt-b2--
+
+--mixed-b1
+Content-Type: application/pdf; name="facture-2026-09.pdf"
+Content-Disposition: attachment; filename="facture-2026-09.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJUphcnZpcyBmaXh0dXJlCjEgMCBvYmoKPDwgL1R5cGUgL0Nh
+dGFsb2cgPj4KZW5kb2JqCnRyYWlsZXIKPDwgL1Jvb3QgMSAwIFIgPj4KJSVF
+T0YK
+--mixed-b1--

@@ -6,7 +6,7 @@ templ Upload(docTypes []string) {
 	@Layout("Jarvis — importer", "upload") {
 		<div class="page-narrow">
 			<div class="page-title">
-				<h2>Importer un document</h2>
+				<h2>Importer des fichiers</h2>
 				<a href="/documents">Voir tous les documents →</a>
 			</div>
 			<form hx-post="/jobs" hx-target="#result" hx-swap="afterbegin" hx-encoding="multipart/form-data">
@@ -15,16 +15,17 @@ templ Upload(docTypes []string) {
 						type="file"
 						name="file"
 						id="file"
-						accept="application/pdf"
+						multiple
 						required
-						onchange="document.getElementById('dropzone-file').textContent = this.files.length ? this.files[0].name : 'Aucun fichier choisi'"
+						onchange="document.getElementById('dropzone-file').textContent = this.files.length === 0 ? 'Aucun fichier choisi' : (this.files.length === 1 ? this.files[0].name : this.files.length + ' fichiers choisis')"
 					/>
-					<div class="dropzone-icon">📄</div>
-					<div class="dropzone-title">Glisse un PDF ici, ou clique pour le choisir</div>
+					<div class="dropzone-icon">📂</div>
+					<div class="dropzone-title">Glisse tes fichiers ici, ou clique pour les choisir</div>
+					<div class="muted">PDF, Word, Excel, PowerPoint, OpenDocument, CSV, texte, images (dont HEIC), e-mails (.eml)… et tout autre fichier, stocké tel quel.</div>
 					<div class="muted" id="dropzone-file">Aucun fichier choisi</div>
 				</div>
 				<div class="upload-actions">
-					<button type="submit" class="button-primary">Analyser le document</button>
+					<button type="submit" class="button-primary">Importer</button>
 				</div>
 			</form>
 			<p class="muted">

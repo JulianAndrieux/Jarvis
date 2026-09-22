@@ -7,11 +7,17 @@ package webapp
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 )
@@ -72,7 +78,20 @@ type Job struct {
 	// conservé ensuite — un job interrompu garde ainsi les pages déjà
 	// lues. Sans objet une fois Result disponible (Result.Pages fait foi).
 	Progress *pipeline.Progress
+
+	// Format (famille : "pdf", "word", "sheet"... cf. internal/formats),
+	// MIME et Size décrivent le fichier déposé, détectés à la soumission
+	// (jalon 25). SourceHash est son SHA-256 (hexadécimal) — la
+	// provenance exigée par le brief, calculée une fois pour toutes.
+	Format     string
+	MIME       string
+	Size       int64
+	SourceHash string
 }
+
+// ErrNoThumbnail : le fichier n'a pas de miniature (fichier seulement
+// stocké, sans version PDF) — l'interface affiche alors une icône.
+var ErrNoThumbnail = errors.New("webapp: no thumbnail for this file type")
 
 // Runner exécute le pipeline complet pour un document, à partir d'un
 // chemin de fichier local (les outils sous-jacents — pdftotext, pdftoppm —
@@ -102,6 +121,19 @@ type JobManager struct {
 	// WorkDir est le répertoire des fichiers temporaires de traitement ;
 	// "" laisse os.CreateTemp choisir (répertoire temporaire du système).
 	WorkDir string
+
+	// Converter produit la version PDF des fichiers non-PDF (jalon 25) ;
+	// nil : un tel fichier échoue avec une erreur explicite.
+	Converter formats.Converter
+
+	// Concurrency borne le nombre de documents traités simultanément
+	// (file d'attente globale, jalon 25) ; 0 -> 1. Un dépôt de nombreux
+	// fichiers d'un coup ne doit pas envoyer autant d'appels simultanés
+	// aux modèles (cf. jalon 21 bis). Les jobs en attente restent
+	// StatusPending jusqu'à leur tour.
+	Concurrency int
+	semOnce     sync.Once
+	sem         chan struct{}
 
 	// Renderer rend la première page en PNG pour les miniatures (jalon
 	// 22) — le même port que l'étage Parsing (PdftoppmRenderer en
@@ -133,9 +165,16 @@ func (m *JobManager) Submit(ctx context.Context, filename string, content []byte
 		return Job{}, fmt.Errorf("webapp: generate job id: %w", err)
 	}
 
+	head := content
+	if len(head) > 512 {
+		head = head[:512]
+	}
+	f := formats.Detect(filename, head)
 	job := Job{
 		ID: id, Filename: filename, Content: content,
 		Status: StatusPending, CreatedAt: time.Now(),
+		Format: string(f.Family), MIME: f.MIME, Size: int64(len(content)),
+		SourceHash: fmt.Sprintf("%x", sha256.Sum256(content)),
 	}
 
 	created, err := m.store.Create(ctx, job)
@@ -143,13 +182,23 @@ func (m *JobManager) Submit(ctx context.Context, filename string, content []byte
 		return Job{}, fmt.Errorf("webapp: create job: %w", err)
 	}
 
-	go m.run(created)
+	go m.process(created, m.runner.RunAuto)
 
 	return created, nil
 }
 
-func (m *JobManager) run(job Job) {
+// runFunc est l'appel au pipeline d'un traitement : RunAuto pour un
+// dépôt, RunWithType pour une ré-extraction avec un type imposé.
+type runFunc func(ctx context.Context, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error)
+
+// process exécute un traitement complet de job, à son tour dans la file
+// d'attente : conversion éventuelle en PDF (une seule fois, réutilisée
+// ensuite), puis pipeline sur le PDF. Les fichiers seulement stockés
+// (zip, dmg...) se terminent sans conversion ni pipeline.
+func (m *JobManager) process(job Job, run runFunc) {
 	ctx := context.Background()
+	release := m.acquire()
+	defer release()
 
 	job.Status = StatusRunning
 	job.StartedAt = time.Now()
@@ -157,15 +206,151 @@ func (m *JobManager) run(job Job) {
 		fmt.Fprintf(os.Stderr, "webapp: update job %s to running: %v\n", job.ID, err)
 	}
 
-	path, cleanup, err := m.materialize(job.Content)
+	fam := familyOf(job)
+	if !fam.Pipeline() {
+		m.finishStored(ctx, job)
+		return
+	}
+
+	input, err := m.pipelineInput(ctx, job, fam)
+	if err != nil {
+		m.finish(ctx, job, pipeline.Result{}, err)
+		return
+	}
+	path, cleanup, err := m.materialize(input, ".pdf")
 	if err != nil {
 		m.finish(ctx, job, pipeline.Result{}, fmt.Errorf("webapp: write temp file: %w", err))
 		return
 	}
 	defer cleanup()
 
-	result, err := m.runner.RunAuto(ctx, path, m.progressRecorder(ctx, job.ID))
+	result, err := run(ctx, path, m.progressRecorder(ctx, job.ID))
 	m.finish(ctx, job, result, err)
+}
+
+// acquire réserve une place dans la file globale et retourne la fonction
+// qui la libère.
+func (m *JobManager) acquire() func() {
+	m.semOnce.Do(func() {
+		n := m.Concurrency
+		if n <= 0 {
+			n = 1
+		}
+		m.sem = make(chan struct{}, n)
+	})
+	m.sem <- struct{}{}
+	return func() { <-m.sem }
+}
+
+// familyOf retourne la famille du fichier d'un job ; un job antérieur au
+// jalon 25 (Format vide) était forcément un PDF.
+func familyOf(job Job) formats.Family {
+	if job.Format == "" {
+		return formats.PDF
+	}
+	return formats.Family(job.Format)
+}
+
+// pipelineInput retourne le PDF à traiter : l'original pour un PDF, sinon
+// la version PDF — produite et enregistrée au premier passage (avec
+// l'aperçu natif éventuel), réutilisée ensuite (ré-extraction).
+func (m *JobManager) pipelineInput(ctx context.Context, job Job, fam formats.Family) ([]byte, error) {
+	if !fam.NeedsRendition() {
+		return m.readRequired(ctx, job.ID, FileOriginal)
+	}
+	if pdf, ok, err := m.store.ReadFile(ctx, job.ID, FileRendition); err == nil && ok {
+		return pdf, nil
+	}
+	if m.Converter == nil {
+		return nil, fmt.Errorf("webapp: %s : aucun convertisseur configuré pour les fichiers %s (no converter)", job.Filename, fam)
+	}
+
+	original, err := m.readRequired(ctx, job.ID, FileOriginal)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.store.SetProgress(ctx, job.ID, &pipeline.Progress{Stage: pipeline.StageConverting}); err != nil {
+		fmt.Fprintf(os.Stderr, "webapp: store progress %s: %v\n", job.ID, err)
+	}
+	src, cleanup, err := m.materialize(original, sourceExt(job, fam))
+	if err != nil {
+		return nil, fmt.Errorf("webapp: write temp file: %w", err)
+	}
+	defer cleanup()
+
+	r, err := m.Converter.Convert(ctx, formats.Format{Family: fam, MIME: job.MIME, Ext: strings.TrimPrefix(sourceExt(job, fam), ".")}, src)
+	if err != nil {
+		return nil, fmt.Errorf("webapp: conversion de %s : %w", job.Filename, err)
+	}
+	if err := m.store.WriteFile(ctx, job.ID, FileRendition, r.PDF); err != nil {
+		return nil, fmt.Errorf("webapp: store rendition %s: %w", job.ID, err)
+	}
+	if r.Preview != nil {
+		if err := m.store.WriteFile(ctx, job.ID, FilePreview, r.Preview); err != nil {
+			fmt.Fprintf(os.Stderr, "webapp: store preview %s: %v\n", job.ID, err)
+		}
+	}
+	return r.PDF, nil
+}
+
+// sourceExt est l'extension du fichier temporaire donné au convertisseur
+// (LibreOffice choisit son filtre d'après elle) : celle du nom déposé,
+// sinon une extension déduite de la famille (fichier sans extension
+// reconnu par son contenu).
+func sourceExt(job Job, fam formats.Family) string {
+	if ext := strings.ToLower(filepath.Ext(job.Filename)); ext != "" {
+		return ext
+	}
+	switch fam {
+	case formats.Image:
+		switch job.MIME {
+		case "image/png":
+			return ".png"
+		case "image/gif":
+			return ".gif"
+		case "image/webp":
+			return ".webp"
+		}
+		return ".jpg"
+	case formats.Email:
+		return ".eml"
+	case formats.HTML:
+		return ".html"
+	case formats.CSV:
+		return ".csv"
+	}
+	return ".txt"
+}
+
+func (m *JobManager) readRequired(ctx context.Context, id string, name FileName) ([]byte, error) {
+	data, ok, err := m.store.ReadFile(ctx, id, name)
+	if err != nil {
+		return nil, fmt.Errorf("webapp: read %s of %s: %w", name, id, err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("webapp: %s of %s not found", name, id)
+	}
+	return data, nil
+}
+
+// ReadFile lit un fichier rattaché au job id (original, version PDF,
+// aperçu) — pour les routes de téléchargement et d'aperçu.
+func (m *JobManager) ReadFile(ctx context.Context, id string, name FileName) ([]byte, bool, error) {
+	return m.store.ReadFile(ctx, id, name)
+}
+
+// finishStored termine un job de fichier seulement stocké : terminé, sans
+// résultat ni erreur.
+func (m *JobManager) finishStored(ctx context.Context, job Job) {
+	job.FinishedAt = time.Now()
+	job.Status = StatusDone
+	job.Result = nil
+	if err := m.store.Update(ctx, job); err != nil {
+		fmt.Fprintf(os.Stderr, "webapp: update job %s: %v\n", job.ID, err)
+	}
+	if m.OnFinish != nil {
+		m.OnFinish(job)
+	}
 }
 
 // progressRecorder enregistre chaque étape d'avancement du job id. Un
@@ -202,8 +387,8 @@ func (m *JobManager) finish(ctx context.Context, job Job, result pipeline.Result
 
 // materialize écrit content dans un fichier temporaire sous m.WorkDir et
 // retourne son chemin ainsi qu'une fonction pour le supprimer.
-func (m *JobManager) materialize(content []byte) (path string, cleanup func(), err error) {
-	f, err := os.CreateTemp(m.WorkDir, "jarvisweb-job-*.pdf")
+func (m *JobManager) materialize(content []byte, ext string) (path string, cleanup func(), err error) {
+	f, err := os.CreateTemp(m.WorkDir, "jarvis-job-*"+ext)
 	if err != nil {
 		return "", func() {}, err
 	}
@@ -242,7 +427,25 @@ func (m *JobManager) Thumbnail(ctx context.Context, id string) ([]byte, bool, er
 		return nil, true, fmt.Errorf("webapp: thumbnail %s: no renderer configured", id)
 	}
 
-	path, cleanup, err := m.materialize(job.Content)
+	// Page 1 du PDF : l'original, ou la version PDF d'un fichier converti
+	// (pas encore produite tant que le job n'a pas été traité).
+	fam := familyOf(job)
+	if !fam.Pipeline() {
+		return nil, true, ErrNoThumbnail
+	}
+	source := FileOriginal
+	if fam.NeedsRendition() {
+		source = FileRendition
+	}
+	pdf, found, err := m.store.ReadFile(ctx, id, source)
+	if err != nil {
+		return nil, true, fmt.Errorf("webapp: thumbnail %s: %w", id, err)
+	}
+	if !found {
+		return nil, true, ErrNoThumbnail
+	}
+
+	path, cleanup, err := m.materialize(pdf, ".pdf")
 	if err != nil {
 		return nil, true, fmt.Errorf("webapp: thumbnail %s: write temp file: %w", id, err)
 	}
@@ -342,27 +545,21 @@ func (m *JobManager) Reprocess(ctx context.Context, id, docType string) error {
 		return fmt.Errorf("webapp: reprocess %s: not found", id)
 	}
 
-	job.Status = StatusRunning
-	job.StartedAt = time.Now()
+	// En attente de son tour dans la file (jalon 25) ; StartedAt est
+	// renseigné quand le traitement démarre réellement.
+	job.Status = StatusPending
+	job.StartedAt = time.Time{}
+	job.Err = ""
 	if err := m.store.Update(ctx, job); err != nil {
-		fmt.Fprintf(os.Stderr, "webapp: update job %s to running: %v\n", job.ID, err)
+		fmt.Fprintf(os.Stderr, "webapp: update job %s to pending: %v\n", job.ID, err)
 	}
 	if err := m.store.SetProgress(ctx, job.ID, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: clear progress %s: %v\n", job.ID, err)
 	}
 
-	go func() {
-		ctx := context.Background()
-		path, cleanup, err := m.materialize(job.Content)
-		if err != nil {
-			m.finish(ctx, job, pipeline.Result{}, fmt.Errorf("webapp: write temp file: %w", err))
-			return
-		}
-		defer cleanup()
-
-		result, err := m.runner.RunWithType(ctx, docType, path, m.progressRecorder(ctx, job.ID))
-		m.finish(ctx, job, result, err)
-	}()
+	go m.process(job, func(ctx context.Context, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error) {
+		return m.runner.RunWithType(ctx, docType, path, onProgress)
+	})
 
 	return nil
 }
