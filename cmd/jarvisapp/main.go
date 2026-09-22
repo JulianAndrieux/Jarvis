@@ -48,7 +48,7 @@ func main() {
 	llmModel := flag.String("llm-model", "", "Identifiant du modèle LLM servi")
 	llmVersion := flag.String("llm-model-version", "", "Version/quantization du modèle LLM")
 	dpi := flag.Int("dpi", 200, "Résolution de rendu des pages (DPI)")
-	vlmTimeout := flag.Duration("vlm-timeout", 240*time.Second, "Timeout par appel VLM")
+	vlmTimeout := flag.Duration("vlm-timeout", 600*time.Second, "Timeout par appel VLM")
 	llmTimeout := flag.Duration("llm-timeout", 180*time.Second, "Timeout par appel LLM")
 	workDir := flag.String("work-dir", "", "Répertoire des fichiers temporaires de traitement (vide = répertoire temporaire du système)")
 	outDir := flag.String("out-dir", "", "Répertoire de persistance locale additionnelle des résultats (JSON par page + log de rejeu) ; vide = pas de copie locale")

@@ -1475,8 +1475,12 @@ spécifique à `localhost`.
     défaut du 21 bis est donc trop juste pour une page dense sur ce Mac.
     Le suivi page par page l'a rendu visible immédiatement (erreur
     affichée sur la page concernée pendant que le reste continuait).
-    Pistes : relever le défaut (~600 s), et/ou Q4_K_M, et/ou la machine
-    dédiée évoquée par l'utilisateur. Détail cosmétique relevé au
+    **Défaut `--vlm-timeout` relevé 240 s → 600 s** (CLI `process`/
+    `parse` et `cmd/jarvisapp`, accord de l'utilisateur) : marge au-dessus
+    du pire cas mesuré (463 s), toujours un filet contre une génération
+    qui ne s'arrêterait pas (cf. page blanche, jalon 3). Pistes de fond
+    inchangées : Q4_K_M, et/ou la machine dédiée évoquée par
+    l'utilisateur. Détail cosmétique relevé au
     passage : le message d'erreur VLM est préfixé deux fois
     (`vlm: vlm: ...`).
 

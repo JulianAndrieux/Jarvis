@@ -72,7 +72,7 @@ func runProcess(ctx context.Context, args []string, stdout io.Writer) error {
 	docType := fs.String("doc-type", "", "Type de document enregistré (ex: facture)")
 	dpi := fs.Int("dpi", 200, "Résolution de rendu des pages (DPI)")
 	confidenceThreshold := fs.Float64("confidence-threshold", 0, "Seuil de confiance par champ (0 = défaut d'extraction.DefaultConfidenceThreshold)")
-	vlmTimeout := fs.Duration("vlm-timeout", 240*time.Second, "Timeout par appel VLM")
+	vlmTimeout := fs.Duration("vlm-timeout", 600*time.Second, "Timeout par appel VLM")
 	llmTimeout := fs.Duration("llm-timeout", 180*time.Second, "Timeout par appel LLM")
 	outDir := fs.String("out-dir", "", "Répertoire où persister les résultats (JSON par page + log de rejeu) ; vide = pas de persistance, stdout uniquement")
 	vlmConcurrency := fs.Int("vlm-concurrency", 1, "Nombre de pages traitées en parallèle pour le VLM ; 1 (défaut) = séquentiel. Le VLM (appels multimodaux) sature vite en parallèle, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
