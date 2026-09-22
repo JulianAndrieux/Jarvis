@@ -256,3 +256,24 @@ func TestPipeline_RunAuto_ClassifierReceivesConcatenatedPageText(t *testing.T) {
 		t.Errorf("classifier.GotText = %q, want it to contain both pages' text", classifier.GotText)
 	}
 }
+
+// Jalon 22 : un document non classé n'a pas d'extraction, mais son
+// texte OCR reste consultable (et persisté).
+func TestPipeline_RunAuto_UnknownType_StillKeepsPages(t *testing.T) {
+	text := "Un texte quelconque - " + longEnoughText()
+	p := Pipeline{
+		TextExtractor: triage.FakeExtractor{Pages: []triage.PageText{{Page: 1, Text: text}}},
+		VLM:           &vlm.FakeClient{},
+		LLM:           &llm.FakeClient{},
+		Classifier:    &classify.FakeClassifier{Result: classify.Result{DocType: "", Confidence: 0.1}},
+		Registry:      doctype.NewDefaultRegistry(),
+	}
+
+	got, err := p.RunAuto(context.Background(), "doc.pdf")
+	if err != nil {
+		t.Fatalf("RunAuto() error = %v, want nil", err)
+	}
+	if len(got.Pages) != 1 || got.Pages[0].Text != text || got.Pages[0].Source != SourceNative {
+		t.Errorf("Pages = %+v, want the single native page", got.Pages)
+	}
+}

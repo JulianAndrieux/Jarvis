@@ -92,6 +92,14 @@ type Result struct {
 	// seulement dans leurs métadonnées/champs extraits.
 	SearchText string
 
+	// Pages est le texte de chaque page tel qu'envoyé à l'étage
+	// Extraction (texte natif ou Markdown VLM), avec sa provenance — jalon
+	// 22, onglet "Texte OCR" de l'interface web. Renseigné dès que Triage+
+	// Parsing ont abouti, comme SearchText. Une page dont le parsing VLM a
+	// échoué n'y figure pas (cf. Merge) ; son échec reste visible dans
+	// Parsing et Extraction.
+	Pages []PageContent
+
 	Triage     triage.Result
 	Parsing    []parsing.PageResult
 	Extraction []extraction.Result
@@ -116,7 +124,7 @@ func (p Pipeline) Run(ctx context.Context, reg doctype.Registration, path string
 
 	extractionResults, err := p.extractPages(ctx, reg, pageTexts)
 	if err != nil {
-		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, err
+		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText, Pages: merged}, err
 	}
 	extractionResults = withVLMFailures(extractionResults, parseResults)
 
@@ -132,6 +140,7 @@ func (p Pipeline) Run(ctx context.Context, reg doctype.Registration, path string
 		Extraction: extractionResults,
 		Merged:     extraction.MergePages(extractionResults, p.ConfidenceThreshold),
 		SearchText: searchText,
+		Pages:      merged,
 	}, nil
 }
 
@@ -156,7 +165,7 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 	candidates := candidatesFromRegistry(p.Registry)
 	classification, err := p.Classifier.Classify(ctx, searchText, candidates)
 	if err != nil {
-		return Result{Path: path, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, fmt.Errorf("pipeline: classify %s: %w", path, err)
+		return Result{Path: path, Triage: triageResult, Parsing: parseResults, SearchText: searchText, Pages: merged}, fmt.Errorf("pipeline: classify %s: %w", path, err)
 	}
 
 	if classification.DocType == "" {
@@ -164,6 +173,7 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 			Path: path, Triage: triageResult, Parsing: parseResults,
 			ClassificationConfidence: classification.Confidence,
 			SearchText:               searchText,
+			Pages:                    merged,
 		}, nil
 	}
 
@@ -172,12 +182,12 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 		// Défensif : internal/classify ne devrait renvoyer que des noms
 		// connus (contrainte d'énumération + vérification), mais on ne
 		// fait jamais confiance aveuglément à une décision externe.
-		return Result{Path: path, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, fmt.Errorf("pipeline: classifier returned unknown doc type %q", classification.DocType)
+		return Result{Path: path, Triage: triageResult, Parsing: parseResults, SearchText: searchText, Pages: merged}, fmt.Errorf("pipeline: classifier returned unknown doc type %q", classification.DocType)
 	}
 
 	extractionResults, err := p.extractPages(ctx, reg, pageTexts)
 	if err != nil {
-		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText}, err
+		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText, Pages: merged}, err
 	}
 	extractionResults = withVLMFailures(extractionResults, parseResults)
 
@@ -194,6 +204,7 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 		Extraction:               extractionResults,
 		Merged:                   extraction.MergePages(extractionResults, p.ConfidenceThreshold),
 		SearchText:               searchText,
+		Pages:                    merged,
 	}, nil
 }
 

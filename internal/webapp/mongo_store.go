@@ -113,6 +113,17 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 
 // Delete supprime définitivement le job id (bibliothèque de documents,
 // jalon 18).
+func (s *MongoStore) SetThumbnail(ctx context.Context, id string, png []byte) error {
+	res, err := s.Collection.UpdateByID(ctx, id, bson.M{"$set": bson.M{"thumbnail": png}})
+	if err != nil {
+		return fmt.Errorf("webapp: mongo set thumbnail %s: %w", id, err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("webapp: mongo set thumbnail %s: job not found", id)
+	}
+	return nil
+}
+
 func (s *MongoStore) Delete(ctx context.Context, id string) error {
 	res, err := s.Collection.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
@@ -151,6 +162,9 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	}
 
 	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit)
+	if q.SummaryOnly {
+		opts.SetProjection(bson.M{"content": 0, "result_json": 0, "thumbnail": 0})
+	}
 	cur, err := s.Collection.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, fmt.Errorf("webapp: mongo list: %w", err)
@@ -195,6 +209,7 @@ type mongoJobDoc struct {
 	Err        string    `bson:"err,omitempty"`
 	Tags       []string  `bson:"tags,omitempty"`
 	SearchText string    `bson:"search_text,omitempty"`
+	Thumbnail  []byte    `bson:"thumbnail,omitempty"`
 }
 
 func jobToDoc(job Job) (mongoJobDoc, error) {
@@ -202,7 +217,7 @@ func jobToDoc(job Job) (mongoJobDoc, error) {
 		ID: job.ID, DocType: job.DocType, Filename: job.Filename,
 		Content: job.Content, Status: string(job.Status),
 		CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, FinishedAt: job.FinishedAt, Err: job.Err,
-		Tags: job.Tags, SearchText: job.SearchText,
+		Tags: job.Tags, SearchText: job.SearchText, Thumbnail: job.Thumbnail,
 	}
 	if job.Result != nil {
 		b, err := json.Marshal(job.Result)
@@ -219,7 +234,7 @@ func docToJob(doc mongoJobDoc) (Job, error) {
 		ID: doc.ID, DocType: doc.DocType, Filename: doc.Filename,
 		Content: doc.Content, Status: Status(doc.Status),
 		CreatedAt: doc.CreatedAt, StartedAt: doc.StartedAt, FinishedAt: doc.FinishedAt, Err: doc.Err,
-		Tags: doc.Tags, SearchText: doc.SearchText,
+		Tags: doc.Tags, SearchText: doc.SearchText, Thumbnail: doc.Thumbnail,
 	}
 	if len(doc.ResultJSON) > 0 {
 		var result pipeline.Result

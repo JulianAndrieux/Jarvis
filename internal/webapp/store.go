@@ -21,6 +21,13 @@ type ListQuery struct {
 	Status Status
 	// Limit : 0 -> DefaultListLimit.
 	Limit int
+	// SummaryOnly, si vrai, autorise le Store à omettre les champs lourds
+	// (Content, Result, Thumbnail) des jobs retournés — la grille de la
+	// bibliothèque de documents (jalon 22) n'affiche que des métadonnées,
+	// et charger jusqu'à DefaultListLimit PDF complets pour ça était du
+	// gaspillage. Un job ainsi chargé ne doit jamais être repassé tel quel
+	// à Update (il écraserait Result par nil).
+	SummaryOnly bool
 }
 
 // Store est le port de persistance des jobs : création, lecture, mise à
@@ -51,4 +58,9 @@ type Store interface {
 	// est retournée si id n'existe pas (jamais un succès silencieux sur
 	// rien à supprimer).
 	Delete(ctx context.Context, id string) error
+	// SetThumbnail enregistre la miniature (PNG) de la première page du
+	// job id — jalon 22. Écriture ciblée, distincte d'Update : Update
+	// reçoit un Job complet, qui peut venir d'une liste SummaryOnly sans
+	// miniature. Erreur si id n'existe pas.
+	SetThumbnail(ctx context.Context, id string, png []byte) error
 }

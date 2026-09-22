@@ -226,8 +226,8 @@ tournant simultanément :
 ### Application web unifiée (cmd/jarvisapp)
 **Un seul binaire, un seul port** — remplace depuis le jalon 13 les deux
 anciens binaires `cmd/jarvisweb` (upload/suivi) et `cmd/codebrowser`
-(navigateur de code/tests), fusionnés sous une nav commune (Upload ·
-Classes · Tests). Voir "État des jalons" plus bas pour le détail de la
+(navigateur de code/tests), fusionnés sous une nav commune (Importer ·
+Documents · Classes · Tests — renommée au jalon 22). Voir "État des jalons" plus bas pour le détail de la
 fusion, et "Atelier de code" pour le détail du navigateur de code/tests
 lui-même (moteurs inchangés par la fusion).
 
@@ -1316,6 +1316,94 @@ spécifique à `localhost`.
     Le parallélisme suffisamment sûr pour être un défaut doit être
     revalidé sur le pire profil de contenu attendu (page scannée dense),
     pas seulement sur le cas le plus simple à générer synthétiquement.
+- **Jalon 22 — refonte de l'interface web (bibliothèque, vue détail,
+  texte OCR et analyse LLM conservés) : fait, validé sur les documents
+  réels, en attente de validation utilisateur.** Demandé : "redesign
+  the different views in a more modern layout", miniatures dans
+  Documents, vue détail avec l'aperçu à gauche et les informations à
+  droite, et "keep the OCR version of the document and the LLM analysis
+  in the page (and in the DB)".
+  - **Ce qui manquait réellement en base** (vérifié avant de coder) :
+    l'analyse LLM était déjà entièrement persistée (`result_json` :
+    JSON par page, fusion, modèle, prompt), le Markdown VLM aussi
+    (`Result.Parsing`). **Le texte des pages natives, lui, n'existait
+    que concaténé dans `search_text`, sans frontière de page.**
+    `pipeline.Result.Pages []PageContent` (nouveau) conserve le texte de
+    chaque page tel qu'envoyé au LLM, avec sa provenance (natif/VLM) —
+    renseigné sur tous les chemins de `Run`/`RunAuto` dès que
+    Triage+Parsing ont abouti (y compris extraction en échec ou type non
+    reconnu). Persisté automatiquement via `result_json`, aucune
+    migration. Un résultat antérieur n'a que le Markdown VLM : la vue le
+    dit explicitement (ré-extraire capture le reste) plutôt que
+    d'afficher un onglet vide.
+  - **Miniatures** : `JobManager.Thumbnail(ctx, id)` rend la page 1 à
+    `ThumbnailDPI` (40) via le port `parsing.Renderer` déjà existant
+    (`PdftoppmRenderer`, aucun nouvel outil), **à la demande** puis la
+    persiste via `Store.SetThumbnail` (nouveau, `$set` ciblé, jamais via
+    `Update` — cf. ci-dessous). Les documents existants en obtiennent
+    une au premier affichage, sans migration. Un échec de rendu n'est
+    jamais mémorisé. `GET /documents/{id}/thumbnail` (`Cache-Control`
+    long, la miniature d'un document ne change pas).
+  - **`ListQuery.SummaryOnly`** : la liste chargeait jusqu'à 200 PDF
+    complets (+ résultats) pour n'afficher que des métadonnées.
+    `MongoStore` projette désormais sans `content`/`result_json`/
+    `thumbnail` ; la `FakeStore` retire aussi ces champs, pour qu'un
+    appelant qui en dépendrait par erreur échoue dès les tests unitaires.
+    Opt-in, pas par défaut : `RecoverOrphaned` relit des jobs puis les
+    repasse à `Update`, qui écraserait `result_json` avec un job
+    tronqué — même raison pour laquelle la miniature a son propre
+    `SetThumbnail`.
+  - **UI** (`cmd/jarvisapp/templates`) : jeu de variables CSS avec thème
+    clair **et** sombre (toutes les couleurs via variables — le bug
+    "blanc sur blanc" de l'ex-codebrowser ne peut pas revenir), polices
+    système (rien chargé depuis Internet). Importer : zone de
+    glisser-déposer (l'input fichier recouvre la zone, aucun JS). Documents :
+    grille de cartes avec miniature (`loading="lazy"`), type, statut,
+    tags. Détail : `iframe` du PDF à gauche, volet droit (`DocumentPanel`,
+    `GET /documents/{id}/panel`) à quatre onglets — **Données** (fusion,
+    barre de confiance, extrait source), **Texte OCR** (par page, source +
+    modèle), **Analyse LLM** (par page : champs, modèle, prompt, JSON
+    brut), **Infos** (tags, changement de type, triage, suppression). Le
+    volet se sonde lui-même pendant le traitement et la ré-extraction le
+    remplace en place (plus de `JobFragment` sur la page détail).
+    **La sortie du VLM est affichée comme du texte, jamais interprétée
+    comme du HTML** (elle contient des `<table>` : c'est la sortie d'un
+    modèle qui lit un PDF arbitraire) — testé explicitement. Le bouton
+    "Rescanner le code" n'apparaît plus que sur Classes/Tests.
+  - **Finding sur les données réelles** : `Devis 160-2026.pdf` tel que
+    stocké dans Mongo date du run parallèle d'avant le jalon 21 bis
+    (08:41) — 5 pages VLM en échec (`Context size has been exceeded`),
+    aucune extraction. La revalidation du 21 bis était passée par la
+    CLI, pas par l'UI : l'enregistrement n'a jamais été retraité.
+    L'ancienne vue le masquait, la nouvelle l'affiche. À ré-extraire
+    (~18 min, VLM séquentiel).
+  - Testé : `internal/pipeline` (`Pages` sur Run mixte natif+VLM,
+    extraction en échec, RunAuto non classé), `internal/webapp`
+    (`SetThumbnail`, `SummaryOnly`, `Thumbnail` : rendu unique puis
+    servi depuis le store, job inconnu, erreur de rendu non persistée,
+    pas de Renderer), `internal/webapp/mongo_store_test.go` (réel,
+    Atlas : miniature qui survit à `Update`, projection `SummaryOnly`),
+    `cmd/jarvisapp` (miniature servie, grille, deux volets dans l'ordre,
+    texte OCR échappé, provenance LLM, résultat antérieur, volet qui
+    sonde/ne sonde plus). Suite complète verte (`gofmt`, `go vet`,
+    `go test ./... -race -tags=integration`, `MONGO_URI` exporté).
+    Validation visuelle : binaire lancé sur :8091 contre la vraie
+    collection, captures Chrome headless des quatre vues (l'aperçu PDF
+    n'est pas rendu en headless — pas de lecteur PDF intégré).
+  - **Mesures VLM préliminaires (piste "rapidité", non implémentée)** —
+    page 2 du Devis, dense : la **génération** domine (~2500 tokens de
+    HTML de tableau fidèle, 250-370s), la lecture de l'image beaucoup
+    moins (4158 tokens / ~60-90s à 200 DPI, 1587 tokens / ~21s à 1288 px).
+    Réduire l'image dégrade la transcription ("toiture" → "toilette",
+    une ligne de sous-total mal placée) pour un gain < 15% : **200 DPI
+    conservé**. Le prompt natif d'olmOCR ne réduit pas la sortie. Le
+    débit de génération chute run après run (10 → 6.8 tokens/s sur 4
+    runs consécutifs) : **throttling thermique du MacBook Air (sans
+    ventilateur)** — à contrôler dans toute comparaison. Pistes restantes :
+    quantization plus légère (Q4_K_M, génération limitée par la bande
+    passante mémoire) ; bbox des pages scannées via Apple Vision
+    (prototype : 586 mots positionnés en 2.4s sur la même page, accents
+    corrects, sur le Neural Engine donc sans concurrence avec le VLM).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

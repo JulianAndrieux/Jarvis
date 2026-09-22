@@ -70,6 +70,9 @@ func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 			continue
 		}
 		if search == "" || jobMatchesSearch(j, search) {
+			if q.SummaryOnly {
+				j.Content, j.Result, j.Thumbnail = nil, nil, nil
+			}
 			matched = append(matched, j)
 		}
 	}
@@ -80,6 +83,18 @@ func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 		matched = matched[:limit]
 	}
 	return matched, nil
+}
+
+func (s *FakeStore) SetThumbnail(ctx context.Context, id string, png []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.jobs[id]
+	if !ok {
+		return fmt.Errorf("webapp: fake store: job %s not found", id)
+	}
+	j.Thumbnail = png
+	s.jobs[id] = j
+	return nil
 }
 
 func jobMatchesSearch(j Job, lowerSearch string) bool {

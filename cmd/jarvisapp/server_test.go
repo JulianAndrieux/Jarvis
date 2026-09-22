@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"mime/multipart"
 	"net/http"
@@ -16,9 +17,14 @@ import (
 
 	"github.com/JulianAndrieux/Jarvis/internal/codemap"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
+	"github.com/JulianAndrieux/Jarvis/internal/extraction"
+	"github.com/JulianAndrieux/Jarvis/internal/llm"
+	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 	"github.com/JulianAndrieux/Jarvis/internal/testmap"
 	"github.com/JulianAndrieux/Jarvis/internal/testrunner"
+	"github.com/JulianAndrieux/Jarvis/internal/triage"
+	"github.com/JulianAndrieux/Jarvis/internal/vlm"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
@@ -614,5 +620,207 @@ func mustWriteFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// --- Jalon 22 : refonte de la bibliothèque (miniatures, vue détail en
+// deux volets, texte OCR et analyse LLM affichés) ---
+
+type fakePNGRenderer struct{ png []byte }
+
+func (r fakePNGRenderer) RenderPage(ctx context.Context, path string, page, dpi int) ([]byte, error) {
+	return r.png, nil
+}
+
+// seedDoneJob enregistre directement un job terminé dans le store, sans
+// passer par l'upload — les tests de la vue détail portent sur le rendu
+// d'un résultat donné, pas sur le cycle de vie du job.
+func seedDoneJob(t *testing.T, store *webapp.FakeStore, job webapp.Job) {
+	t.Helper()
+	job.Status = webapp.StatusDone
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = time.Now()
+	}
+	if _, err := store.Create(context.Background(), job); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func get(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+func mixedResult() *pipeline.Result {
+	return &pipeline.Result{
+		DocType:                  "devis",
+		ClassificationConfidence: 0.99,
+		Triage: triage.Result{Score: 0.5, Pages: []triage.PageResult{
+			{Page: 1, Usable: true},
+			{Page: 2, Usable: false},
+		}},
+		Pages: []pipeline.PageContent{
+			{Page: 1, Text: "BM Constructions S.A — texte natif page un", Source: pipeline.SourceNative},
+			{Page: 2, Text: "<table><tr><td>1.2.7</td><td>Terrassement</td></tr></table>", Source: pipeline.SourceVLM},
+		},
+		Parsing: []parsing.PageResult{
+			{Page: 2, Markdown: "<table><tr><td>1.2.7</td><td>Terrassement</td></tr></table>", Model: vlm.ModelInfo{Name: "olmOCR-2-7B-1025", Version: "Q6_K"}},
+		},
+		Extraction: []extraction.Result{
+			{Page: 1, JSON: json.RawMessage(`{"numero": {"value": "160-2026", "confidence": 0.95, "source_snippet": "Devis 160-2026"}}`), Model: llm.ModelInfo{Name: "qwen3-8b", Version: "Q5_K_M"}, Prompt: "Extrais les champs du devis"},
+			{Page: 2, JSON: json.RawMessage(`{"numero": {"value": "160-2026", "confidence": 0.5, "source_snippet": "160"}}`), Model: llm.ModelInfo{Name: "qwen3-8b", Version: "Q5_K_M"}, NeedsReview: true},
+		},
+		Merged: extraction.MergedResult{JSON: json.RawMessage(`{"numero": {"value": "160-2026", "confidence": 0.95, "source_snippet": "Devis 160-2026"}}`)},
+	}
+}
+
+func TestHandleDocumentThumbnail_ServesRenderedPNG(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	s.Jobs.Renderer = fakePNGRenderer{png: []byte("\x89PNG-thumb")}
+	seedDoneJob(t, store, webapp.Job{ID: "d1", Filename: "a.pdf", Content: []byte("%PDF")})
+
+	rec := get(t, s, "/documents/d1/thumbnail")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png", ct)
+	}
+	if rec.Body.String() != "\x89PNG-thumb" {
+		t.Errorf("body = %q, want the rendered PNG", rec.Body.String())
+	}
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "max-age") {
+		t.Errorf("Cache-Control = %q, want a max-age (thumbnails never change for a given document)", cc)
+	}
+}
+
+func TestHandleDocumentThumbnail_UnknownID_ReturnsNotFound(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	s.Jobs.Renderer = fakePNGRenderer{png: []byte("x")}
+	if rec := get(t, s, "/documents/nope/thumbnail"); rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestHandleDocuments_ShowsThumbnailPerDocument(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	seedDoneJob(t, store, webapp.Job{ID: "d1", Filename: "a.pdf", DocType: "facture"})
+
+	body := get(t, s, "/documents").Body.String()
+
+	if !strings.Contains(body, `src="/documents/d1/thumbnail"`) {
+		t.Errorf("documents page has no thumbnail for d1: %s", body)
+	}
+	if !strings.Contains(body, `loading="lazy"`) {
+		t.Errorf("thumbnails should be lazy-loaded (up to %d documents per page): %s", webapp.DefaultListLimit, body)
+	}
+}
+
+func TestHandleDocumentDetail_TwoPaneLayoutWithPreviewOnTheLeft(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	seedDoneJob(t, store, webapp.Job{ID: "d1", Filename: "devis.pdf", DocType: "devis", Result: mixedResult()})
+
+	body := get(t, s, "/documents/d1").Body.String()
+
+	preview := strings.Index(body, `class="doc-preview"`)
+	panel := strings.Index(body, `id="doc-panel"`)
+	if preview < 0 || panel < 0 {
+		t.Fatalf("detail page lacks doc-preview (%d) or doc-panel (%d): %s", preview, panel, body)
+	}
+	if preview > panel {
+		t.Errorf("preview must come before (left of) the info panel")
+	}
+	if !strings.Contains(body, "/documents/d1/pdf") {
+		t.Errorf("preview does not load the PDF")
+	}
+}
+
+func TestHandleDocumentDetail_ShowsOCRTextPerPageWithSource(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	seedDoneJob(t, store, webapp.Job{ID: "d1", Filename: "devis.pdf", DocType: "devis", Result: mixedResult()})
+
+	body := get(t, s, "/documents/d1").Body.String()
+
+	for _, want := range []string{
+		"BM Constructions S.A — texte natif page un",
+		// Le HTML produit par le VLM est affiché comme du texte, jamais
+		// interprété : il vient d'un modèle qui lit un PDF arbitraire.
+		"&lt;table&gt;&lt;tr&gt;&lt;td&gt;1.2.7",
+		"Texte natif",
+		"olmOCR-2-7B-1025",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("OCR tab does not contain %q", want)
+		}
+	}
+	if strings.Contains(body, "<td>1.2.7</td>") {
+		t.Errorf("VLM output was injected as raw HTML, want it escaped")
+	}
+}
+
+func TestHandleDocumentDetail_ShowsLLMAnalysisWithProvenance(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	seedDoneJob(t, store, webapp.Job{ID: "d1", Filename: "devis.pdf", DocType: "devis", Result: mixedResult()})
+
+	body := get(t, s, "/documents/d1").Body.String()
+
+	for _, want := range []string{
+		"160-2026",                    // valeur extraite
+		"qwen3-8b",                    // modèle LLM
+		"Q5_K_M",                      // version du modèle
+		"Extrais les champs du devis", // prompt
+		"&#34;source_snippet&#34;",    // JSON brut, échappé
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("LLM analysis does not contain %q", want)
+		}
+	}
+}
+
+// Un résultat antérieur au jalon 22 n'a pas Result.Pages : le Markdown
+// VLM reste affichable (il était déjà dans Result.Parsing), le texte
+// natif non — on le dit plutôt que d'afficher un onglet vide.
+func TestHandleDocumentDetail_LegacyResultWithoutPages_ExplainsMissingNativeText(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	legacy := mixedResult()
+	legacy.Pages = nil
+	seedDoneJob(t, store, webapp.Job{ID: "d1", Filename: "devis.pdf", DocType: "devis", Result: legacy})
+
+	body := get(t, s, "/documents/d1").Body.String()
+
+	if !strings.Contains(body, "&lt;table&gt;&lt;tr&gt;&lt;td&gt;1.2.7") {
+		t.Errorf("legacy result: VLM markdown from Result.Parsing should still be shown")
+	}
+	if !strings.Contains(body, "Relancer l&#39;extraction") && !strings.Contains(body, "Relancer l'extraction") {
+		t.Errorf("legacy result: missing hint that re-running extraction captures the native text: %s", body)
+	}
+}
+
+func TestHandleDocumentPanel_RunningJobPollsDoneJobDoesNot(t *testing.T) {
+	proceed := make(chan struct{})
+	s, store := newTestServer(t, &blockingRunner{result: pipeline.Result{DocType: "facture"}, proceed: proceed})
+	seedDoneJob(t, store, webapp.Job{ID: "done", Filename: "a.pdf", DocType: "devis", Result: mixedResult()})
+
+	body, contentType := multipartUpload(t, "running.pdf", []byte("x"))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	runningID := extractJobID(t, rec.Body.String())
+	defer close(proceed)
+
+	running := get(t, s, "/documents/"+runningID+"/panel")
+	if running.Code != http.StatusOK || !strings.Contains(running.Body.String(), `hx-get="/documents/`+runningID+`/panel"`) {
+		t.Errorf("running panel should poll itself, got %d: %s", running.Code, running.Body.String())
+	}
+	done := get(t, s, "/documents/done/panel")
+	if done.Code != http.StatusOK || strings.Contains(done.Body.String(), "hx-get") {
+		t.Errorf("done panel must not poll, got %d: %s", done.Code, done.Body.String())
+	}
+	if get(t, s, "/documents/nope/panel").Code != http.StatusNotFound {
+		t.Errorf("unknown panel should be 404")
 	}
 }

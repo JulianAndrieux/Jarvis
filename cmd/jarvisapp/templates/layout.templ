@@ -9,99 +9,267 @@ templ Layout(title string, active string) {
 			<title>{ title }</title>
 			<script src="/static/htmx.min.js"></script>
 			<style>
-				/* Theme clair uniquement : tous les fonds ci-dessous sont codes en
-				   dur (blanc/gris clair). "color-scheme: light dark" sans texte
-				   code en dur faisait passer le texte en blanc sur fond blanc en
-				   mode sombre systeme -- illisible (cf. cmd/codebrowser). */
-				:root { color-scheme: light; }
-				body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 0; background: #f7f7f8; color: #1a1a1a; line-height: 1.5; }
-				header { padding: .75rem 1.25rem; border-bottom: 1px solid #8884; display: flex; align-items: center; gap: 1.5rem; background: #fff; }
-				header h1 { font-size: 1.1rem; margin: 0; }
-				header nav a { margin-right: 1rem; color: inherit; text-decoration: none; font-weight: 600; padding-bottom: .2rem; }
-				header nav a.active { border-bottom: 2px solid #48a; }
-				header form { margin-left: auto; }
-				button { padding: .35rem .8rem; border-radius: 6px; border: 1px solid #8884; cursor: pointer; font-weight: 600; background: #8881; }
-				button:hover { background: #8883; }
-				.button-danger { border-color: #c66; color: #a33; }
-				.button-danger:hover { background: #fee2; }
+				/* Jalon 22 : refonte visuelle. Toutes les couleurs passent par
+				   les variables ci-dessous, redéfinies en bloc pour le thème
+				   sombre — jamais de fond codé en dur avec un texte hérité du
+				   système (le bug "blanc sur blanc" de l'ex-cmd/codebrowser).
+				   Polices système uniquement : l'application tourne en local,
+				   rien n'est chargé depuis Internet. */
+				:root {
+					color-scheme: light;
+					--bg: #f5f6f8;
+					--surface: #ffffff;
+					--surface-2: #f0f1f4;
+					--border: #e3e5ea;
+					--text: #14161a;
+					--text-2: #4b5160;
+					--muted: #7a8090;
+					--accent: #4f5bd5;
+					--accent-soft: #eceefe;
+					--ok: #1f8a4c;
+					--ok-soft: #e5f5ec;
+					--warn: #a86400;
+					--warn-soft: #fff4e0;
+					--danger: #c23b3b;
+					--danger-soft: #fdecec;
+					--code-bg: #1d2029;
+					--code-text: #e4e6ee;
+					--shadow: 0 1px 2px rgba(16, 20, 30, .05), 0 2px 8px rgba(16, 20, 30, .04);
+					--shadow-hover: 0 4px 16px rgba(16, 20, 30, .10);
+					--radius: 10px;
+					--header-h: 56px;
+				}
+				@media (prefers-color-scheme: dark) {
+					:root {
+						color-scheme: dark;
+						--bg: #121419;
+						--surface: #1a1d24;
+						--surface-2: #22262f;
+						--border: #2d323d;
+						--text: #eceef3;
+						--text-2: #b4b9c6;
+						--muted: #8a90a0;
+						--accent: #8b95ff;
+						--accent-soft: #262b4a;
+						--ok: #4cc27f;
+						--ok-soft: #173325;
+						--warn: #f0b04a;
+						--warn-soft: #3a2c12;
+						--danger: #f07272;
+						--danger-soft: #3b1c1c;
+						--code-bg: #0e1015;
+						--shadow: 0 1px 2px rgba(0, 0, 0, .3);
+						--shadow-hover: 0 4px 16px rgba(0, 0, 0, .45);
+					}
+				}
 
-				/* Page étroite (Upload) : formulaire + résultat centrés, comme
-				   avant la fusion (ex-cmd/jarvisweb). */
-				.page-narrow { max-width: 860px; margin: 2rem auto; padding: 0 1rem; }
-				/* Bibliothèque de documents : liste + aperçu PDF, un peu plus
-				   large que la page Upload. */
-				.page-wide { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
-				/* Grande barre de recherche (jalon 18) : bien visible, cherche
-				   aussi dans le contenu des documents (pas juste le nom/type/tag). */
-				.search-bar { display: flex; gap: .6rem; margin: 1.5rem 0; }
-				.search-bar input[type=text] { flex: 1; font-size: 1.15rem; padding: .7rem 1rem; border: 2px solid #8886; border-radius: 8px; margin-bottom: 0; }
-				.search-bar button { font-size: 1rem; padding: 0 1.5rem; }
-				.card { border: 1px solid #8884; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; background: #fff; }
-				.merged-summary { border-left: 3px solid #48a; padding-left: .9rem; margin: 1rem 0 1.5rem; }
-				.merged-summary h3 { margin-top: 0; }
-				label { display: block; margin-bottom: .35rem; font-weight: 600; }
-				select, input[type=file] { display: block; margin-bottom: 1rem; }
-				.status-pending, .status-running { color: #a66; }
-				.status-done { color: #2a2; }
-				.status-failed { color: #c33; }
-				tr.needs-review { background: #fffbe0; }
-				.confidence { font-variant-numeric: tabular-nums; }
-				.spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid #8886; border-top-color: #555; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -0.15em; margin-right: .4em; }
+				* { box-sizing: border-box; }
+				body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+				a { color: var(--accent); text-decoration: none; }
+				a:hover { text-decoration: underline; }
+
+				/* En-tête */
+				.app-header { position: sticky; top: 0; z-index: 10; height: var(--header-h); display: flex; align-items: center; gap: 2rem; padding: 0 1.5rem; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--border); }
+				.brand { display: flex; align-items: center; gap: .55rem; font-weight: 700; font-size: 1.02rem; color: var(--text); letter-spacing: -.01em; }
+				.brand:hover { text-decoration: none; }
+				.brand-mark { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), #9a5bd5); display: grid; place-items: center; color: #fff; font-size: .8rem; font-weight: 800; }
+				.app-nav { display: flex; gap: .25rem; }
+				.app-nav a { padding: .38rem .8rem; border-radius: 8px; color: var(--text-2); font-weight: 550; font-size: .92rem; }
+				.app-nav a:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+				.app-nav a.active { background: var(--accent-soft); color: var(--accent); }
+				.app-header form { margin-left: auto; }
+
+				/* Boutons et champs */
+				button, .button { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .9rem; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; font: inherit; font-weight: 600; font-size: .88rem; background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+				button:hover, .button:hover { background: var(--surface-2); text-decoration: none; }
+				.button-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+				.button-primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+				.button-ghost { background: transparent; box-shadow: none; }
+				.button-danger { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); color: var(--danger); }
+				.button-danger:hover { background: var(--danger-soft); }
+				label { display: block; margin-bottom: .35rem; font-weight: 600; font-size: .85rem; color: var(--text-2); }
+				input[type=text], select { font: inherit; font-size: .92rem; padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); width: 100%; }
+				input[type=text]:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+				.field-row { display: flex; gap: .5rem; align-items: center; }
+				.field-row > input, .field-row > select { flex: 1; }
+
+				/* Mises en page */
+				.page-narrow { max-width: 760px; margin: 2.5rem auto; padding: 0 1rem; }
+				.page-wide { max-width: 1280px; margin: 2rem auto; padding: 0 1.5rem; }
+				.page-title { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+				.page-title h2 { margin: 0; font-size: 1.5rem; letter-spacing: -.02em; }
+				.card { border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.25rem; margin: 1rem 0; background: var(--surface); box-shadow: var(--shadow); }
+
+				/* Pastilles, badges */
+				.chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; font-weight: 600; padding: .15rem .55rem; border-radius: 999px; background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
+				.chip-type { background: var(--accent-soft); color: var(--accent); }
+				.chip-done { background: var(--ok-soft); color: var(--ok); }
+				.chip-pending, .chip-running { background: var(--warn-soft); color: var(--warn); }
+				.chip-failed { background: var(--danger-soft); color: var(--danger); }
+				.chip-review { background: var(--warn-soft); color: var(--warn); }
+				.dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+
+				/* Statuts (conservés : utilisés aussi par les tests serveur) */
+				.status-pending, .status-running { color: var(--warn); }
+				.status-done { color: var(--ok); }
+				.status-failed { color: var(--danger); }
+				.error-box { background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); border-radius: 8px; padding: .7rem .9rem; color: var(--danger); font-size: .9rem; white-space: pre-wrap; }
+				.warn-box { background: var(--warn-soft); border-radius: 8px; padding: .7rem .9rem; color: var(--warn); font-size: .9rem; }
+				.spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -.15em; }
 				@keyframes spin { to { transform: rotate(360deg); } }
-				.error-box { background: #fee2; border: 1px solid #c33; border-radius: 6px; padding: .75rem 1rem; color: #a33; }
 
-				/* Pages pleine hauteur, deux volets (Classes) : ex-cmd/codebrowser. */
-				main.two-pane { display: flex; height: calc(100vh - 53px); }
-				.sidebar { width: 320px; overflow-y: auto; border-right: 1px solid #8884; background: #fff; padding: .75rem; box-sizing: border-box; }
+				/* Upload : zone de dépôt. L'input fichier recouvre toute la
+				   zone (transparent) : le glisser-déposer marche nativement,
+				   sans JavaScript. */
+				.dropzone { position: relative; display: grid; place-items: center; text-align: center; gap: .3rem; padding: 2.75rem 1rem; border: 2px dashed var(--border); border-radius: 14px; background: var(--surface); transition: border-color .15s, background .15s; }
+				.dropzone:hover, .dropzone:focus-within { border-color: var(--accent); background: var(--accent-soft); }
+				.dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+				.dropzone-icon { font-size: 2rem; line-height: 1; }
+				.dropzone-title { font-weight: 650; }
+				.upload-actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
+
+				/* Bibliothèque : recherche + grille de cartes */
+				.search-bar { display: flex; gap: .6rem; margin: 0 0 1.5rem; }
+				.search-bar input[type=text] { font-size: 1.02rem; padding: .7rem 1rem; border-radius: 10px; }
+				.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 1.1rem; }
+				.doc-card { position: relative; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; color: inherit; transition: box-shadow .15s, transform .15s; }
+				.doc-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); text-decoration: none; }
+				.doc-thumb { aspect-ratio: 3 / 4; background: var(--surface-2); display: grid; place-items: center; border-bottom: 1px solid var(--border); overflow: hidden; }
+				.doc-thumb img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+				.doc-card-body { padding: .7rem .8rem .8rem; display: flex; flex-direction: column; gap: .4rem; }
+				.doc-name { font-weight: 600; font-size: .9rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+				.doc-meta { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+				.doc-date { font-size: .75rem; color: var(--muted); }
+				.doc-card .card-delete { position: absolute; top: .5rem; right: .5rem; padding: .25rem .45rem; font-size: .8rem; opacity: 0; transition: opacity .15s; }
+				.doc-card:hover .card-delete, .doc-card .card-delete:focus { opacity: 1; }
+				.empty-state { text-align: center; padding: 4rem 1rem; color: var(--muted); }
+
+				/* Détail : aperçu à gauche, informations à droite */
+				.doc-shell { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(400px, 1fr); height: calc(100vh - var(--header-h)); }
+				.doc-preview { background: var(--surface-2); border-right: 1px solid var(--border); min-height: 0; }
+				.doc-preview iframe { width: 100%; height: 100%; border: 0; display: block; }
+				.doc-panel { overflow-y: auto; min-height: 0; padding: 1.25rem 1.75rem 3rem; }
+				.panel-back { font-size: .85rem; color: var(--muted); }
+				.panel-title { font-size: 1.35rem; margin: .4rem 0 .5rem; letter-spacing: -.015em; word-break: break-word; }
+				.panel-badges { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .5rem; }
+				.panel-meta { font-size: .82rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .25rem .9rem; }
+				.tabs { display: flex; gap: .2rem; border-bottom: 1px solid var(--border); margin: 1.25rem 0 1rem; position: sticky; top: -1.25rem; background: var(--bg); z-index: 1; padding-top: .5rem; }
+				.tab { border: 0; box-shadow: none; background: transparent; border-radius: 0; padding: .55rem .8rem; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+				.tab:hover { background: transparent; color: var(--text); }
+				.tab[aria-selected=true] { color: var(--accent); border-bottom-color: var(--accent); }
+				.tab .count { font-size: .72rem; background: var(--surface-2); color: var(--muted); border-radius: 999px; padding: 0 .4rem; margin-left: .15rem; }
+				.tab-panel[hidden] { display: none; }
+
+				/* Champs extraits */
+				.field-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+				.field { display: grid; grid-template-columns: minmax(120px, 34%) 1fr; gap: .2rem 1rem; padding: .7rem 1rem; border-bottom: 1px solid var(--border); }
+				.field:last-child { border-bottom: 0; }
+				.field.low { background: var(--warn-soft); }
+				.field-name { font-size: .8rem; color: var(--text-2); font-weight: 600; padding-top: .1rem; word-break: break-word; }
+				.field-value { font-size: .95rem; font-weight: 550; word-break: break-word; }
+				.field-extra { grid-column: 2; display: flex; align-items: center; gap: .6rem; font-size: .75rem; color: var(--muted); }
+				.conf { display: inline-flex; align-items: center; gap: .35rem; font-variant-numeric: tabular-nums; }
+				.conf-bar { width: 44px; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+				.conf-bar > span { display: block; height: 100%; background: var(--ok); }
+				.field.low .conf-bar > span { background: var(--warn); }
+				.snippet { font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+				/* Texte OCR et analyse LLM, par page */
+				.page-block { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-bottom: 1rem; overflow: hidden; }
+				.page-block-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; padding: .55rem .9rem; background: var(--surface-2); border-bottom: 1px solid var(--border); font-size: .82rem; }
+				.page-block-head strong { font-size: .88rem; }
+				.page-block-head .model { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem; }
+				.page-block-body { padding: .9rem; }
+				.ocr-text { margin: 0; padding: .9rem; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; line-height: 1.55; max-height: 460px; overflow: auto; color: var(--text-2); }
+				details.raw { margin-top: .6rem; }
+				details.raw summary { cursor: pointer; font-size: .8rem; color: var(--muted); font-weight: 600; }
+				details.raw pre { background: var(--code-bg); color: var(--code-text); padding: .7rem .85rem; border-radius: 8px; overflow: auto; font-size: .75rem; max-height: 360px; white-space: pre-wrap; word-break: break-word; }
+
+				/* Onglet Infos */
+				.info-grid { display: grid; grid-template-columns: max-content 1fr; gap: .45rem 1.25rem; font-size: .88rem; margin: 0; }
+				.info-grid dt { color: var(--muted); }
+				.info-grid dd { margin: 0; word-break: break-word; }
+				.section-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 1.5rem 0 .6rem; font-weight: 700; }
+				.danger-zone { border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); }
+
+				@media (max-width: 900px) {
+					.doc-shell { grid-template-columns: 1fr; height: auto; }
+					.doc-preview { height: 70vh; border-right: 0; border-bottom: 1px solid var(--border); }
+					.doc-panel { overflow: visible; padding: 1rem; }
+					.app-header { gap: 1rem; padding: 0 1rem; }
+				}
+
+				/* Pages pleine hauteur, deux volets (Classes, Tests) : ex-cmd/codebrowser. */
+				main.two-pane { display: flex; height: calc(100vh - var(--header-h)); }
+				.sidebar { width: 320px; overflow-y: auto; border-right: 1px solid var(--border); background: var(--surface); padding: .75rem; }
 				.detail { flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem; }
 				.pkg-group { margin-bottom: .6rem; }
-				.pkg-group summary { cursor: pointer; font-weight: 600; font-size: .85rem; color: #666; padding: .2rem 0; }
-				.type-link { display: block; padding: .15rem .3rem .15rem 1rem; border-radius: 4px; color: inherit; text-decoration: none; font-size: .92rem; }
-				.type-link:hover { background: #8882; }
+				.pkg-group summary { cursor: pointer; font-weight: 600; font-size: .85rem; color: var(--muted); padding: .2rem 0; }
+				.type-link { display: block; padding: .2rem .4rem .2rem 1rem; border-radius: 6px; color: inherit; font-size: .9rem; }
+				.type-link:hover { background: var(--surface-2); text-decoration: none; }
 				.type-link.kind-interface { font-style: italic; }
-				.badge { display: inline-block; font-size: .7rem; padding: .05rem .4rem; border-radius: 3px; margin-left: .3rem; vertical-align: middle; }
-				.badge-struct { background: #cde; color: #135; }
-				.badge-interface { background: #edc; color: #530; }
-				.rel-list a { display: inline-block; margin: .15rem .5rem .15rem 0; padding: .1rem .5rem; border-radius: 4px; background: #8882; text-decoration: none; color: inherit; font-size: .85rem; }
-				.rel-list a:hover { background: #8884; }
-
-				/* Page de tests (Tests) : ex-cmd/codebrowser. */
-				.cat-card { border: 1px solid #8884; border-radius: 8px; padding: .85rem 1.1rem; margin-bottom: 1rem; background: #fff; }
+				.badge { display: inline-block; font-size: .7rem; padding: .05rem .45rem; border-radius: 4px; margin-left: .3rem; vertical-align: middle; font-weight: 600; }
+				.badge-struct { background: var(--accent-soft); color: var(--accent); }
+				.badge-interface { background: var(--warn-soft); color: var(--warn); }
+				.rel-list a { display: inline-block; margin: .15rem .5rem .15rem 0; padding: .1rem .5rem; border-radius: 6px; background: var(--surface-2); color: inherit; font-size: .85rem; }
+				.rel-list a:hover { background: var(--border); text-decoration: none; }
+				.cat-card { border: 1px solid var(--border); border-radius: var(--radius); padding: .85rem 1.1rem; margin-bottom: 1rem; background: var(--surface); box-shadow: var(--shadow); }
 				.cat-card h3 { display: flex; align-items: center; gap: .6rem; font-size: 1rem; color: inherit; margin-top: 0; }
-				.test-row { display: flex; align-items: center; gap: .5rem; padding: .2rem 0; border-bottom: 1px solid #8881; font-size: .88rem; }
+				.test-row { display: flex; align-items: center; gap: .5rem; padding: .25rem 0; border-bottom: 1px solid var(--border); font-size: .88rem; }
 				.test-row:last-child { border-bottom: none; }
 				.test-name { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-				.status-dot { display: inline-block; width: .7em; height: .7em; border-radius: 50%; background: #bbb; flex-shrink: 0; }
-				.status-pass .status-dot { background: #2a2; }
-				.status-fail .status-dot { background: #c33; }
-				.status-skip .status-dot { background: #b90; }
-				.status-fail .test-name { color: #a22; }
-				.tag { font-size: .7rem; padding: .05rem .4rem; border-radius: 3px; background: #8882; }
-				.tag-integration { background: #fd8; color: #740; }
-				pre.output { background: #1e1e1e; color: #ddd; padding: .6rem .8rem; border-radius: 6px; overflow-x: auto; font-size: .8rem; margin: .3rem 0; }
+				.status-dot { display: inline-block; width: .7em; height: .7em; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+				.status-pass .status-dot { background: var(--ok); }
+				.status-fail .status-dot { background: var(--danger); }
+				.status-skip .status-dot { background: var(--warn); }
+				.status-fail .test-name { color: var(--danger); }
+				.tag { font-size: .7rem; padding: .05rem .4rem; border-radius: 4px; background: var(--surface-2); }
+				.tag-integration { background: var(--warn-soft); color: var(--warn); }
+				pre.output { background: var(--code-bg); color: var(--code-text); padding: .6rem .8rem; border-radius: 8px; overflow-x: auto; font-size: .8rem; margin: .3rem 0; }
 				.summary-line { font-size: .85rem; margin: .4rem 0 .7rem; }
 
-				/* Commun aux deux styles de page. */
+				/* Commun */
 				h2 { margin-top: 0; }
-				h3 { font-size: .95rem; color: #555; margin-bottom: .3rem; }
+				h3 { font-size: .95rem; color: var(--text-2); margin-bottom: .3rem; }
 				table { border-collapse: collapse; width: 100%; margin: .5rem 0 1.25rem; }
-				td, th { border: 1px solid #8884; padding: .35rem .55rem; text-align: left; font-size: .88rem; }
+				td, th { border-bottom: 1px solid var(--border); padding: .45rem .6rem; text-align: left; font-size: .86rem; vertical-align: top; }
+				th { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+				tr.needs-review { background: var(--warn-soft); }
+				.confidence { font-variant-numeric: tabular-nums; }
 				code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
-				.muted { color: #888; font-size: .85rem; }
+				.muted { color: var(--muted); font-size: .85rem; }
 			</style>
+			<script>
+				// Onglets de la vue détail (jalon 22). Délégation sur document :
+				// le volet est remplacé par HTMX (fin de traitement, relance),
+				// les gestionnaires survivent au remplacement.
+				document.addEventListener("click", function (e) {
+					var tab = e.target.closest("[data-tab]");
+					if (!tab) return;
+					var root = tab.closest("[data-tabs]");
+					root.querySelectorAll("[data-tab]").forEach(function (t) {
+						t.setAttribute("aria-selected", t === tab ? "true" : "false");
+					});
+					root.querySelectorAll("[data-tab-panel]").forEach(function (p) {
+						p.hidden = p.getAttribute("data-tab-panel") !== tab.getAttribute("data-tab");
+					});
+				});
+			</script>
 		</head>
 		<body>
-			<header>
-				<h1>Jarvis</h1>
-				<nav>
-					<a href="/" class={ templ.KV("active", active == "upload") }>Upload</a>
+			<header class="app-header">
+				<a href="/" class="brand"><span class="brand-mark">J</span>Jarvis</a>
+				<nav class="app-nav">
+					<a href="/" class={ templ.KV("active", active == "upload") }>Importer</a>
 					<a href="/documents" class={ templ.KV("active", active == "documents") }>Documents</a>
 					<a href="/classes" class={ templ.KV("active", active == "classes") }>Classes</a>
 					<a href="/tests" class={ templ.KV("active", active == "tests") }>Tests</a>
 				</nav>
-				<form hx-post="/refresh" hx-target="body" hx-swap="outerHTML">
-					<button type="submit">↻ Rescanner le code</button>
-				</form>
+				if active == "classes" || active == "tests" {
+					<form hx-post="/refresh" hx-target="body" hx-swap="outerHTML">
+						<button type="submit" class="button-ghost">↻ Rescanner le code</button>
+					</form>
+				}
 			</header>
 			{ children... }
 		</body>

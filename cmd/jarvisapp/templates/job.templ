@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
@@ -48,6 +49,23 @@ type PageView struct {
 	NeedsReview bool
 	Failed      bool
 	Error       string
+	// Model, Prompt et RawJSON (jalon 22) : provenance et sortie brute
+	// du LLM, affichées dans l'onglet "Analyse LLM".
+	Model   string
+	Prompt  string
+	RawJSON string
+}
+
+// OCRPageView est le texte d'une page tel qu'envoyé au LLM (jalon 22,
+// onglet "Texte OCR"). Source vaut "Texte natif" ou "VLM" ; Model n'est
+// renseigné que pour le VLM.
+type OCRPageView struct {
+	Page   int
+	Source string
+	Model  string
+	Text   string
+	Failed bool
+	Error  string
 }
 
 // ResultView est la vue complète d'un document traité.
@@ -55,6 +73,7 @@ type ResultView struct {
 	DocType      string
 	TriageScore  float64
 	HasTextLayer bool
+	PageCount    int
 	Pages        []PageView
 	// Merged est la fusion de toutes les pages en un enregistrement par
 	// document (meilleure confiance par champ) — voir
@@ -66,6 +85,10 @@ type ResultView struct {
 	// applicable). Renseigné même quand DocType est vide (aucun type
 	// reconnu), pour expliquer pourquoi.
 	ClassificationConfidence float64
+	OCRPages                 []OCRPageView
+	// NativeTextMissing : résultat antérieur au jalon 22, dont le texte
+	// des pages natives n'a pas été conservé (seul le Markdown VLM l'était).
+	NativeTextMissing bool
 }
 
 func statusLabel(s webapp.Status) string {
@@ -90,11 +113,43 @@ func yesNo(b bool) string {
 	return "non"
 }
 
+// lowConfidence reprend le seuil d'affichage historique de la vue
+// (0.7) — la décision "à revoir" qui fait foi reste NeedsReview, calculée
+// par internal/extraction.
+func lowConfidence(f FieldView) bool {
+	return f.Confidence < 0.7
+}
+
 func rowClass(f FieldView) string {
-	if f.Confidence < 0.7 {
+	if lowConfidence(f) {
 		return "needs-review"
 	}
 	return ""
+}
+
+// humanizeFieldName rend un chemin de champ lisible : "total_ttc" ->
+// "Total ttc", "lignes[0].montant" -> "Lignes[0] › montant".
+func humanizeFieldName(name string) string {
+	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.ReplaceAll(name, ".", " › ")
+	if name == "" {
+		return name
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
+}
+
+func confidencePct(c float64) string {
+	return fmt.Sprintf("%.0f%%", c*100)
+}
+
+func confidenceWidth(c float64) templ.SafeCSS {
+	if c < 0 {
+		c = 0
+	}
+	if c > 1 {
+		c = 1
+	}
+	return templ.SafeCSS(fmt.Sprintf("width: %.0f%%;", c*100))
 }
 
 // persistedNote rend visible, à chaque état du job, que le document est
@@ -105,105 +160,95 @@ templ persistedNote(jobID string) {
 	<p class="muted">✓ Enregistré dans MongoDB (id: { jobID })</p>
 }
 
+templ statusChip(s webapp.Status) {
+	<span class={ "chip", "chip-" + string(s) }><span class="dot"></span>{ statusLabel(s) }</span>
+}
+
+// FieldList affiche des champs extraits (valeur, confiance, extrait
+// source, position) — onglet "Données" et détail par page.
+templ FieldList(fields []FieldView) {
+	if len(fields) == 0 {
+		<p class="muted">Aucun champ extrait.</p>
+	} else {
+		<div class="field-list">
+			for _, f := range fields {
+				<div class={ "field", templ.KV("low", lowConfidence(f)) }>
+					<div class="field-name">{ humanizeFieldName(f.Name) }</div>
+					<div class="field-value">
+						if f.Value == "" || f.Value == "<nil>" {
+							<span class="muted">—</span>
+						} else {
+							{ f.Value }
+						}
+					</div>
+					<div class="field-extra">
+						<span class="conf confidence" title="Confiance">
+							<span class="conf-bar"><span style={ confidenceWidth(f.Confidence) }></span></span>
+							{ confidencePct(f.Confidence) }
+						</span>
+						if f.SourceSnippet != "" {
+							<span class="snippet" title={ f.SourceSnippet }>« { f.SourceSnippet } »</span>
+						}
+						if f.BBox != "" {
+							<span title="Position (points PDF)">{ f.BBox }</span>
+						}
+					</div>
+				</div>
+			}
+		</div>
+	}
+}
+
+// JobFragment est la carte de suivi d'un upload (page Importer) : elle
+// sonde /jobs/{id} tant que le traitement tourne, puis résume le
+// résultat avec un lien vers la vue détail complète.
 templ JobFragment(job webapp.Job, view ResultView) {
 	if job.Status == webapp.StatusPending || job.Status == webapp.StatusRunning {
 		<div id={ "job-" + job.ID } class="card" hx-get={ "/jobs/" + job.ID } hx-trigger="load delay:1.5s" hx-swap="outerHTML">
 			<p class={ "status-" + string(job.Status) }>
 				<span class="spinner"></span>
-				{ statusLabel(job.Status) } — { job.Filename }
+				{ statusLabel(job.Status) } — <strong>{ job.Filename }</strong>
 			</p>
 			<p class="muted">{ formatStarted(job) }</p>
 			@persistedNote(job.ID)
 		</div>
 	} else if job.Status == webapp.StatusFailed {
 		<div id={ "job-" + job.ID } class="card">
-			<p class="status-failed">Échec — { job.Filename }</p>
+			<p class="status-failed">Échec — <strong>{ job.Filename }</strong></p>
 			<div class="error-box">{ job.Err }</div>
 			<p class="muted">{ formatDuration(job) }</p>
 			@persistedNote(job.ID)
+			<a class="button" href={ templ.SafeURL("/documents/" + job.ID) }>Ouvrir le document →</a>
 		</div>
 	} else if view.DocType == "" {
 		<div id={ "job-" + job.ID } class="card">
-			<p class="status-done">Terminé — { job.Filename }</p>
-			<p class="muted">{ formatDuration(job) }</p>
-			<p class="status-pending">
+			<p class="status-done">Terminé — <strong>{ job.Filename }</strong></p>
+			<p class="warn-box">
 				⚠ Aucun type de document reconnu (confiance { fmt.Sprintf("%.2f", view.ClassificationConfidence) }) —
 				pas d'extraction possible. Le document reste enregistré tel quel.
 			</p>
+			<p class="muted">{ formatDuration(job) }</p>
 			@persistedNote(job.ID)
+			<a class="button" href={ templ.SafeURL("/documents/" + job.ID) }>Ouvrir le document →</a>
 		</div>
 	} else {
 		<div id={ "job-" + job.ID } class="card">
 			<p class="status-done">
-				Terminé — { job.Filename } ({ view.DocType }
+				Terminé — <strong>{ job.Filename }</strong> <span class="chip chip-type">{ view.DocType }</span>
 				if view.ClassificationConfidence > 0 {
-					, classification { fmt.Sprintf("%.2f", view.ClassificationConfidence) }
+					<span class="muted">classification { fmt.Sprintf("%.2f", view.ClassificationConfidence) }</span>
 				} else {
-					, type assigné manuellement
-				})
-			</p>
-			<p class="muted">
-				Triage : score { fmt.Sprintf("%.2f", view.TriageScore) }, couche texte native { yesNo(view.HasTextLayer) }
+					<span class="muted">type assigné manuellement</span>
+				}
 			</p>
 			<p class="muted">{ formatDuration(job) }</p>
-			@persistedNote(job.ID)
-			<div class="merged-summary">
-				<h3>Résumé document (fusion de toutes les pages)</h3>
-				if view.Merged.Failed {
-					<div class="error-box">{ view.Merged.Error }</div>
-				} else {
-					if view.Merged.NeedsReview {
-						<p class="status-pending">⚠ un ou plusieurs champs sous le seuil de confiance — à revoir</p>
-					}
-					<table>
-						<tr>
-							<th>Champ</th>
-							<th>Valeur</th>
-							<th>Confiance</th>
-							<th>Extrait source</th>
-							<th>Position (pts)</th>
-						</tr>
-						for _, f := range view.Merged.Fields {
-							<tr class={ rowClass(f) }>
-								<td>{ f.Name }</td>
-								<td>{ f.Value }</td>
-								<td class="confidence">{ fmt.Sprintf("%.2f", f.Confidence) }</td>
-								<td class="muted">{ f.SourceSnippet }</td>
-								<td class="muted">{ f.BBox }</td>
-							</tr>
-						}
-					</table>
-				}
-			</div>
-			<p class="muted">Détail par page :</p>
-			for _, page := range view.Pages {
-				<h3>Page { fmt.Sprint(page.Page) }</h3>
-				if page.Failed {
-					<div class="error-box">{ page.Error }</div>
-				} else {
-					if page.NeedsReview {
-						<p class="status-pending">⚠ un ou plusieurs champs sous le seuil de confiance — à revoir</p>
-					}
-					<table>
-						<tr>
-							<th>Champ</th>
-							<th>Valeur</th>
-							<th>Confiance</th>
-							<th>Extrait source</th>
-							<th>Position (pts)</th>
-						</tr>
-						for _, f := range page.Fields {
-							<tr class={ rowClass(f) }>
-								<td>{ f.Name }</td>
-								<td>{ f.Value }</td>
-								<td class="confidence">{ fmt.Sprintf("%.2f", f.Confidence) }</td>
-								<td class="muted">{ f.SourceSnippet }</td>
-								<td class="muted">{ f.BBox }</td>
-							</tr>
-						}
-					</table>
-				}
+			if view.Merged.Failed {
+				<div class="error-box">{ view.Merged.Error }</div>
+			} else {
+				@FieldList(view.Merged.Fields)
 			}
+			@persistedNote(job.ID)
+			<a class="button button-primary" href={ templ.SafeURL("/documents/" + job.ID) }>Ouvrir le document →</a>
 		</div>
 	}
 }

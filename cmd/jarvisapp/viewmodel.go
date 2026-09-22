@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
 
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
 	"github.com/JulianAndrieux/Jarvis/internal/extraction"
+	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
@@ -26,9 +28,12 @@ func buildResultView(job webapp.Job) templates.ResultView {
 			NeedsReview: e.NeedsReview,
 			Failed:      e.Failed,
 			Error:       e.Error,
+			Model:       modelLabel(e.Model.Name, e.Model.Version),
+			Prompt:      e.Prompt,
 		}
 		if !e.Failed && len(e.JSON) > 0 {
 			pv.Fields = flattenExtractionJSON(e.JSON)
+			pv.RawJSON = prettyJSON(e.JSON)
 		}
 		pages = append(pages, pv)
 	}
@@ -43,8 +48,13 @@ func buildResultView(job webapp.Job) templates.ResultView {
 		merged.Fields = flattenExtractionJSON(result.Merged.JSON)
 	}
 
+	ocrPages, nativeTextMissing := buildOCRPages(result)
+
 	return templates.ResultView{
 		DocType:                  job.DocType,
+		PageCount:                len(result.Triage.Pages),
+		OCRPages:                 ocrPages,
+		NativeTextMissing:        nativeTextMissing,
 		TriageScore:              result.Triage.Score,
 		HasTextLayer:             result.Triage.HasTextLayer,
 		Pages:                    pages,
@@ -112,4 +122,62 @@ func joinFieldPath(prefix, key string) string {
 		return key
 	}
 	return prefix + "." + key
+}
+
+// buildOCRPages construit l'onglet "Texte OCR" (jalon 22) : le texte de
+// chaque page tel qu'envoyé au LLM, avec sa provenance. Source de vérité :
+// Result.Pages. Un résultat antérieur au jalon 22 n'a que le Markdown VLM
+// (Result.Parsing) — il est affiché, et nativeTextMissing signale que le
+// texte des pages natives n'a pas été conservé (une ré-extraction le
+// capture).
+func buildOCRPages(result *pipeline.Result) (pages []templates.OCRPageView, nativeTextMissing bool) {
+	vlmModels := make(map[int]string, len(result.Parsing))
+	for _, p := range result.Parsing {
+		vlmModels[p.Page] = modelLabel(p.Model.Name, p.Model.Version)
+		if p.Failed {
+			pages = append(pages, templates.OCRPageView{Page: p.Page, Source: "VLM", Model: vlmModels[p.Page], Failed: true, Error: p.Error})
+		}
+	}
+
+	if len(result.Pages) > 0 {
+		for _, p := range result.Pages {
+			pv := templates.OCRPageView{Page: p.Page, Text: p.Text, Source: "Texte natif"}
+			if p.Source == pipeline.SourceVLM {
+				pv.Source, pv.Model = "VLM", vlmModels[p.Page]
+			}
+			pages = append(pages, pv)
+		}
+	} else {
+		for _, p := range result.Parsing {
+			if !p.Failed {
+				pages = append(pages, templates.OCRPageView{Page: p.Page, Text: p.Markdown, Source: "VLM", Model: vlmModels[p.Page]})
+			}
+		}
+		for _, tp := range result.Triage.Pages {
+			if tp.Usable {
+				nativeTextMissing = true
+				break
+			}
+		}
+	}
+
+	sort.Slice(pages, func(i, j int) bool { return pages[i].Page < pages[j].Page })
+	return pages, nativeTextMissing
+}
+
+func modelLabel(name, version string) string {
+	if version == "" {
+		return name
+	}
+	return name + " " + version
+}
+
+// prettyJSON indente raw pour l'affichage ; raw tel quel s'il n'est pas
+// du JSON valide (on montre ce que le LLM a produit, jamais rien).
+func prettyJSON(raw json.RawMessage) string {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, raw, "", "  "); err != nil {
+		return string(raw)
+	}
+	return buf.String()
 }

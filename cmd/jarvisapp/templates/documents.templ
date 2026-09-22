@@ -1,13 +1,14 @@
 package templates
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
-// DocumentRow est l'entrée d'un document dans la liste de la
-// bibliothèque de documents (jalon 17).
+// DocumentRow est l'entrée d'un document dans la bibliothèque (jalon 17),
+// affichée en carte avec miniature depuis le jalon 22.
 type DocumentRow struct {
 	ID        string
 	Filename  string
@@ -20,91 +21,291 @@ type DocumentRow struct {
 templ DocumentsPage(docs []DocumentRow, search string) {
 	@Layout("Jarvis — documents", "documents") {
 		<div class="page-wide">
+			<div class="page-title">
+				<h2>Documents</h2>
+				<a class="button button-primary" href="/">+ Importer</a>
+			</div>
 			<form class="search-bar" method="get" action="/documents">
-				<input type="text" name="q" id="q" value={ search } placeholder="Rechercher un document : nom, type, tag, ou contenu du document..."/>
+				<input type="text" name="q" id="q" value={ search } placeholder="Rechercher : nom, type, tag, ou contenu du document…"/>
 				<button type="submit">Rechercher</button>
 			</form>
 			if len(docs) == 0 {
-				<p class="muted">Aucun document.</p>
-			} else {
-				<table>
-					<tr>
-						<th>Date</th>
-						<th>Fichier</th>
-						<th>Type</th>
-						<th>Statut</th>
-						<th>Tags</th>
-						<th></th>
-					</tr>
-					for _, d := range docs {
-						<tr>
-							<td class="muted">{ d.CreatedAt }</td>
-							<td><a href={ templ.SafeURL("/documents/" + d.ID) }>{ d.Filename }</a></td>
-							<td>
-								if d.DocType != "" {
-									{ d.DocType }
-								} else {
-									<span class="muted">—</span>
-								}
-							</td>
-							<td class={ "status-" + d.Status }>{ d.Status }</td>
-							<td class="muted">{ strings.Join(d.Tags, ", ") }</td>
-							<td>
-								<button
-									class="button-danger"
-									hx-delete={ "/documents/" + d.ID }
-									hx-confirm={ "Supprimer définitivement " + d.Filename + " ?" }
-								>
-									Supprimer
-								</button>
-							</td>
-						</tr>
+				<div class="empty-state">
+					if search != "" {
+						<p>Aucun document ne correspond à « { search } ».</p>
+					} else {
+						<p>Aucun document pour l'instant.</p>
+						<a class="button button-primary" href="/">Importer un premier PDF</a>
 					}
-				</table>
+				</div>
+			} else {
+				<p class="muted">{ fmt.Sprint(len(docs)) } document(s)</p>
+				<div class="doc-grid">
+					for _, d := range docs {
+						<a class="doc-card" href={ templ.SafeURL("/documents/" + d.ID) }>
+							<div class="doc-thumb">
+								<img src={ "/documents/" + d.ID + "/thumbnail" } alt={ "Aperçu de " + d.Filename } loading="lazy"/>
+							</div>
+							<div class="doc-card-body">
+								<div class="doc-name" title={ d.Filename }>{ d.Filename }</div>
+								<div class="doc-meta">
+									if d.DocType != "" {
+										<span class="chip chip-type">{ d.DocType }</span>
+									}
+									if d.Status != string(webapp.StatusDone) {
+										@statusChip(webapp.Status(d.Status))
+									}
+									for _, tag := range d.Tags {
+										<span class="chip">{ tag }</span>
+									}
+								</div>
+								<div class="doc-date">{ d.CreatedAt }</div>
+							</div>
+							<button
+								class="button-danger card-delete"
+								title="Supprimer"
+								hx-delete={ "/documents/" + d.ID }
+								hx-confirm={ "Supprimer définitivement " + d.Filename + " ?" }
+								onclick="event.preventDefault()"
+							>🗑</button>
+						</a>
+					}
+				</div>
 			}
 		</div>
 	}
 }
 
+// DocumentDetailPage : aperçu du PDF à gauche, toutes les informations à
+// droite (jalon 22). Le volet droit (DocumentPanel) est un fragment
+// autonome : il se sonde lui-même tant que le traitement tourne, et la
+// relance d'extraction le remplace en place.
 templ DocumentDetailPage(job webapp.Job, view ResultView, docTypes []string) {
 	@Layout("Jarvis — " + job.Filename, "documents") {
-		<div class="page-wide">
-			<p><a href="/documents">&larr; Tous les documents</a></p>
+		<div class="doc-shell">
+			<section class="doc-preview">
+				<iframe src={ "/documents/" + job.ID + "/pdf#view=FitH" } title={ "Aperçu de " + job.Filename }></iframe>
+			</section>
+			@DocumentPanel(job, view, docTypes)
+		</div>
+	}
+}
+
+func documentMeta(job webapp.Job, view ResultView) []string {
+	meta := []string{"Importé le " + job.CreatedAt.Format("02/01/2006 à 15:04")}
+	if view.PageCount > 0 {
+		meta = append(meta, fmt.Sprintf("%d page(s)", view.PageCount))
+	}
+	if job.Status == webapp.StatusDone || job.Status == webapp.StatusFailed {
+		if !job.StartedAt.IsZero() && !job.FinishedAt.IsZero() {
+			meta = append(meta, "traité en "+job.FinishedAt.Sub(job.StartedAt).Round(1e9).String())
+		}
+	}
+	return meta
+}
+
+templ DocumentPanel(job webapp.Job, view ResultView, docTypes []string) {
+	if job.Status == webapp.StatusPending || job.Status == webapp.StatusRunning {
+		<section class="doc-panel" id="doc-panel" hx-get={ "/documents/" + job.ID + "/panel" } hx-trigger="load delay:2s" hx-swap="outerHTML">
+			@panelHeader(job, view)
 			<div class="card">
-				<embed src={ templ.SafeURL("/documents/" + job.ID + "/pdf") } type="application/pdf" width="100%" height="480"/>
+				<p class={ "status-" + string(job.Status) }><span class="spinner"></span> { statusLabel(job.Status) }…</p>
+				<p class="muted">{ formatStarted(job) } — les résultats s'afficheront ici automatiquement.</p>
 			</div>
-			<div class="card" id="tags-section">
-				@TagsForm(job.ID, job.Tags)
+		</section>
+	} else {
+		<section class="doc-panel" id="doc-panel" data-tabs>
+			@panelHeader(job, view)
+			<nav class="tabs" role="tablist">
+				<button class="tab" role="tab" data-tab="data" aria-selected="true">Données</button>
+				<button class="tab" role="tab" data-tab="ocr" aria-selected="false">Texte OCR <span class="count">{ fmt.Sprint(len(view.OCRPages)) }</span></button>
+				<button class="tab" role="tab" data-tab="llm" aria-selected="false">Analyse LLM <span class="count">{ fmt.Sprint(len(view.Pages)) }</span></button>
+				<button class="tab" role="tab" data-tab="info" aria-selected="false">Infos</button>
+			</nav>
+			<div class="tab-panel" data-tab-panel="data">
+				@dataTab(job, view)
 			</div>
-			<div class="card">
-				<form hx-post={ "/documents/" + job.ID + "/reprocess" } hx-target={ "#job-" + job.ID } hx-swap="outerHTML">
-					<label for="doc_type">Changer le type (relance l'extraction)</label>
-					<select name="doc_type" id="doc_type">
-						for _, dt := range docTypes {
-							<option value={ dt } selected?={ dt == job.DocType }>{ dt }</option>
-						}
-					</select>
-					<button type="submit">Ré-extraire avec ce type</button>
-				</form>
+			<div class="tab-panel" data-tab-panel="ocr" hidden>
+				@ocrTab(view)
 			</div>
-			@JobFragment(job, view)
-			<div class="card">
-				<button
-					class="button-danger"
-					hx-delete={ "/documents/" + job.ID }
-					hx-confirm={ "Supprimer définitivement " + job.Filename + " ? Cette action est irréversible." }
-				>
-					Supprimer ce document
-				</button>
+			<div class="tab-panel" data-tab-panel="llm" hidden>
+				@llmTab(view)
+			</div>
+			<div class="tab-panel" data-tab-panel="info" hidden>
+				@infoTab(job, view, docTypes)
+			</div>
+		</section>
+	}
+}
+
+templ panelHeader(job webapp.Job, view ResultView) {
+	<a class="panel-back" href="/documents">← Documents</a>
+	<h1 class="panel-title">{ job.Filename }</h1>
+	<div class="panel-badges">
+		if job.DocType != "" {
+			<span class="chip chip-type">{ job.DocType }</span>
+		}
+		@statusChip(job.Status)
+		if job.Status == webapp.StatusDone && view.Merged.NeedsReview {
+			<span class="chip chip-review">⚠ à revoir</span>
+		}
+		if view.ClassificationConfidence > 0 {
+			<span class="chip">classification { confidencePct(view.ClassificationConfidence) }</span>
+		}
+		if job.Result != nil {
+			if view.HasTextLayer {
+				<span class="chip">texte natif</span>
+			} else {
+				<span class="chip">scanné</span>
+			}
+		}
+	</div>
+	<div class="panel-meta">
+		for _, m := range documentMeta(job, view) {
+			<span>{ m }</span>
+		}
+	</div>
+}
+
+templ dataTab(job webapp.Job, view ResultView) {
+	if job.Status == webapp.StatusFailed {
+		<div class="error-box">{ job.Err }</div>
+	} else if view.DocType == "" {
+		<p class="warn-box">
+			⚠ Aucun type de document reconnu (confiance { fmt.Sprintf("%.2f", view.ClassificationConfidence) }) —
+			pas d'extraction possible. Choisis un type dans l'onglet Infos pour lancer l'extraction.
+		</p>
+	} else if view.Merged.Failed {
+		<div class="error-box">{ view.Merged.Error }</div>
+	} else {
+		if view.Merged.NeedsReview {
+			<p class="warn-box">⚠ Un ou plusieurs champs sont sous le seuil de confiance — à vérifier sur l'aperçu.</p>
+		}
+		@FieldList(view.Merged.Fields)
+		<p class="muted">Fusion de toutes les pages (meilleure confiance par champ). Détail par page : onglet Analyse LLM.</p>
+	}
+}
+
+templ ocrTab(view ResultView) {
+	if view.NativeTextMissing {
+		<p class="warn-box">
+			Ce document a été traité avant que le texte des pages natives soit conservé : seules les pages passées par le VLM sont affichées.
+			Relancer l'extraction (onglet Infos) enregistre le texte de toutes les pages.
+		</p>
+	}
+	if len(view.OCRPages) == 0 {
+		<p class="muted">Aucun texte disponible pour ce document.</p>
+	}
+	for _, p := range view.OCRPages {
+		<div class="page-block">
+			<div class="page-block-head">
+				<strong>Page { fmt.Sprint(p.Page) }</strong>
+				<span class="chip">{ p.Source }</span>
+				if p.Model != "" {
+					<span class="model">{ p.Model }</span>
+				}
+			</div>
+			if p.Failed {
+				<div class="page-block-body"><div class="error-box">{ p.Error }</div></div>
+			} else {
+				<pre class="ocr-text">{ p.Text }</pre>
+			}
+		</div>
+	}
+}
+
+templ llmTab(view ResultView) {
+	if len(view.Pages) == 0 {
+		<p class="muted">Aucune analyse LLM pour ce document.</p>
+	}
+	for _, p := range view.Pages {
+		<div class="page-block">
+			<div class="page-block-head">
+				<strong>Page { fmt.Sprint(p.Page) }</strong>
+				if p.Model != "" {
+					<span class="model">{ p.Model }</span>
+				}
+				if p.Failed {
+					<span class="chip chip-failed">échec</span>
+				} else if p.NeedsReview {
+					<span class="chip chip-review">⚠ à revoir</span>
+				}
+			</div>
+			<div class="page-block-body">
+				if p.Failed {
+					<div class="error-box">{ p.Error }</div>
+				} else {
+					@FieldList(p.Fields)
+				}
+				if p.Prompt != "" {
+					<details class="raw">
+						<summary>Prompt envoyé au LLM</summary>
+						<pre>{ p.Prompt }</pre>
+					</details>
+				}
+				if p.RawJSON != "" {
+					<details class="raw">
+						<summary>Réponse JSON brute</summary>
+						<pre>{ p.RawJSON }</pre>
+					</details>
+				}
 			</div>
 		</div>
 	}
 }
 
+templ infoTab(job webapp.Job, view ResultView, docTypes []string) {
+	<div class="section-title">Tags</div>
+	<div id="tags-section">
+		@TagsForm(job.ID, job.Tags)
+	</div>
+	<div class="section-title">Type de document</div>
+	<form hx-post={ "/documents/" + job.ID + "/reprocess" } hx-target="#doc-panel" hx-swap="outerHTML">
+		<label for="doc_type">Changer le type relance l'extraction</label>
+		<div class="field-row">
+			<select name="doc_type" id="doc_type">
+				for _, dt := range docTypes {
+					<option value={ dt } selected?={ dt == job.DocType }>{ dt }</option>
+				}
+			</select>
+			<button type="submit">Ré-extraire</button>
+		</div>
+	</form>
+	<div class="section-title">Traitement</div>
+	<dl class="info-grid">
+		<dt>Statut</dt>
+		<dd>{ statusLabel(job.Status) }</dd>
+		if d := formatDuration(job); d != "" {
+			<dt>Durée</dt>
+			<dd>{ d }</dd>
+		}
+		if job.Result != nil {
+			<dt>Triage</dt>
+			<dd>score { fmt.Sprintf("%.2f", view.TriageScore) }, couche texte native { yesNo(view.HasTextLayer) }</dd>
+		}
+		<dt>Identifiant</dt>
+		<dd class="mono">{ job.ID }</dd>
+		<dt>Stockage</dt>
+		<dd>✓ Enregistré dans MongoDB (PDF, texte OCR et analyse LLM)</dd>
+	</dl>
+	<div class="section-title">Zone dangereuse</div>
+	<div class="card danger-zone">
+		<button
+			class="button-danger"
+			hx-delete={ "/documents/" + job.ID }
+			hx-confirm={ "Supprimer définitivement " + job.Filename + " ? Cette action est irréversible." }
+		>
+			Supprimer ce document
+		</button>
+	</div>
+}
+
 templ TagsForm(jobID string, tags []string) {
-	<form hx-post={ "/documents/" + jobID + "/tags" } hx-target="#tags-section" hx-swap="outerHTML">
-		<label for="tags">Tags (séparés par des virgules)</label>
-		<input type="text" name="tags" id="tags" value={ strings.Join(tags, ", ") }/>
-		<button type="submit">Enregistrer les tags</button>
+	<form hx-post={ "/documents/" + jobID + "/tags" } hx-target="#tags-section" hx-swap="innerHTML">
+		<label for="tags">Séparés par des virgules</label>
+		<div class="field-row">
+			<input type="text" name="tags" id="tags" value={ strings.Join(tags, ", ") }/>
+			<button type="submit">Enregistrer</button>
+		</div>
 	</form>
 }

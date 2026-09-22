@@ -103,6 +103,8 @@ func (s *Server) Routes() chi.Router {
 	r.Get("/documents", s.handleDocuments)
 	r.Get("/documents/{id}", s.handleDocumentDetail)
 	r.Get("/documents/{id}/pdf", s.handleDocumentPDF)
+	r.Get("/documents/{id}/thumbnail", s.handleDocumentThumbnail)
+	r.Get("/documents/{id}/panel", s.handleDocumentPanel)
 	r.Post("/documents/{id}/tags", s.handleDocumentTags)
 	r.Post("/documents/{id}/reprocess", s.handleDocumentReprocess)
 	r.Delete("/documents/{id}", s.handleDocumentDelete)
@@ -191,7 +193,7 @@ func (s *Server) renderJob(w http.ResponseWriter, r *http.Request, job webapp.Jo
 
 func (s *Server) handleDocuments(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("q")
-	jobs, err := s.Jobs.List(r.Context(), webapp.ListQuery{Search: search})
+	jobs, err := s.Jobs.List(r.Context(), webapp.ListQuery{Search: search, SummaryOnly: true})
 	if err != nil {
 		http.Error(w, "erreur de lecture des documents : "+err.Error(), http.StatusInternalServerError)
 		return
@@ -278,7 +280,14 @@ func (s *Server) handleDocumentReprocess(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	s.handleDocumentPanel(w, r)
+}
 
+// handleDocumentPanel rend le volet droit de la vue détail (jalon 22) :
+// sondé par lui-même tant que le traitement tourne, et renvoyé par la
+// relance d'extraction pour remplacer le volet en place.
+func (s *Server) handleDocumentPanel(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 	job, ok, err := s.Jobs.Get(r.Context(), id)
 	if err != nil {
 		http.Error(w, "erreur de lecture du document : "+err.Error(), http.StatusInternalServerError)
@@ -288,7 +297,30 @@ func (s *Server) handleDocumentReprocess(w http.ResponseWriter, r *http.Request)
 		http.NotFound(w, r)
 		return
 	}
-	s.renderJob(w, r, job)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.DocumentPanel(job, buildResultView(job), s.Registry.Names()).Render(r.Context(), w); err != nil {
+		fmt.Fprintf(os.Stderr, "jarvisapp: render document panel %s: %v\n", id, err)
+	}
+}
+
+// handleDocumentThumbnail sert la miniature PNG de la première page
+// (jalon 22), générée au premier appel puis conservée en base. Elle ne
+// change jamais pour un document donné : cache navigateur long.
+func (s *Server) handleDocumentThumbnail(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	png, ok, err := s.Jobs.Thumbnail(r.Context(), id)
+	if err != nil {
+		http.Error(w, "miniature indisponible : "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Write(png)
 }
 
 // handleDocumentDelete supprime définitivement un document (jalon 18).

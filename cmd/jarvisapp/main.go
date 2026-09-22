@@ -119,6 +119,7 @@ func main() {
 	}
 
 	jobs := webapp.NewJobManager(jobStore, runner)
+	jobs.Renderer = parsing.PdftoppmRenderer{}
 	jobs.WorkDir = *workDir
 	if *outDir != "" {
 		jobs.OnFinish = persistJobLocally(*outDir)

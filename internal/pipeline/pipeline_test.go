@@ -373,3 +373,56 @@ func TestPipeline_Run_VLMFailureOnOnePage_StillSurfacedInExtraction(t *testing.T
 		}
 	}
 }
+
+// Jalon 22 : le texte par page réellement envoyé au LLM (natif ou
+// Markdown VLM) est conservé dans Result.Pages, avec sa provenance —
+// affiché tel quel dans l'onglet "Texte OCR" de l'interface web et
+// persisté avec le reste du résultat. Avant ce jalon, le texte natif
+// n'existait que concaténé dans SearchText, sans frontière de page.
+func TestPipeline_Run_ResultPages_KeepPerPageTextAndSource(t *testing.T) {
+	extracted := json.RawMessage(`{"numero": {"value": "F-3", "confidence": 0.9, "source_snippet": "F-3"}}`)
+	nativeText := "Facture F-3, Acme - " + longEnoughText()
+	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{
+		{Page: 1, Text: nativeText},
+		{Page: 2, Text: ""},
+	}}
+	vlmClient := &vlm.FakeClient{Results: map[int]vlm.ParseResult{
+		2: {Markdown: "| Poste | Montant |\n| --- | --- |\n| Pose | 95,00 |"},
+	}}
+	llmClient := &llm.FakeClient{Results: map[int]llm.ExtractResult{1: {JSON: extracted}, 2: {JSON: extracted}}}
+
+	p := Pipeline{TextExtractor: textExtractor, Renderer: fakeRenderer{png: []byte("png")}, VLM: vlmClient, LLM: llmClient}
+
+	got, err := p.Run(context.Background(), factureRegistration(t), "doc.pdf")
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+
+	want := []PageContent{
+		{Page: 1, Text: nativeText, Source: SourceNative},
+		{Page: 2, Text: "| Poste | Montant |\n| --- | --- |\n| Pose | 95,00 |", Source: SourceVLM},
+	}
+	if len(got.Pages) != len(want) {
+		t.Fatalf("Pages = %+v, want %+v", got.Pages, want)
+	}
+	for i := range want {
+		if got.Pages[i] != want[i] {
+			t.Errorf("Pages[%d] = %+v, want %+v", i, got.Pages[i], want[i])
+		}
+	}
+}
+
+// Même une extraction en échec garde le texte des pages : l'OCR a
+// abouti, c'est justement ce qu'on veut pouvoir relire pour comprendre
+// l'échec.
+func TestPipeline_Run_ExtractionError_StillKeepsPages(t *testing.T) {
+	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{{Page: 1, Text: "Texte - " + longEnoughText()}}}
+	llmClient := &llm.FakeClient{Err: errors.New("llm down")}
+
+	p := Pipeline{TextExtractor: textExtractor, VLM: &vlm.FakeClient{}, LLM: llmClient}
+
+	got, _ := p.Run(context.Background(), factureRegistration(t), "doc.pdf")
+	if len(got.Pages) != 1 || got.Pages[0].Source != SourceNative {
+		t.Errorf("Pages = %+v, want the native page kept despite the extraction outcome", got.Pages)
+	}
+}

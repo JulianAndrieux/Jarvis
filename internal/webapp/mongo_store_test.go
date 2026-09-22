@@ -274,3 +274,66 @@ func TestMongoStore_Delete_UnknownID_ReturnsError(t *testing.T) {
 		t.Fatal("Delete() error = nil, want non-nil for an unknown job id")
 	}
 }
+
+// Jalon 22 : la miniature est écrite par un $set ciblé (SetThumbnail),
+// jamais par Update — Update reçoit un Job complet qui, chargé via une
+// liste SummaryOnly, n'aurait pas de miniature et l'effacerait.
+func TestMongoStore_SetThumbnail_RoundTripsAndSurvivesUpdate(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	id := "test-thumb-" + time.Now().Format("150405.000000")
+	defer cleanupJob(t, store, id)
+
+	job := Job{ID: id, Filename: "t.pdf", Content: []byte("%PDF"), Status: StatusDone, CreatedAt: time.Now()}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetThumbnail(ctx, id, []byte("png-bytes")); err != nil {
+		t.Fatalf("SetThumbnail() error = %v", err)
+	}
+	job.Tags = []string{"x"}
+	if err := store.Update(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := store.Get(ctx, id)
+	if err != nil || !ok {
+		t.Fatalf("Get() = ok %v, err %v", ok, err)
+	}
+	if string(got.Thumbnail) != "png-bytes" {
+		t.Errorf("Thumbnail = %q, want png-bytes (must survive Update)", got.Thumbnail)
+	}
+}
+
+func TestMongoStore_SetThumbnail_UnknownID_ReturnsError(t *testing.T) {
+	store := newTestMongoStore(t)
+	if err := store.SetThumbnail(context.Background(), "does-not-exist-thumb", []byte("x")); err == nil {
+		t.Error("SetThumbnail() error = nil, want an error for an unknown id")
+	}
+}
+
+func TestMongoStore_List_SummaryOnly_OmitsHeavyFields(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	id := "test-summary-" + time.Now().Format("150405.000000")
+	defer cleanupJob(t, store, id)
+
+	job := Job{ID: id, Filename: id + ".pdf", Content: []byte("%PDF"), Thumbnail: []byte("png"), Status: StatusDone, DocType: "facture", CreatedAt: time.Now(), Result: &pipeline.Result{DocType: "facture"}}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.List(ctx, ListQuery{Search: id, SummaryOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("List() = %d jobs, want 1", len(got))
+	}
+	if got[0].Content != nil || got[0].Thumbnail != nil || got[0].Result != nil {
+		t.Errorf("List(SummaryOnly) kept heavy fields: content=%d thumb=%d result=%v", len(got[0].Content), len(got[0].Thumbnail), got[0].Result)
+	}
+	if got[0].DocType != "facture" || got[0].Filename != id+".pdf" {
+		t.Errorf("List(SummaryOnly) = %+v, want summary fields kept", got[0])
+	}
+}

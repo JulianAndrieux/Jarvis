@@ -519,3 +519,94 @@ func TestJobManager_RecoverOrphaned_NoOrphans_ReturnsZero(t *testing.T) {
 		t.Errorf("RecoverOrphaned() = %d, want 0", n)
 	}
 }
+
+// fakeThumbRenderer implémente parsing.Renderer pour les tests de
+// miniature : compte ses appels et vérifie qu'on lui passe bien un
+// fichier contenant le PDF du job.
+type fakeThumbRenderer struct {
+	mu      sync.Mutex
+	calls   int
+	gotPage int
+	gotDPI  int
+	gotPDF  []byte
+	png     []byte
+	err     error
+}
+
+func (r *fakeThumbRenderer) RenderPage(ctx context.Context, path string, page, dpi int) ([]byte, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls++
+	r.gotPage, r.gotDPI = page, dpi
+	r.gotPDF, _ = os.ReadFile(path)
+	return r.png, r.err
+}
+
+func TestJobManager_Thumbnail_RendersFirstPageOnceThenServesStored(t *testing.T) {
+	store := NewFakeStore()
+	store.Create(context.Background(), Job{ID: "a", Filename: "a.pdf", Content: []byte("%PDF-a")})
+	renderer := &fakeThumbRenderer{png: []byte("thumb-png")}
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	m.Renderer = renderer
+
+	for i := 0; i < 2; i++ {
+		png, ok, err := m.Thumbnail(context.Background(), "a")
+		if err != nil || !ok {
+			t.Fatalf("Thumbnail() call %d = ok %v, err %v; want ok, nil", i+1, ok, err)
+		}
+		if string(png) != "thumb-png" {
+			t.Errorf("Thumbnail() call %d = %q, want thumb-png", i+1, png)
+		}
+	}
+
+	if renderer.calls != 1 {
+		t.Errorf("renderer calls = %d, want 1 (second call must be served from the store)", renderer.calls)
+	}
+	if renderer.gotPage != 1 || renderer.gotDPI != ThumbnailDPI {
+		t.Errorf("rendered page %d at %d DPI, want page 1 at %d DPI", renderer.gotPage, renderer.gotDPI, ThumbnailDPI)
+	}
+	if string(renderer.gotPDF) != "%PDF-a" {
+		t.Errorf("renderer read %q, want the job's PDF content", renderer.gotPDF)
+	}
+	stored, _, _ := store.Get(context.Background(), "a")
+	if string(stored.Thumbnail) != "thumb-png" {
+		t.Errorf("stored Thumbnail = %q, want it persisted", stored.Thumbnail)
+	}
+}
+
+func TestJobManager_Thumbnail_UnknownJob_ReturnsNotFound(t *testing.T) {
+	m := NewJobManager(NewFakeStore(), &fakeRunner{})
+	m.Renderer = &fakeThumbRenderer{png: []byte("x")}
+
+	_, ok, err := m.Thumbnail(context.Background(), "nope")
+	if err != nil || ok {
+		t.Errorf("Thumbnail() = ok %v, err %v; want ok=false, err=nil", ok, err)
+	}
+}
+
+func TestJobManager_Thumbnail_RenderError_ReturnsErrorAndStoresNothing(t *testing.T) {
+	store := NewFakeStore()
+	store.Create(context.Background(), Job{ID: "a", Content: []byte("%PDF")})
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	m.Renderer = &fakeThumbRenderer{err: errors.New("pdftoppm boom")}
+
+	if _, _, err := m.Thumbnail(context.Background(), "a"); err == nil {
+		t.Error("Thumbnail() error = nil, want the render error")
+	}
+	stored, _, _ := store.Get(context.Background(), "a")
+	if stored.Thumbnail != nil {
+		t.Errorf("stored Thumbnail = %q, want nothing stored after a failed render", stored.Thumbnail)
+	}
+}
+
+func TestJobManager_Thumbnail_NoRenderer_ReturnsError(t *testing.T) {
+	store := NewFakeStore()
+	store.Create(context.Background(), Job{ID: "a", Content: []byte("%PDF")})
+	m := NewJobManager(store, &fakeRunner{})
+
+	if _, _, err := m.Thumbnail(context.Background(), "a"); err == nil {
+		t.Error("Thumbnail() error = nil, want an explicit error when no Renderer is configured")
+	}
+}

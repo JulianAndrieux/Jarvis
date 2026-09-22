@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 )
 
@@ -60,6 +61,11 @@ type Job struct {
 	// Store.List puisse chercher dedans sans désérialiser tout Result
 	// (jalon 18, "chercher dans les documents").
 	SearchText string
+	// Thumbnail est la miniature PNG de la première page (jalon 22,
+	// grille de la bibliothèque de documents), générée à la demande par
+	// JobManager.Thumbnail puis persistée via Store.SetThumbnail. nil tant
+	// qu'elle n'a jamais été demandée.
+	Thumbnail []byte
 }
 
 // Runner exécute le pipeline complet pour un document, à partir d'un
@@ -90,6 +96,11 @@ type JobManager struct {
 	// WorkDir est le répertoire des fichiers temporaires de traitement ;
 	// "" laisse os.CreateTemp choisir (répertoire temporaire du système).
 	WorkDir string
+
+	// Renderer rend la première page en PNG pour les miniatures (jalon
+	// 22) — le même port que l'étage Parsing (PdftoppmRenderer en
+	// production). nil : Thumbnail retourne une erreur explicite.
+	Renderer parsing.Renderer
 
 	// OnFinish, si non-nil, est appelé (depuis la goroutine du job) une
 	// fois le job terminé (Done ou Failed), avec l'état final du job.
@@ -190,6 +201,46 @@ func (m *JobManager) materialize(content []byte) (path string, cleanup func(), e
 	}
 	path = f.Name()
 	return path, func() { os.Remove(path) }, nil
+}
+
+// ThumbnailDPI est la résolution de rendu des miniatures : ~330x470 px
+// pour une page A4, assez net pour une carte de la grille (affichée
+// ~160 px de large, x2 pour les écrans Retina) et quelques dizaines de Ko.
+const ThumbnailDPI = 40
+
+// Thumbnail retourne la miniature PNG de la première page du job id,
+// en la générant (puis la persistant) au premier appel — les documents
+// existants avant le jalon 22 n'en ont pas, et la générer à la demande
+// évite toute migration. ok=false (err=nil) si le job n'existe pas.
+// Un échec de rendu n'est jamais mémorisé : l'appel suivant réessaie.
+func (m *JobManager) Thumbnail(ctx context.Context, id string) ([]byte, bool, error) {
+	job, ok, err := m.store.Get(ctx, id)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	if len(job.Thumbnail) > 0 {
+		return job.Thumbnail, true, nil
+	}
+	if m.Renderer == nil {
+		return nil, true, fmt.Errorf("webapp: thumbnail %s: no renderer configured", id)
+	}
+
+	path, cleanup, err := m.materialize(job.Content)
+	if err != nil {
+		return nil, true, fmt.Errorf("webapp: thumbnail %s: write temp file: %w", id, err)
+	}
+	defer cleanup()
+
+	png, err := m.Renderer.RenderPage(ctx, path, 1, ThumbnailDPI)
+	if err != nil {
+		return nil, true, fmt.Errorf("webapp: thumbnail %s: %w", id, err)
+	}
+	if err := m.store.SetThumbnail(ctx, id, png); err != nil {
+		// La miniature est valide, seule sa mise en cache a échoué : on
+		// la sert quand même, elle sera regénérée au prochain appel.
+		fmt.Fprintf(os.Stderr, "webapp: store thumbnail %s: %v\n", id, err)
+	}
+	return png, true, nil
 }
 
 // Get retourne le job id, s'il existe.

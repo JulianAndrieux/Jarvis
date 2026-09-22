@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 )
 
 func TestFakeStore_CreateThenGet(t *testing.T) {
@@ -196,5 +198,57 @@ func TestFakeStore_List_RespectsLimit(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Errorf("len(List()) = %d, want 2 (Limit)", len(got))
+	}
+}
+
+// Jalon 22 : miniature de la première page, pour la grille de la
+// bibliothèque de documents.
+func TestFakeStore_SetThumbnail_PersistsOnJob(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	if _, err := s.Create(ctx, Job{ID: "a", Filename: "a.pdf"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SetThumbnail(ctx, "a", []byte("png")); err != nil {
+		t.Fatalf("SetThumbnail() error = %v", err)
+	}
+	got, _, _ := s.Get(ctx, "a")
+	if string(got.Thumbnail) != "png" {
+		t.Errorf("Thumbnail = %q, want %q", got.Thumbnail, "png")
+	}
+}
+
+func TestFakeStore_SetThumbnail_UnknownJob_ReturnsError(t *testing.T) {
+	if err := NewFakeStore().SetThumbnail(context.Background(), "nope", []byte("png")); err == nil {
+		t.Error("SetThumbnail() error = nil, want an error for an unknown job")
+	}
+}
+
+// SummaryOnly (liste de la bibliothèque) ne renvoie ni le PDF, ni le
+// résultat, ni la miniature : la Fake les retire elle aussi, pour qu'un
+// appelant qui en dépendrait par erreur échoue dès les tests unitaires.
+func TestFakeStore_List_SummaryOnly_OmitsHeavyFields(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	s.Create(ctx, Job{ID: "a", Filename: "a.pdf", Content: []byte("%PDF"), Thumbnail: []byte("png"), Result: &pipeline.Result{DocType: "facture"}, DocType: "facture"})
+
+	got, err := s.List(ctx, ListQuery{SummaryOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("List() = %d jobs, want 1", len(got))
+	}
+	if got[0].Content != nil || got[0].Thumbnail != nil || got[0].Result != nil {
+		t.Errorf("List(SummaryOnly) kept heavy fields: content=%d thumb=%d result=%v", len(got[0].Content), len(got[0].Thumbnail), got[0].Result)
+	}
+	if got[0].DocType != "facture" || got[0].Filename != "a.pdf" {
+		t.Errorf("List(SummaryOnly) = %+v, want summary fields kept", got[0])
+	}
+
+	full, _ := s.List(ctx, ListQuery{})
+	if full[0].Content == nil || full[0].Result == nil {
+		t.Error("List() without SummaryOnly must still return full jobs (RecoverOrphaned relies on it)")
 	}
 }
