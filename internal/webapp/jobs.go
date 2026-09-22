@@ -66,6 +66,12 @@ type Job struct {
 	// JobManager.Thumbnail puis persistée via Store.SetThumbnail. nil tant
 	// qu'elle n'a jamais été demandée.
 	Thumbnail []byte
+	// Progress est l'avancement du dernier traitement (jalon 23) : étape,
+	// compteurs de pages, texte déjà lu. Écrit au fil de l'eau via
+	// Store.SetProgress, effacé au début de chaque nouvelle tentative, et
+	// conservé ensuite — un job interrompu garde ainsi les pages déjà
+	// lues. Sans objet une fois Result disponible (Result.Pages fait foi).
+	Progress *pipeline.Progress
 }
 
 // Runner exécute le pipeline complet pour un document, à partir d'un
@@ -77,8 +83,8 @@ type Job struct {
 // satisfaites par pipeline.Pipeline par typage structurel — une fake
 // suffit pour les tests, aucun modèle ni GPU requis.
 type Runner interface {
-	RunAuto(ctx context.Context, path string) (pipeline.Result, error)
-	RunWithType(ctx context.Context, docType, path string) (pipeline.Result, error)
+	RunAuto(ctx context.Context, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error)
+	RunWithType(ctx context.Context, docType, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error)
 }
 
 // JobManager orchestre la soumission et le traitement asynchrone des
@@ -158,8 +164,19 @@ func (m *JobManager) run(job Job) {
 	}
 	defer cleanup()
 
-	result, err := m.runner.RunAuto(ctx, path)
+	result, err := m.runner.RunAuto(ctx, path, m.progressRecorder(ctx, job.ID))
 	m.finish(ctx, job, result, err)
+}
+
+// progressRecorder enregistre chaque étape d'avancement du job id. Un
+// échec d'écriture est journalisé sans interrompre le traitement : le
+// suivi est un confort, le résultat final reste enregistré par finish.
+func (m *JobManager) progressRecorder(ctx context.Context, id string) pipeline.ProgressFunc {
+	return func(p pipeline.Progress) {
+		if err := m.store.SetProgress(ctx, id, &p); err != nil {
+			fmt.Fprintf(os.Stderr, "webapp: store progress %s: %v\n", id, err)
+		}
+	}
 }
 
 func (m *JobManager) finish(ctx context.Context, job Job, result pipeline.Result, runErr error) {
@@ -330,6 +347,9 @@ func (m *JobManager) Reprocess(ctx context.Context, id, docType string) error {
 	if err := m.store.Update(ctx, job); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: update job %s to running: %v\n", job.ID, err)
 	}
+	if err := m.store.SetProgress(ctx, job.ID, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "webapp: clear progress %s: %v\n", job.ID, err)
+	}
 
 	go func() {
 		ctx := context.Background()
@@ -340,7 +360,7 @@ func (m *JobManager) Reprocess(ctx context.Context, id, docType string) error {
 		}
 		defer cleanup()
 
-		result, err := m.runner.RunWithType(ctx, docType, path)
+		result, err := m.runner.RunWithType(ctx, docType, path, m.progressRecorder(ctx, job.ID))
 		m.finish(ctx, job, result, err)
 	}()
 

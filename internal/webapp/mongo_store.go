@@ -124,6 +124,25 @@ func (s *MongoStore) SetThumbnail(ctx context.Context, id string, png []byte) er
 	return nil
 }
 
+func (s *MongoStore) SetProgress(ctx context.Context, id string, progress *pipeline.Progress) error {
+	update := bson.M{"$unset": bson.M{"progress_json": ""}}
+	if progress != nil {
+		b, err := json.Marshal(progress)
+		if err != nil {
+			return fmt.Errorf("webapp: mongo set progress %s: marshal: %w", id, err)
+		}
+		update = bson.M{"$set": bson.M{"progress_json": b}}
+	}
+	res, err := s.Collection.UpdateByID(ctx, id, update)
+	if err != nil {
+		return fmt.Errorf("webapp: mongo set progress %s: %w", id, err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("webapp: mongo set progress %s: job not found", id)
+	}
+	return nil
+}
+
 func (s *MongoStore) Delete(ctx context.Context, id string) error {
 	res, err := s.Collection.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
@@ -163,7 +182,7 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 
 	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit)
 	if q.SummaryOnly {
-		opts.SetProjection(bson.M{"content": 0, "result_json": 0, "thumbnail": 0})
+		opts.SetProjection(bson.M{"content": 0, "result_json": 0, "thumbnail": 0, "progress_json": 0})
 	}
 	cur, err := s.Collection.Find(ctx, filter, opts)
 	if err != nil {
@@ -210,6 +229,9 @@ type mongoJobDoc struct {
 	Tags       []string  `bson:"tags,omitempty"`
 	SearchText string    `bson:"search_text,omitempty"`
 	Thumbnail  []byte    `bson:"thumbnail,omitempty"`
+	// ProgressJSON : pipeline.Progress sérialisé (jalon 23), même
+	// principe que ResultJSON.
+	ProgressJSON []byte `bson:"progress_json,omitempty"`
 }
 
 func jobToDoc(job Job) (mongoJobDoc, error) {
@@ -225,6 +247,13 @@ func jobToDoc(job Job) (mongoJobDoc, error) {
 			return mongoJobDoc{}, fmt.Errorf("marshal result: %w", err)
 		}
 		doc.ResultJSON = b
+	}
+	if job.Progress != nil {
+		b, err := json.Marshal(job.Progress)
+		if err != nil {
+			return mongoJobDoc{}, fmt.Errorf("marshal progress: %w", err)
+		}
+		doc.ProgressJSON = b
 	}
 	return doc, nil
 }
@@ -242,6 +271,13 @@ func docToJob(doc mongoJobDoc) (Job, error) {
 			return Job{}, fmt.Errorf("unmarshal result: %w", err)
 		}
 		job.Result = &result
+	}
+	if len(doc.ProgressJSON) > 0 {
+		var progress pipeline.Progress
+		if err := json.Unmarshal(doc.ProgressJSON, &progress); err != nil {
+			return Job{}, fmt.Errorf("unmarshal progress: %w", err)
+		}
+		job.Progress = &progress
 	}
 	return job, nil
 }

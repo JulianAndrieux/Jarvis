@@ -37,14 +37,14 @@ type blockingRunner struct {
 	proceed chan struct{}
 }
 
-func (r *blockingRunner) RunAuto(ctx context.Context, path string) (pipeline.Result, error) {
+func (r *blockingRunner) RunAuto(ctx context.Context, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error) {
 	if r.proceed != nil {
 		<-r.proceed
 	}
 	return r.result, r.err
 }
 
-func (r *blockingRunner) RunWithType(ctx context.Context, docType, path string) (pipeline.Result, error) {
+func (r *blockingRunner) RunWithType(ctx context.Context, docType, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error) {
 	if r.proceed != nil {
 		<-r.proceed
 	}
@@ -822,5 +822,81 @@ func TestHandleDocumentPanel_RunningJobPollsDoneJobDoesNot(t *testing.T) {
 	}
 	if get(t, s, "/documents/nope/panel").Code != http.StatusNotFound {
 		t.Errorf("unknown panel should be 404")
+	}
+}
+
+// --- Jalon 23 : avancement page par page ---
+
+func seedJob(t *testing.T, store *webapp.FakeStore, job webapp.Job, progress *pipeline.Progress) {
+	t.Helper()
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = time.Now()
+	}
+	if _, err := store.Create(context.Background(), job); err != nil {
+		t.Fatal(err)
+	}
+	if progress != nil {
+		if err := store.SetProgress(context.Background(), job.ID, progress); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func halfReadProgress() *pipeline.Progress {
+	return &pipeline.Progress{
+		Stage: pipeline.StageParsing, PageCount: 5, ParseTotal: 5, ParseDone: 2,
+		Pages: []pipeline.PageContent{
+			{Page: 1, Text: "BM Constructions — page un lue", Source: pipeline.SourceVLM},
+			{Page: 2, Text: "Terrassement — page deux lue", Source: pipeline.SourceVLM},
+		},
+	}
+}
+
+func TestHandleDocumentPanel_Running_ShowsProgressAndTextReadSoFar(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	seedJob(t, store, webapp.Job{ID: "r1", Filename: "devis.pdf", Status: webapp.StatusRunning, StartedAt: time.Now()}, halfReadProgress())
+
+	body := get(t, s, "/documents/r1/panel").Body.String()
+
+	for _, want := range []string{"Lecture OCR", "2/5", "BM Constructions — page un lue", "Terrassement — page deux lue", `hx-get="/documents/r1/panel"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("running panel does not contain %q: %s", want, body)
+		}
+	}
+}
+
+func TestHandleDocumentPanel_RunningExtraction_ShowsExtractionStep(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	p := halfReadProgress()
+	p.Stage, p.ParseDone, p.ExtractTotal, p.ExtractDone = pipeline.StageExtracting, 5, 5, 3
+	seedJob(t, store, webapp.Job{ID: "r1", Filename: "devis.pdf", Status: webapp.StatusRunning, StartedAt: time.Now()}, p)
+
+	body := get(t, s, "/documents/r1/panel").Body.String()
+	if !strings.Contains(body, "Extraction") || !strings.Contains(body, "3/5") {
+		t.Errorf("panel does not show the extraction step with 3/5: %s", body)
+	}
+}
+
+// Un job interrompu (redémarrage, erreur) sans résultat garde son texte
+// déjà lu consultable dans l'onglet OCR.
+func TestHandleDocumentDetail_FailedWithoutResult_ShowsPartialOCRText(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	seedJob(t, store, webapp.Job{ID: "f1", Filename: "devis.pdf", Status: webapp.StatusFailed, Err: "traitement interrompu par un redémarrage du serveur"}, halfReadProgress())
+
+	body := get(t, s, "/documents/f1").Body.String()
+	for _, want := range []string{"traitement interrompu", "BM Constructions — page un lue", "Terrassement — page deux lue"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("failed document page does not contain %q", want)
+		}
+	}
+}
+
+func TestHandleJobStatus_Running_ShowsPageProgress(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	seedJob(t, store, webapp.Job{ID: "r1", Filename: "devis.pdf", Status: webapp.StatusRunning, StartedAt: time.Now()}, halfReadProgress())
+
+	body := get(t, s, "/jobs/r1").Body.String()
+	if !strings.Contains(body, "2/5") {
+		t.Errorf("upload card does not show 2/5 progress: %s", body)
 	}
 }

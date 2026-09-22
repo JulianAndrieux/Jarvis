@@ -63,6 +63,10 @@ type Extractor struct {
 	// jalons précédents. Même principe que parsing.Parser.Concurrency —
 	// à aligner sur les "slots" parallèles du serveur LLM (jalon 21).
 	Concurrency int
+	// OnPage, si non-nil, est appelé dès qu'une page est extraite (succès
+	// ou échec) — jalon 23, même contrat que parsing.Parser.OnPage : appels
+	// sérialisés, y compris en mode parallèle.
+	OnPage func(Result)
 }
 
 // ExtractPages traite chaque page de pages, pour le type de document reg.
@@ -101,7 +105,11 @@ func (e Extractor) extractPagesSequential(ctx context.Context, regName string, p
 		if err := ctx.Err(); err != nil {
 			return results, fmt.Errorf("extraction: %s: %w", regName, err)
 		}
-		results = append(results, e.extractOnePage(ctx, page, schemaJSON, prompt, threshold))
+		r := e.extractOnePage(ctx, page, schemaJSON, prompt, threshold)
+		results = append(results, r)
+		if e.OnPage != nil {
+			e.OnPage(r)
+		}
 	}
 	return results, nil
 }
@@ -113,6 +121,7 @@ func (e Extractor) extractPagesParallel(ctx context.Context, regName string, pag
 	results := make([]Result, len(pages))
 	sem := make(chan struct{}, e.Concurrency)
 	var wg sync.WaitGroup
+	var onPageMu sync.Mutex
 
 	for i, page := range pages {
 		if err := ctx.Err(); err != nil {
@@ -131,6 +140,11 @@ func (e Extractor) extractPagesParallel(ctx context.Context, regName string, pag
 			defer wg.Done()
 			defer func() { <-sem }()
 			results[i] = e.extractOnePage(ctx, page, schemaJSON, prompt, threshold)
+			if e.OnPage != nil {
+				onPageMu.Lock()
+				e.OnPage(results[i])
+				onPageMu.Unlock()
+			}
 		}(i, page)
 	}
 	wg.Wait()

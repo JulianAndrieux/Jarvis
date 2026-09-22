@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 )
 
 // FakeStore est une implémentation de test de Store : en mémoire, aucune
@@ -37,9 +39,13 @@ func (s *FakeStore) Get(ctx context.Context, id string) (Job, bool, error) {
 func (s *FakeStore) Update(ctx context.Context, job Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.jobs[job.ID]; !ok {
+	existing, ok := s.jobs[job.ID]
+	if !ok {
 		return fmt.Errorf("webapp: fake store: job %s not found", job.ID)
 	}
+	// Comme MongoStore : Update n'écrit ni la miniature ni l'avancement
+	// (SetThumbnail/SetProgress), ni le contenu (écrit une fois à Create).
+	job.Content, job.Thumbnail, job.Progress = existing.Content, existing.Thumbnail, existing.Progress
 	s.jobs[job.ID] = job
 	return nil
 }
@@ -71,7 +77,7 @@ func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 		}
 		if search == "" || jobMatchesSearch(j, search) {
 			if q.SummaryOnly {
-				j.Content, j.Result, j.Thumbnail = nil, nil, nil
+				j.Content, j.Result, j.Thumbnail, j.Progress = nil, nil, nil, nil
 			}
 			matched = append(matched, j)
 		}
@@ -93,6 +99,22 @@ func (s *FakeStore) SetThumbnail(ctx context.Context, id string, png []byte) err
 		return fmt.Errorf("webapp: fake store: job %s not found", id)
 	}
 	j.Thumbnail = png
+	s.jobs[id] = j
+	return nil
+}
+
+func (s *FakeStore) SetProgress(ctx context.Context, id string, progress *pipeline.Progress) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.jobs[id]
+	if !ok {
+		return fmt.Errorf("webapp: fake store: job %s not found", id)
+	}
+	if progress != nil {
+		cp := *progress
+		progress = &cp
+	}
+	j.Progress = progress
 	s.jobs[id] = j
 	return nil
 }

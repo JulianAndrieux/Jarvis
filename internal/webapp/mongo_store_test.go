@@ -337,3 +337,40 @@ func TestMongoStore_List_SummaryOnly_OmitsHeavyFields(t *testing.T) {
 		t.Errorf("List(SummaryOnly) = %+v, want summary fields kept", got[0])
 	}
 }
+
+func TestMongoStore_SetProgress_RoundTripsSurvivesUpdateAndClears(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	id := "test-progress-" + time.Now().Format("150405.000000")
+	defer cleanupJob(t, store, id)
+
+	job := Job{ID: id, Filename: "p.pdf", Content: []byte("%PDF"), Status: StatusRunning, CreatedAt: time.Now()}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	p := &pipeline.Progress{Stage: pipeline.StageParsing, PageCount: 5, ParseTotal: 5, ParseDone: 2,
+		Pages: []pipeline.PageContent{{Page: 1, Text: "texte page 1", Source: pipeline.SourceVLM}}}
+	if err := store.SetProgress(ctx, id, p); err != nil {
+		t.Fatalf("SetProgress() error = %v", err)
+	}
+	job.Status = StatusFailed
+	if err := store.Update(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Progress == nil || got.Progress.ParseDone != 2 || len(got.Progress.Pages) != 1 || got.Progress.Pages[0].Text != "texte page 1" {
+		t.Errorf("Progress = %+v, want the stored progress (must survive Update)", got.Progress)
+	}
+
+	if err := store.SetProgress(ctx, id, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = store.Get(ctx, id)
+	if got.Progress != nil {
+		t.Errorf("Progress = %+v, want nil after clearing", got.Progress)
+	}
+}

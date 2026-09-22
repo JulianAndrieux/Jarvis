@@ -252,3 +252,66 @@ func TestFakeStore_List_SummaryOnly_OmitsHeavyFields(t *testing.T) {
 		t.Error("List() without SummaryOnly must still return full jobs (RecoverOrphaned relies on it)")
 	}
 }
+
+// Jalon 23 : l'avancement (texte déjà lu) est écrit par SetProgress,
+// jamais par Update — comme la miniature.
+func TestFakeStore_SetProgress_PersistsAndClears(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	s.Create(ctx, Job{ID: "a"})
+
+	p := &pipeline.Progress{Stage: pipeline.StageParsing, ParseDone: 1, ParseTotal: 5}
+	if err := s.SetProgress(ctx, "a", p); err != nil {
+		t.Fatalf("SetProgress() error = %v", err)
+	}
+	got, _, _ := s.Get(ctx, "a")
+	if got.Progress == nil || got.Progress.ParseDone != 1 {
+		t.Errorf("Progress = %+v, want ParseDone 1", got.Progress)
+	}
+
+	if err := s.SetProgress(ctx, "a", nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = s.Get(ctx, "a")
+	if got.Progress != nil {
+		t.Errorf("Progress = %+v, want nil after clearing", got.Progress)
+	}
+	if err := s.SetProgress(ctx, "nope", p); err == nil {
+		t.Error("SetProgress() on unknown job: error = nil, want an error")
+	}
+}
+
+// La Fake doit se comporter comme MongoStore : Update ne touche ni à la
+// miniature ni à l'avancement (écrits par leurs propres méthodes). Sinon
+// un Update depuis un Job en mémoire les effacerait dans les tests mais
+// pas en production — et un bug réel passerait inaperçu.
+func TestFakeStore_Update_PreservesThumbnailAndProgress(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	s.Create(ctx, Job{ID: "a", Status: StatusRunning})
+	s.SetThumbnail(ctx, "a", []byte("png"))
+	s.SetProgress(ctx, "a", &pipeline.Progress{ParseDone: 2})
+
+	if err := s.Update(ctx, Job{ID: "a", Status: StatusFailed}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := s.Get(ctx, "a")
+	if string(got.Thumbnail) != "png" || got.Progress == nil || got.Progress.ParseDone != 2 {
+		t.Errorf("after Update: thumbnail=%q progress=%+v, want both preserved", got.Thumbnail, got.Progress)
+	}
+	if got.Status != StatusFailed {
+		t.Errorf("Status = %s, want failed (Update must still apply its own fields)", got.Status)
+	}
+}
+
+func TestFakeStore_List_SummaryOnly_OmitsProgress(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	s.Create(ctx, Job{ID: "a"})
+	s.SetProgress(ctx, "a", &pipeline.Progress{ParseDone: 1})
+
+	got, _ := s.List(ctx, ListQuery{SummaryOnly: true})
+	if got[0].Progress != nil {
+		t.Errorf("List(SummaryOnly).Progress = %+v, want nil", got[0].Progress)
+	}
+}

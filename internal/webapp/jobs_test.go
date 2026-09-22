@@ -18,20 +18,26 @@ import (
 // le contenu du job dans un fichier lisible — protégé par un mutex, un
 // même fakeRunner pouvant être appelé depuis plusieurs jobs concurrents.
 type fakeRunner struct {
-	result  pipeline.Result
-	err     error
-	started chan struct{}
-	proceed chan struct{}
+	result pipeline.Result
+	err    error
+	// progress est émis (dans l'ordre) avant de bloquer sur proceed —
+	// simule un pipeline qui avance page par page (jalon 23).
+	progress []pipeline.Progress
+	started  chan struct{}
+	proceed  chan struct{}
 
 	mu         sync.Mutex
 	gotPath    string
 	gotDocType string
 }
 
-func (f *fakeRunner) RunAuto(ctx context.Context, path string) (pipeline.Result, error) {
+func (f *fakeRunner) RunAuto(ctx context.Context, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error) {
 	f.mu.Lock()
 	f.gotPath = path
 	f.mu.Unlock()
+	for _, p := range f.progress {
+		onProgress(p)
+	}
 	if f.started != nil {
 		close(f.started)
 	}
@@ -41,11 +47,14 @@ func (f *fakeRunner) RunAuto(ctx context.Context, path string) (pipeline.Result,
 	return f.result, f.err
 }
 
-func (f *fakeRunner) RunWithType(ctx context.Context, docType, path string) (pipeline.Result, error) {
+func (f *fakeRunner) RunWithType(ctx context.Context, docType, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error) {
 	f.mu.Lock()
 	f.gotPath = path
 	f.gotDocType = docType
 	f.mu.Unlock()
+	for _, p := range f.progress {
+		onProgress(p)
+	}
 	if f.started != nil {
 		close(f.started)
 	}
@@ -608,5 +617,73 @@ func TestJobManager_Thumbnail_NoRenderer_ReturnsError(t *testing.T) {
 
 	if _, _, err := m.Thumbnail(context.Background(), "a"); err == nil {
 		t.Error("Thumbnail() error = nil, want an explicit error when no Renderer is configured")
+	}
+}
+
+// Jalon 23 : l'avancement remonté par le pipeline est enregistré pendant
+// le traitement — le texte déjà lu est consultable avant la fin.
+func TestJobManager_Run_PersistsProgressWhileRunning(t *testing.T) {
+	store := NewFakeStore()
+	runner := &fakeRunner{
+		started: make(chan struct{}),
+		proceed: make(chan struct{}),
+		progress: []pipeline.Progress{
+			{Stage: pipeline.StageParsing, ParseTotal: 3, ParseDone: 0},
+			{Stage: pipeline.StageParsing, ParseTotal: 3, ParseDone: 1, Pages: []pipeline.PageContent{{Page: 1, Text: "page un", Source: pipeline.SourceVLM}}},
+		},
+	}
+	m := NewJobManager(store, runner)
+	m.WorkDir = t.TempDir()
+
+	job, err := m.Submit(context.Background(), "a.pdf", []byte("%PDF"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-runner.started
+
+	got, _, _ := store.Get(context.Background(), job.ID)
+	if got.Progress == nil || got.Progress.ParseDone != 1 || len(got.Progress.Pages) != 1 || got.Progress.Pages[0].Text != "page un" {
+		t.Errorf("stored Progress while running = %+v, want the latest event (page 1 read)", got.Progress)
+	}
+	close(runner.proceed)
+}
+
+// Une nouvelle tentative (ré-extraction) repart d'un avancement vide :
+// l'affichage ne doit pas montrer "page 5/5" d'une tentative précédente.
+func TestJobManager_Reprocess_ClearsPreviousProgressBeforeRunning(t *testing.T) {
+	store := NewFakeStore()
+	ctx := context.Background()
+	store.Create(ctx, Job{ID: "a", Content: []byte("%PDF"), Status: StatusFailed})
+	store.SetProgress(ctx, "a", &pipeline.Progress{ParseDone: 5, ParseTotal: 5})
+
+	runner := &fakeRunner{started: make(chan struct{}), proceed: make(chan struct{})}
+	m := NewJobManager(store, runner)
+	m.WorkDir = t.TempDir()
+
+	if err := m.Reprocess(ctx, "a", "facture"); err != nil {
+		t.Fatal(err)
+	}
+	<-runner.started
+	got, _, _ := store.Get(ctx, "a")
+	if got.Progress != nil {
+		t.Errorf("Progress after reprocess started = %+v, want cleared", got.Progress)
+	}
+	close(runner.proceed)
+}
+
+// Un redémarrage garde le texte déjà lu : RecoverOrphaned marque le job
+// en échec sans effacer son avancement.
+func TestJobManager_RecoverOrphaned_KeepsPartialProgress(t *testing.T) {
+	store := NewFakeStore()
+	ctx := context.Background()
+	store.Create(ctx, Job{ID: "a", Status: StatusRunning})
+	store.SetProgress(ctx, "a", &pipeline.Progress{ParseDone: 2, Pages: []pipeline.PageContent{{Page: 1, Text: "déjà lu"}}})
+
+	if _, err := NewJobManager(store, &fakeRunner{}).RecoverOrphaned(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := store.Get(ctx, "a")
+	if got.Status != StatusFailed || got.Progress == nil || got.Progress.Pages[0].Text != "déjà lu" {
+		t.Errorf("after recovery: status=%s progress=%+v, want failed with progress kept", got.Status, got.Progress)
 	}
 }

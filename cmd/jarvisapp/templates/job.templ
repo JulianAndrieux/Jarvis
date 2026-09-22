@@ -89,6 +89,21 @@ type ResultView struct {
 	// NativeTextMissing : résultat antérieur au jalon 22, dont le texte
 	// des pages natives n'a pas été conservé (seul le Markdown VLM l'était).
 	NativeTextMissing bool
+	// Progress n'est renseigné que pour un job sans résultat (en cours ou
+	// interrompu) — jalon 23.
+	Progress *ProgressView
+}
+
+// ProgressView résume l'étape en cours : libellé ("Lecture OCR (VLM)"),
+// compteur ("2/5", vide si sans objet) et pourcentage de l'étape.
+type ProgressView struct {
+	Label   string
+	Count   string
+	Percent int
+}
+
+func progressWidth(p *ProgressView) templ.SafeCSS {
+	return templ.SafeCSS(fmt.Sprintf("width: %d%%;", p.Percent))
 }
 
 func statusLabel(s webapp.Status) string {
@@ -160,6 +175,19 @@ templ persistedNote(jobID string) {
 	<p class="muted">✓ Enregistré dans MongoDB (id: { jobID })</p>
 }
 
+// progressBlock affiche l'étape en cours et sa barre d'avancement.
+templ progressBlock(p *ProgressView) {
+	<div class="progress">
+		<div class="progress-label">
+			<span>{ p.Label }</span>
+			if p.Count != "" {
+				<strong>{ p.Count }</strong>
+			}
+		</div>
+		<div class="progress-bar"><span style={ progressWidth(p) }></span></div>
+	</div>
+}
+
 templ statusChip(s webapp.Status) {
 	<span class={ "chip", "chip-" + string(s) }><span class="dot"></span>{ statusLabel(s) }</span>
 }
@@ -209,8 +237,12 @@ templ JobFragment(job webapp.Job, view ResultView) {
 				<span class="spinner"></span>
 				{ statusLabel(job.Status) } — <strong>{ job.Filename }</strong>
 			</p>
+			if view.Progress != nil {
+				@progressBlock(view.Progress)
+			}
 			<p class="muted">{ formatStarted(job) }</p>
 			@persistedNote(job.ID)
+			<a class="button" href={ templ.SafeURL("/documents/" + job.ID) }>Suivre dans le document →</a>
 		</div>
 	} else if job.Status == webapp.StatusFailed {
 		<div id={ "job-" + job.ID } class="card">

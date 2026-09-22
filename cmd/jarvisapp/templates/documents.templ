@@ -110,8 +110,15 @@ templ DocumentPanel(job webapp.Job, view ResultView, docTypes []string) {
 			@panelHeader(job, view)
 			<div class="card">
 				<p class={ "status-" + string(job.Status) }><span class="spinner"></span> { statusLabel(job.Status) }…</p>
-				<p class="muted">{ formatStarted(job) } — les résultats s'afficheront ici automatiquement.</p>
+				if view.Progress != nil {
+					@progressBlock(view.Progress)
+				}
+				<p class="muted">{ formatStarted(job) } — la page se met à jour automatiquement.</p>
 			</div>
+			if len(view.OCRPages) > 0 {
+				<div class="section-title">Texte déjà lu</div>
+				@ocrPageList(view.OCRPages)
+			}
 		</section>
 	} else {
 		<section class="doc-panel" id="doc-panel" data-tabs>
@@ -196,7 +203,11 @@ templ ocrTab(view ResultView) {
 	if len(view.OCRPages) == 0 {
 		<p class="muted">Aucun texte disponible pour ce document.</p>
 	}
-	for _, p := range view.OCRPages {
+	@ocrPageList(view.OCRPages)
+}
+
+templ ocrPageList(pages []OCRPageView) {
+	for _, p := range pages {
 		<div class="page-block">
 			<div class="page-block-head">
 				<strong>Page { fmt.Sprint(p.Page) }</strong>

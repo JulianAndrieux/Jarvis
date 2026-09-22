@@ -1404,6 +1404,81 @@ spécifique à `localhost`.
     passante mémoire) ; bbox des pages scannées via Apple Vision
     (prototype : 586 mots positionnés en 2.4s sur la même page, accents
     corrects, sur le Neural Engine donc sans concurrence avec le VLM).
+- **Jalon 23 — pages enregistrées au fur et à mesure : fait, validé
+  end-to-end (cf. mesure ci-dessous).** Question de l'utilisateur : "et
+  si on envoyait les pages une par une ?" — c'était déjà le cas côté VLM
+  (une requête par page, séquentiel depuis le 21 bis) ; ce qui manquait
+  était d'**enregistrer et afficher chaque page dès qu'elle est lue**, au
+  lieu d'attendre la fin du document (~18 min sans rien voir sur le
+  Devis). Le temps total ne change pas, le temps avant de voir quelque
+  chose passe de la durée du document à celle d'une page.
+  - **`parsing.Parser.OnPage`** et **`extraction.Extractor.OnPage`** :
+    rappel après chaque page terminée (échecs compris), avant la page
+    suivante en séquentiel ; **sérialisé par le Parser/Extractor en mode
+    parallèle** (mutex) — l'appelant, qui écrit en base, n'a pas à être
+    sûr en concurrence. Testé en parallèle avec une map non protégée
+    dans le rappel : `-race` détecterait un appel concurrent.
+  - **`pipeline.Progress`** (`internal/pipeline/progress.go`) : étape
+    (`parsing`/`classification`/`extraction`), `PageCount`,
+    `ParseTotal/ParseDone`, `ExtractTotal/ExtractDone`, texte déjà
+    disponible (`Pages`, même forme que `Result.Pages` : natif dès le
+    triage, VLM au fil de l'eau) et `ParseFailures`. Émis après le
+    triage puis après chaque page lue/extraite. **Chaque événement est un
+    instantané indépendant** (tranches copiées) — testé : un événement
+    conservé ne change pas quand les suivants arrivent.
+  - **Signatures** : `RunAuto(ctx, path, onProgress)` et
+    `RunWithType(ctx, docType, path, onProgress)` (nil accepté) —
+    paramètre explicite plutôt qu'une valeur cachée dans le contexte.
+    `Run` (CLI) inchangé. `webapp.Runner` suit.
+  - **Persistance** : `Store.SetProgress(ctx, id, *Progress)` — écriture
+    ciblée (`progress_json`, `$unset` pour nil), jamais via `Update`,
+    même raison que `SetThumbnail`. `JobManager` enregistre chaque étape
+    (`progressRecorder` ; un échec d'écriture est journalisé sans
+    interrompre le traitement), efface l'avancement au début de chaque
+    ré-extraction, et le **conserve ensuite** : un job interrompu par un
+    redémarrage (`RecoverOrphaned`) garde les pages déjà lues. Exclu des
+    listes `SummaryOnly`.
+  - **La `FakeStore` mentait sur `Update`** (trouvé en écrivant les
+    tests de ce jalon, introduit au jalon 22) : elle remplaçait le job
+    entier, effaçant la miniature que `MongoStore.Update` ne touche pas.
+    Corrigé — `FakeStore.Update` préserve désormais `Content`,
+    `Thumbnail` et `Progress` comme Mongo, verrouillé par
+    `TestFakeStore_Update_PreservesThumbnailAndProgress`. Sans ce
+    correctif, un `finish()` effaçant l'avancement serait passé
+    inaperçu en test et aurait fonctionné en production par hasard.
+  - **UI** : le volet d'un document en cours affiche l'étape ("Lecture
+    OCR (VLM) 2/5", "Classification…", "Extraction des données (LLM)
+    3/5"), une barre d'avancement et le **texte déjà lu** ; la carte de
+    suivi de la page Importer affiche le même compteur et un lien "Suivre
+    dans le document". Un document interrompu sans résultat garde son
+    texte partiel dans l'onglet Texte OCR.
+  - Testé : `internal/parsing`/`internal/extraction` (rappel par page,
+    ordre, échecs, sérialisation en parallèle), `internal/pipeline`
+    (séquence exacte d'événements sur un document mixte natif+VLM avec
+    échec VLM, instantanés indépendants, `RunWithType` sans étape de
+    classification), `internal/webapp` (Fake + Mongo réel : aller-retour,
+    survie à `Update`, effacement ; `JobManager` : avancement visible
+    pendant le traitement, effacé à la relance, conservé après
+    `RecoverOrphaned`), `cmd/jarvisapp` (volet en cours : étape,
+    compteur, texte déjà lu ; carte d'upload ; document interrompu). Suite
+    complète verte (`-race -tags=integration`, `MONGO_URI` exporté).
+  - **Validé en conditions réelles** (binaire lancé sur :8091 contre la
+    collection `jobs_test`, vrais serveurs VLM/LLM) : pages 1-2 du Devis
+    (scannées, denses). Upload 23:02:00 → **page 1 lisible dans le volet à
+    23:05:01 (2 min 54 s)**, page 2 terminée à 23:08:58, extraction,
+    terminé à 23:09:29 (7 min 25 s) — l'avancement stocké est resté
+    cohérent à chaque étape et conservé après la fin. Job de test supprimé.
+  - **Finding (hors périmètre, non corrigé) : la page 2 a dépassé le
+    `--vlm-timeout` de 240 s** (`context deadline exceeded`), sur une
+    machine chaude après une soirée de benchmarks — cette même page a
+    pris 252 à 463 s aux mesures du jalon 22 selon l'état thermique. Le
+    défaut du 21 bis est donc trop juste pour une page dense sur ce Mac.
+    Le suivi page par page l'a rendu visible immédiatement (erreur
+    affichée sur la page concernée pendant que le reste continuait).
+    Pistes : relever le défaut (~600 s), et/ou Q4_K_M, et/ou la machine
+    dédiée évoquée par l'utilisateur. Détail cosmétique relevé au
+    passage : le message d'erreur VLM est préfixé deux fois
+    (`vlm: vlm: ...`).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

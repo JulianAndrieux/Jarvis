@@ -34,7 +34,7 @@ func TestPipeline_RunAuto_ClassifiesThenExtracts(t *testing.T) {
 		Registry:      doctype.NewDefaultRegistry(),
 	}
 
-	got, err := p.RunAuto(context.Background(), "doc.pdf")
+	got, err := p.RunAuto(context.Background(), "doc.pdf", nil)
 	if err != nil {
 		t.Fatalf("RunAuto() error = %v, want nil", err)
 	}
@@ -79,7 +79,7 @@ func TestPipeline_RunAuto_UnknownType_SkipsExtractionWithoutError(t *testing.T) 
 		Registry:      doctype.NewDefaultRegistry(),
 	}
 
-	got, err := p.RunAuto(context.Background(), "doc.pdf")
+	got, err := p.RunAuto(context.Background(), "doc.pdf", nil)
 	if err != nil {
 		t.Fatalf("RunAuto() error = %v, want nil (classification sans correspondance n'est pas un échec)", err)
 	}
@@ -103,7 +103,7 @@ func TestPipeline_RunAuto_MissingClassifier_ReturnsError(t *testing.T) {
 		// Classifier volontairement nil.
 	}
 
-	_, err := p.RunAuto(context.Background(), "doc.pdf")
+	_, err := p.RunAuto(context.Background(), "doc.pdf", nil)
 	if err == nil {
 		t.Fatal("RunAuto() error = nil, want non-nil when Classifier is not configured")
 	}
@@ -118,7 +118,7 @@ func TestPipeline_RunAuto_MissingRegistry_ReturnsError(t *testing.T) {
 		// Registry volontairement nil.
 	}
 
-	_, err := p.RunAuto(context.Background(), "doc.pdf")
+	_, err := p.RunAuto(context.Background(), "doc.pdf", nil)
 	if err == nil {
 		t.Fatal("RunAuto() error = nil, want non-nil when Registry is not configured")
 	}
@@ -133,7 +133,7 @@ func TestPipeline_RunAuto_ClassifierError_Propagates(t *testing.T) {
 		Registry:      doctype.NewDefaultRegistry(),
 	}
 
-	_, err := p.RunAuto(context.Background(), "doc.pdf")
+	_, err := p.RunAuto(context.Background(), "doc.pdf", nil)
 	if err == nil {
 		t.Fatal("RunAuto() error = nil, want the classifier error to propagate")
 	}
@@ -148,7 +148,7 @@ func TestPipeline_RunAuto_TriageExtractorError_ReturnsError(t *testing.T) {
 		Registry:      doctype.NewDefaultRegistry(),
 	}
 
-	_, err := p.RunAuto(context.Background(), "doc.pdf")
+	_, err := p.RunAuto(context.Background(), "doc.pdf", nil)
 	if err == nil {
 		t.Fatal("RunAuto() error = nil, want non-nil when triage extraction fails")
 	}
@@ -168,7 +168,7 @@ func TestPipeline_RunAuto_SetsSearchTextFromPageContent(t *testing.T) {
 		Registry:      doctype.NewDefaultRegistry(),
 	}
 
-	got, err := p.RunAuto(context.Background(), "doc.pdf")
+	got, err := p.RunAuto(context.Background(), "doc.pdf", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestPipeline_RunWithType_ExtractsWithGivenType(t *testing.T) {
 		Registry:      doctype.NewDefaultRegistry(),
 	}
 
-	got, err := p.RunWithType(context.Background(), "facture", "doc.pdf")
+	got, err := p.RunWithType(context.Background(), "facture", "doc.pdf", nil)
 	if err != nil {
 		t.Fatalf("RunWithType() error = %v, want nil", err)
 	}
@@ -215,7 +215,7 @@ func TestPipeline_RunWithType_UnknownDocType_ReturnsError(t *testing.T) {
 		Registry:      doctype.NewDefaultRegistry(),
 	}
 
-	_, err := p.RunWithType(context.Background(), "ce-type-nexiste-pas", "doc.pdf")
+	_, err := p.RunWithType(context.Background(), "ce-type-nexiste-pas", "doc.pdf", nil)
 	if err == nil {
 		t.Fatal("RunWithType() error = nil, want non-nil for an unknown doc type")
 	}
@@ -228,7 +228,7 @@ func TestPipeline_RunWithType_MissingRegistry_ReturnsError(t *testing.T) {
 		LLM:           &llm.FakeClient{},
 	}
 
-	_, err := p.RunWithType(context.Background(), "facture", "doc.pdf")
+	_, err := p.RunWithType(context.Background(), "facture", "doc.pdf", nil)
 	if err == nil {
 		t.Fatal("RunWithType() error = nil, want non-nil when Registry is not configured")
 	}
@@ -249,7 +249,7 @@ func TestPipeline_RunAuto_ClassifierReceivesConcatenatedPageText(t *testing.T) {
 		Registry:      doctype.NewDefaultRegistry(),
 	}
 
-	if _, err := p.RunAuto(context.Background(), "doc.pdf"); err != nil {
+	if _, err := p.RunAuto(context.Background(), "doc.pdf", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(classifier.GotText, "page-un") || !strings.Contains(classifier.GotText, "page-deux") {
@@ -269,7 +269,7 @@ func TestPipeline_RunAuto_UnknownType_StillKeepsPages(t *testing.T) {
 		Registry:      doctype.NewDefaultRegistry(),
 	}
 
-	got, err := p.RunAuto(context.Background(), "doc.pdf")
+	got, err := p.RunAuto(context.Background(), "doc.pdf", nil)
 	if err != nil {
 		t.Fatalf("RunAuto() error = %v, want nil", err)
 	}

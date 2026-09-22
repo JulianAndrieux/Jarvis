@@ -8,6 +8,7 @@ import (
 
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
 	"github.com/JulianAndrieux/Jarvis/internal/extraction"
+	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
@@ -17,7 +18,7 @@ import (
 // particulier (le JSON de chaque page est aplati génériquement).
 func buildResultView(job webapp.Job) templates.ResultView {
 	if job.Result == nil {
-		return templates.ResultView{}
+		return progressOnlyView(job.Progress)
 	}
 	result := job.Result
 
@@ -124,6 +125,43 @@ func joinFieldPath(prefix, key string) string {
 	return prefix + "." + key
 }
 
+// progressOnlyView construit la vue d'un job sans résultat (en cours, ou
+// interrompu) à partir de son avancement — jalon 23 : le texte déjà lu
+// est affiché sans attendre la fin du document.
+func progressOnlyView(p *pipeline.Progress) templates.ResultView {
+	if p == nil {
+		return templates.ResultView{}
+	}
+	return templates.ResultView{
+		PageCount: p.PageCount,
+		OCRPages:  ocrPagesFrom(p.Pages, p.ParseFailures),
+		Progress:  progressViewFrom(*p),
+	}
+}
+
+// progressViewFrom résume l'étape en cours pour l'affichage : libellé,
+// compteur "X/Y" et pourcentage de l'étape.
+func progressViewFrom(p pipeline.Progress) *templates.ProgressView {
+	switch p.Stage {
+	case pipeline.StageClassifying:
+		return &templates.ProgressView{Label: "Classification du type de document", Percent: 100}
+	case pipeline.StageExtracting:
+		return &templates.ProgressView{Label: "Extraction des données (LLM)", Count: fmt.Sprintf("%d/%d", p.ExtractDone, p.ExtractTotal), Percent: percent(p.ExtractDone, p.ExtractTotal)}
+	default:
+		if p.ParseTotal == 0 {
+			return &templates.ProgressView{Label: "Lecture du texte natif", Percent: 100}
+		}
+		return &templates.ProgressView{Label: "Lecture OCR (VLM)", Count: fmt.Sprintf("%d/%d", p.ParseDone, p.ParseTotal), Percent: percent(p.ParseDone, p.ParseTotal)}
+	}
+}
+
+func percent(done, total int) int {
+	if total <= 0 {
+		return 0
+	}
+	return done * 100 / total
+}
+
 // buildOCRPages construit l'onglet "Texte OCR" (jalon 22) : le texte de
 // chaque page tel qu'envoyé au LLM, avec sa provenance. Source de vérité :
 // Result.Pages. Un résultat antérieur au jalon 22 n'a que le Markdown VLM
@@ -131,38 +169,47 @@ func joinFieldPath(prefix, key string) string {
 // texte des pages natives n'a pas été conservé (une ré-extraction le
 // capture).
 func buildOCRPages(result *pipeline.Result) (pages []templates.OCRPageView, nativeTextMissing bool) {
-	vlmModels := make(map[int]string, len(result.Parsing))
+	if len(result.Pages) > 0 {
+		return ocrPagesFrom(result.Pages, result.Parsing), false
+	}
+
+	// Résultat antérieur au jalon 22 : seul le Markdown VLM est disponible.
+	var read []pipeline.PageContent
 	for _, p := range result.Parsing {
+		if !p.Failed {
+			read = append(read, pipeline.PageContent{Page: p.Page, Text: p.Markdown, Source: pipeline.SourceVLM})
+		}
+	}
+	for _, tp := range result.Triage.Pages {
+		if tp.Usable {
+			nativeTextMissing = true
+			break
+		}
+	}
+	return ocrPagesFrom(read, result.Parsing), nativeTextMissing
+}
+
+// ocrPagesFrom assemble les pages lues (texte + provenance) et les pages
+// VLM en échec, triées par page. parsed fournit aussi le modèle VLM de
+// chaque page lue quand il est connu.
+func ocrPagesFrom(read []pipeline.PageContent, parsed []parsing.PageResult) []templates.OCRPageView {
+	vlmModels := make(map[int]string, len(parsed))
+	var pages []templates.OCRPageView
+	for _, p := range parsed {
 		vlmModels[p.Page] = modelLabel(p.Model.Name, p.Model.Version)
 		if p.Failed {
 			pages = append(pages, templates.OCRPageView{Page: p.Page, Source: "VLM", Model: vlmModels[p.Page], Failed: true, Error: p.Error})
 		}
 	}
-
-	if len(result.Pages) > 0 {
-		for _, p := range result.Pages {
-			pv := templates.OCRPageView{Page: p.Page, Text: p.Text, Source: "Texte natif"}
-			if p.Source == pipeline.SourceVLM {
-				pv.Source, pv.Model = "VLM", vlmModels[p.Page]
-			}
-			pages = append(pages, pv)
+	for _, p := range read {
+		pv := templates.OCRPageView{Page: p.Page, Text: p.Text, Source: "Texte natif"}
+		if p.Source == pipeline.SourceVLM {
+			pv.Source, pv.Model = "VLM", vlmModels[p.Page]
 		}
-	} else {
-		for _, p := range result.Parsing {
-			if !p.Failed {
-				pages = append(pages, templates.OCRPageView{Page: p.Page, Text: p.Markdown, Source: "VLM", Model: vlmModels[p.Page]})
-			}
-		}
-		for _, tp := range result.Triage.Pages {
-			if tp.Usable {
-				nativeTextMissing = true
-				break
-			}
-		}
+		pages = append(pages, pv)
 	}
-
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Page < pages[j].Page })
-	return pages, nativeTextMissing
+	return pages
 }
 
 func modelLabel(name, version string) string {

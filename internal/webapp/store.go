@@ -1,6 +1,10 @@
 package webapp
 
-import "context"
+import (
+	"context"
+
+	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
+)
 
 // DefaultListLimit borne le nombre de jobs retournés par List quand
 // ListQuery.Limit vaut 0 — la bibliothèque de documents (jalon 17)
@@ -22,7 +26,7 @@ type ListQuery struct {
 	// Limit : 0 -> DefaultListLimit.
 	Limit int
 	// SummaryOnly, si vrai, autorise le Store à omettre les champs lourds
-	// (Content, Result, Thumbnail) des jobs retournés — la grille de la
+	// (Content, Result, Thumbnail, Progress) des jobs retournés — la grille de la
 	// bibliothèque de documents (jalon 22) n'affiche que des métadonnées,
 	// et charger jusqu'à DefaultListLimit PDF complets pour ça était du
 	// gaspillage. Un job ainsi chargé ne doit jamais être repassé tel quel
@@ -63,4 +67,10 @@ type Store interface {
 	// reçoit un Job complet, qui peut venir d'une liste SummaryOnly sans
 	// miniature. Erreur si id n'existe pas.
 	SetThumbnail(ctx context.Context, id string, png []byte) error
+	// SetProgress enregistre l'avancement du traitement en cours du job
+	// id (texte déjà lu, étape, compteurs) — jalon 23. nil l'efface.
+	// Écriture ciblée, comme SetThumbnail : Update ne touche jamais à
+	// l'avancement, pour qu'un Job en mémoire (qui ne le porte pas) ne
+	// l'efface pas en terminant. Erreur si id n'existe pas.
+	SetProgress(ctx context.Context, id string, progress *pipeline.Progress) error
 }

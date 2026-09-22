@@ -267,3 +267,47 @@ func TestExtractor_ExtractPages_Concurrency_CanceledContext_ReturnsError(t *test
 		t.Errorf("ExtractPages() error = %v, want it to wrap context.Canceled", err)
 	}
 }
+
+// Jalon 23 : même contrat que parsing.Parser.OnPage — un rappel par page
+// terminée (échecs compris), sérialisé même en mode parallèle.
+func TestExtractor_OnPage_Sequential_CalledOncePerPageInOrder(t *testing.T) {
+	llmClient := &llm.FakeClient{Results: map[int]llm.ExtractResult{
+		1: {JSON: json.RawMessage(`{"numero": {"value": "F-1", "confidence": 0.9, "source_snippet": "F-1"}}`)},
+	}}
+	var got []Result
+	e := Extractor{LLM: llmClient, OnPage: func(r Result) { got = append(got, r) }}
+
+	if _, err := e.ExtractPages(context.Background(), factureRegistration(t), []triage.PageText{{Page: 1, Text: "a"}, {Page: 2, Text: "b"}}); err != nil {
+		t.Fatalf("ExtractPages() error = %v", err)
+	}
+	if len(got) != 2 || got[0].Page != 1 || got[0].Failed || got[1].Page != 2 || !got[1].Failed {
+		t.Errorf("OnPage results = %+v, want page 1 ok then page 2 failed (no configured result)", got)
+	}
+}
+
+func TestExtractor_OnPage_Parallel_NeverConcurrent(t *testing.T) {
+	var inCallback, overlaps int32
+	seen := map[int]int{}
+	e := Extractor{LLM: &maxConcurrencyLLM{limit: 4}, Concurrency: 4, OnPage: func(r Result) {
+		if atomic.AddInt32(&inCallback, 1) > 1 {
+			atomic.AddInt32(&overlaps, 1)
+		}
+		seen[r.Page]++
+		time.Sleep(5 * time.Millisecond)
+		atomic.AddInt32(&inCallback, -1)
+	}}
+
+	if _, err := e.ExtractPages(context.Background(), factureRegistration(t), []triage.PageText{
+		{Page: 1, Text: "a"}, {Page: 2, Text: "b"}, {Page: 3, Text: "c"}, {Page: 4, Text: "d"},
+	}); err != nil {
+		t.Fatalf("ExtractPages() error = %v", err)
+	}
+	if overlaps != 0 {
+		t.Errorf("OnPage ran concurrently %d time(s), want never", overlaps)
+	}
+	for page := 1; page <= 4; page++ {
+		if seen[page] != 1 {
+			t.Errorf("OnPage called %d time(s) for page %d, want 1", seen[page], page)
+		}
+	}
+}

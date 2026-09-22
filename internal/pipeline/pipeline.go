@@ -116,13 +116,17 @@ type Result struct {
 // (connu d'avance — utilisé par la CLI, où l'utilisateur le précise).
 // Voir RunAuto pour la classification automatique.
 func (p Pipeline) Run(ctx context.Context, reg doctype.Registration, path string) (Result, error) {
-	triageResult, parseResults, merged, pageTexts, err := p.prepare(ctx, path)
+	return p.run(ctx, reg, path, &progressTracker{})
+}
+
+func (p Pipeline) run(ctx context.Context, reg doctype.Registration, path string, progress *progressTracker) (Result, error) {
+	triageResult, parseResults, merged, pageTexts, err := p.prepare(ctx, path, progress)
 	if err != nil {
 		return Result{Path: path, Triage: triageResult, Parsing: parseResults}, err
 	}
 	searchText := concatPageTexts(pageTexts)
 
-	extractionResults, err := p.extractPages(ctx, reg, pageTexts)
+	extractionResults, err := p.extractPages(ctx, reg, pageTexts, progress)
 	if err != nil {
 		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText, Pages: merged}, err
 	}
@@ -151,17 +155,22 @@ func (p Pipeline) Run(ctx context.Context, reg doctype.Registration, path string
 // type ne correspond avec confiance, l'Extraction est simplement vide
 // (Result.DocType == "") : ce n'est pas une erreur, juste l'absence
 // d'extracteur applicable, cohérent avec "jamais de valeur inventée".
-func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
+//
+// onProgress (nil accepté) reçoit l'avancement après le triage puis après
+// chaque page lue ou extraite — jalon 23.
+func (p Pipeline) RunAuto(ctx context.Context, path string, onProgress ProgressFunc) (Result, error) {
 	if p.Classifier == nil || p.Registry == nil {
 		return Result{}, fmt.Errorf("pipeline: RunAuto requires Classifier and Registry to be set")
 	}
 
-	triageResult, parseResults, merged, pageTexts, err := p.prepare(ctx, path)
+	progress := &progressTracker{fn: onProgress}
+	triageResult, parseResults, merged, pageTexts, err := p.prepare(ctx, path, progress)
 	if err != nil {
 		return Result{Path: path, Triage: triageResult, Parsing: parseResults}, err
 	}
 	searchText := concatPageTexts(pageTexts)
 
+	progress.stage(StageClassifying)
 	candidates := candidatesFromRegistry(p.Registry)
 	classification, err := p.Classifier.Classify(ctx, searchText, candidates)
 	if err != nil {
@@ -185,7 +194,7 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 		return Result{Path: path, Triage: triageResult, Parsing: parseResults, SearchText: searchText, Pages: merged}, fmt.Errorf("pipeline: classifier returned unknown doc type %q", classification.DocType)
 	}
 
-	extractionResults, err := p.extractPages(ctx, reg, pageTexts)
+	extractionResults, err := p.extractPages(ctx, reg, pageTexts, progress)
 	if err != nil {
 		return Result{Path: path, DocType: reg.Name, Triage: triageResult, Parsing: parseResults, SearchText: searchText, Pages: merged}, err
 	}
@@ -214,7 +223,7 @@ func (p Pipeline) RunAuto(ctx context.Context, path string) (Result, error) {
 // (bibliothèque de documents, jalon 17). Requiert Registry (comme
 // RunAuto) pour résoudre docType en Registration ; simple enveloppe
 // autour de Run.
-func (p Pipeline) RunWithType(ctx context.Context, docType, path string) (Result, error) {
+func (p Pipeline) RunWithType(ctx context.Context, docType, path string, onProgress ProgressFunc) (Result, error) {
 	if p.Registry == nil {
 		return Result{}, fmt.Errorf("pipeline: RunWithType requires Registry to be set")
 	}
@@ -222,12 +231,12 @@ func (p Pipeline) RunWithType(ctx context.Context, docType, path string) (Result
 	if !ok {
 		return Result{}, fmt.Errorf("pipeline: unknown doc type %q", docType)
 	}
-	return p.Run(ctx, reg, path)
+	return p.run(ctx, reg, path, &progressTracker{fn: onProgress})
 }
 
 // prepare exécute Triage puis Parsing — la partie commune à Run et
 // RunAuto, indépendante du type de document.
-func (p Pipeline) prepare(ctx context.Context, path string) (triageResult triage.Result, parseResults []parsing.PageResult, merged []PageContent, pageTexts []triage.PageText, err error) {
+func (p Pipeline) prepare(ctx context.Context, path string, progress *progressTracker) (triageResult triage.Result, parseResults []parsing.PageResult, merged []PageContent, pageTexts []triage.PageText, err error) {
 	nativePages, err := p.TextExtractor.ExtractPerPage(ctx, path)
 	if err != nil {
 		return triage.Result{}, nil, nil, nil, fmt.Errorf("pipeline: triage extract %s: %w", path, err)
@@ -241,7 +250,9 @@ func (p Pipeline) prepare(ctx context.Context, path string) (triageResult triage
 	triageResult = triage.Score(nativePages, thresholds)
 
 	pagesToParse := parsing.PagesNeedingParsing(triageResult)
-	parser := parsing.Parser{Renderer: p.Renderer, VLM: p.VLM, DPI: p.DPI, Concurrency: p.VLMConcurrency}
+	progress.triaged(len(nativePages), len(pagesToParse), Merge(nativePages, triageResult, nil))
+
+	parser := parsing.Parser{Renderer: p.Renderer, VLM: p.VLM, DPI: p.DPI, Concurrency: p.VLMConcurrency, OnPage: progress.pageParsed}
 	parseResults, err = parser.ParsePages(ctx, path, pagesToParse)
 	if err != nil {
 		return triageResult, nil, nil, nil, fmt.Errorf("pipeline: parsing %s: %w", path, err)
@@ -257,8 +268,9 @@ func (p Pipeline) prepare(ctx context.Context, path string) (triageResult triage
 
 // extractPages appelle l'étage Extraction pour reg — factorisé entre Run
 // et RunAuto.
-func (p Pipeline) extractPages(ctx context.Context, reg doctype.Registration, pageTexts []triage.PageText) ([]extraction.Result, error) {
-	extractor := extraction.Extractor{LLM: p.LLM, ConfidenceThreshold: p.ConfidenceThreshold, Concurrency: p.LLMConcurrency}
+func (p Pipeline) extractPages(ctx context.Context, reg doctype.Registration, pageTexts []triage.PageText, progress *progressTracker) ([]extraction.Result, error) {
+	progress.extracting(len(pageTexts))
+	extractor := extraction.Extractor{LLM: p.LLM, ConfidenceThreshold: p.ConfidenceThreshold, Concurrency: p.LLMConcurrency, OnPage: progress.pageExtracted}
 	results, err := extractor.ExtractPages(ctx, reg, pageTexts)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: extraction %s: %w", reg.Name, err)

@@ -238,3 +238,66 @@ func TestParser_ParsePages_Concurrency_CanceledContext_ReturnsError(t *testing.T
 		t.Errorf("ParsePages() error = %v, want it to wrap context.Canceled", err)
 	}
 }
+
+// Jalon 23 : OnPage est appelé dès qu'une page est terminée — c'est ce
+// qui permet d'enregistrer le texte OCR au fur et à mesure au lieu
+// d'attendre la fin du document (~3-4 min par page dense).
+func TestParser_OnPage_Sequential_CalledAfterEachPageBeforeTheNextStarts(t *testing.T) {
+	renderer := FakeRenderer{PNG: map[int][]byte{1: []byte("a"), 3: []byte("c")}, Err: errors.New("render boom")}
+	vlmClient := &vlm.FakeClient{Results: map[int]vlm.ParseResult{1: {Markdown: "p1"}, 3: {Markdown: "p3"}}}
+
+	var got []PageResult
+	var vlmCallsAtCallback []int
+	p := Parser{Renderer: renderer, VLM: vlmClient, OnPage: func(r PageResult) {
+		got = append(got, r)
+		vlmCallsAtCallback = append(vlmCallsAtCallback, len(vlmClient.Calls))
+	}}
+
+	if _, err := p.ParsePages(context.Background(), "doc.pdf", []int{1, 2, 3}); err != nil {
+		t.Fatalf("ParsePages() error = %v", err)
+	}
+
+	if len(got) != 3 {
+		t.Fatalf("OnPage called %d times, want 3 (one per page, failures included)", len(got))
+	}
+	if got[0].Page != 1 || got[0].Markdown != "p1" || !got[1].Failed || got[1].Page != 2 || got[2].Markdown != "p3" {
+		t.Errorf("OnPage results = %+v, want p1, page 2 failed, p3 in order", got)
+	}
+	// Page 2 échoue au rendu (pas d'appel VLM) : 1, 1, 2 appels VLM au
+	// moment des trois rappels — chaque rappel arrive avant la page suivante.
+	if want := []int{1, 1, 2}; fmt.Sprint(vlmCallsAtCallback) != fmt.Sprint(want) {
+		t.Errorf("VLM calls at each callback = %v, want %v", vlmCallsAtCallback, want)
+	}
+}
+
+// En parallèle, les rappels sont sérialisés par le Parser : l'appelant
+// (qui écrit en base) n'a pas à être sûr en concurrence.
+func TestParser_OnPage_Parallel_CalledOncePerPageNeverConcurrently(t *testing.T) {
+	var inCallback, overlaps int32
+	seen := map[int]int{}
+	p := Parser{
+		Renderer:    FakeRenderer{PNG: map[int][]byte{1: []byte("a"), 2: []byte("b"), 3: []byte("c"), 4: []byte("d")}},
+		VLM:         &maxConcurrencyVLM{limit: 4},
+		Concurrency: 4,
+		OnPage: func(r PageResult) {
+			if atomic.AddInt32(&inCallback, 1) > 1 {
+				atomic.AddInt32(&overlaps, 1)
+			}
+			seen[r.Page]++ // map non protégée : -race détecterait un appel concurrent
+			time.Sleep(5 * time.Millisecond)
+			atomic.AddInt32(&inCallback, -1)
+		},
+	}
+
+	if _, err := p.ParsePages(context.Background(), "doc.pdf", []int{1, 2, 3, 4}); err != nil {
+		t.Fatalf("ParsePages() error = %v", err)
+	}
+	if overlaps != 0 {
+		t.Errorf("OnPage ran concurrently %d time(s), want never", overlaps)
+	}
+	for page := 1; page <= 4; page++ {
+		if seen[page] != 1 {
+			t.Errorf("OnPage called %d time(s) for page %d, want 1", seen[page], page)
+		}
+	}
+}

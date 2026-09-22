@@ -185,6 +185,12 @@ templ Layout(title string, active string) {
 				details.raw summary { cursor: pointer; font-size: .8rem; color: var(--muted); font-weight: 600; }
 				details.raw pre { background: var(--code-bg); color: var(--code-text); padding: .7rem .85rem; border-radius: 8px; overflow: auto; font-size: .75rem; max-height: 360px; white-space: pre-wrap; word-break: break-word; }
 
+				/* Avancement (jalon 23) */
+				.progress { margin: .75rem 0; }
+				.progress-label { display: flex; justify-content: space-between; font-size: .85rem; margin-bottom: .35rem; color: var(--text-2); }
+				.progress-bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+				.progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+
 				/* Onglet Infos */
 				.info-grid { display: grid; grid-template-columns: max-content 1fr; gap: .45rem 1.25rem; font-size: .88rem; margin: 0; }
 				.info-grid dt { color: var(--muted); }

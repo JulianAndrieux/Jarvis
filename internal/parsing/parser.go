@@ -43,6 +43,12 @@ type Parser struct {
 	// séquentiel si le serveur peut en traiter plusieurs à la fois
 	// (jalon 21, cf. CLAUDE.md).
 	Concurrency int
+	// OnPage, si non-nil, est appelé dès qu'une page est terminée (succès
+	// ou échec), avant la page suivante en mode séquentiel — jalon 23 :
+	// enregistrer le texte OCR au fur et à mesure plutôt qu'à la fin du
+	// document. Les appels sont sérialisés par le Parser, y compris en
+	// mode parallèle : la fonction n'a pas à être sûre en concurrence.
+	OnPage func(PageResult)
 }
 
 // ParsePages traite chaque page de pages. Une erreur de niveau document
@@ -69,7 +75,11 @@ func (p Parser) parsePagesSequential(ctx context.Context, path string, pages []i
 		if err := ctx.Err(); err != nil {
 			return results, fmt.Errorf("parsing: %s: %w", path, err)
 		}
-		results = append(results, p.parseOnePage(ctx, path, page, dpi))
+		r := p.parseOnePage(ctx, path, page, dpi)
+		results = append(results, r)
+		if p.OnPage != nil {
+			p.OnPage(r)
+		}
 	}
 	return results, nil
 }
@@ -81,6 +91,7 @@ func (p Parser) parsePagesParallel(ctx context.Context, path string, pages []int
 	results := make([]PageResult, len(pages))
 	sem := make(chan struct{}, p.Concurrency)
 	var wg sync.WaitGroup
+	var onPageMu sync.Mutex
 
 	for i, page := range pages {
 		if err := ctx.Err(); err != nil {
@@ -99,6 +110,11 @@ func (p Parser) parsePagesParallel(ctx context.Context, path string, pages []int
 			defer wg.Done()
 			defer func() { <-sem }()
 			results[i] = p.parseOnePage(ctx, path, page, dpi)
+			if p.OnPage != nil {
+				onPageMu.Lock()
+				p.OnPage(results[i])
+				onPageMu.Unlock()
+			}
 		}(i, page)
 	}
 	wg.Wait()
