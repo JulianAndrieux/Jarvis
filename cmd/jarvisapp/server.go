@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
 	"github.com/JulianAndrieux/Jarvis/internal/codemap"
+	"github.com/JulianAndrieux/Jarvis/internal/diagram"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/testmap"
 	"github.com/JulianAndrieux/Jarvis/internal/testrunner"
@@ -112,6 +114,7 @@ func (s *Server) Routes() chi.Router {
 	// Navigateur de classes + tests (ex-cmd/codebrowser).
 	r.Get("/classes", s.handleClasses)
 	r.Get("/classes/detail", s.handleClassDetail)
+	r.Get("/model", s.handleModel)
 	r.Get("/tests", s.handleTests)
 	r.Post("/tests/run", s.handleTestsRun)
 	r.Post("/refresh", s.handleRefresh)
@@ -374,7 +377,7 @@ func (s *Server) packageSummaries() []templates.PackageSummary {
 		for _, t := range pkg.Types {
 			types = append(types, templates.TypeSummary{Name: t.Name, Kind: string(t.Kind)})
 		}
-		out = append(out, templates.PackageSummary{Path: pkg.Path, Types: types})
+		out = append(out, templates.PackageSummary{Path: pkg.Path, Label: s.shortPath(pkg.Path), Types: types})
 	}
 	return out
 }
@@ -387,31 +390,7 @@ func (s *Server) typeDetail(pkgPath, name string) (templates.TypeDetailView, boo
 	if !ok {
 		return templates.TypeDetailView{}, false
 	}
-
-	d := templates.TypeDetailView{
-		Name:    t.Name,
-		Package: t.Package,
-		Kind:    string(t.Kind),
-	}
-	for _, f := range t.Fields {
-		d.Fields = append(d.Fields, templates.FieldInfoView{Name: f.Name, Type: f.Type, Tag: f.Tag, Anonymous: f.Anonymous})
-	}
-	for _, m := range t.Methods {
-		d.Methods = append(d.Methods, templates.MethodView{Name: m.Name, Signature: m.Signature, PointerReceiver: m.PointerReceiver})
-	}
-	d.Embeds = refViews(t.Embeds)
-	d.EmbeddedBy = refViews(t.EmbeddedBy)
-	d.Implements = refViews(t.Implements)
-	d.ImplementedBy = refViews(t.ImplementedBy)
-	return d, true
-}
-
-func refViews(refs []codemap.TypeRef) []templates.RefView {
-	out := make([]templates.RefView, 0, len(refs))
-	for _, r := range refs {
-		out = append(out, templates.RefView{Package: r.Package, Name: r.Name})
-	}
-	return out
+	return s.typeDetailView(t), true
 }
 
 func (s *Server) handleClasses(w http.ResponseWriter, r *http.Request) {
@@ -443,6 +422,39 @@ func (s *Server) handleClassDetail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleModel affiche le diagramme navigable du modèle de données (jalon
+// 24) centré sur un type : ?pkg=&name= (liens du diagramme) ou ?t=pkg#Nom
+// (sélecteur), sinon le type le plus connecté. ?depth= (1-3) et
+// ?impl=1 (relations "implémente") règlent l'étendue.
+func (s *Server) handleModel(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	pkg, name := q.Get("pkg"), q.Get("name")
+	if t := q.Get("t"); t != "" {
+		pkg, name, _ = strings.Cut(t, "#")
+	}
+	opts := diagram.Options{Depth: 1, Implements: q.Get("impl") == "1"}
+	if d, err := strconv.Atoi(q.Get("depth")); err == nil && d >= 1 && d <= 3 {
+		opts.Depth = d
+	}
+
+	s.mu.RLock()
+	focus := codemap.TypeRef{Package: pkg, Name: name}
+	if pkg == "" || name == "" {
+		focus, _ = s.defaultModelFocus()
+	}
+	view, ok := s.modelPageView(focus, opts)
+	s.mu.RUnlock()
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.ModelPage(view).Render(r.Context(), w); err != nil {
+		fmt.Fprintf(os.Stderr, "jarvisapp: render model: %v\n", err)
+	}
+}
+
 // --- Tests ---
 
 func (s *Server) categoryViews() []templates.TestCategoryView {
@@ -453,7 +465,7 @@ func (s *Server) categoryViews() []templates.TestCategoryView {
 	for _, cat := range s.categories {
 		rows := make([]templates.TestRowView, 0, len(cat.Tests))
 		for _, tf := range cat.Tests {
-			row := templates.TestRowView{Name: tf.Name, File: tf.File, Line: tf.Line, Integration: tf.Integration}
+			row := templates.TestRowView{Name: tf.Name, File: tf.File, Line: tf.Line, Integration: tf.Integration, Code: s.testSourceView(tf)}
 			if res, ok := s.results[resultKey(cat.Package, tf.Name)]; ok {
 				row.Status = string(res.Status)
 				row.Elapsed = res.Elapsed
@@ -461,7 +473,7 @@ func (s *Server) categoryViews() []templates.TestCategoryView {
 			}
 			rows = append(rows, row)
 		}
-		out = append(out, templates.TestCategoryView{Package: cat.Package, Tests: rows})
+		out = append(out, templates.TestCategoryView{Package: cat.Package, Label: s.shortPath(cat.Package), Tests: rows})
 	}
 	return out
 }

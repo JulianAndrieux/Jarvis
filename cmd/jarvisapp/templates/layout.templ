@@ -234,6 +234,110 @@ templ Layout(title string, active string) {
 				pre.output { background: var(--code-bg); color: var(--code-text); padding: .6rem .8rem; border-radius: 8px; overflow-x: auto; font-size: .8rem; margin: .3rem 0; }
 				.summary-line { font-size: .85rem; margin: .4rem 0 .7rem; }
 
+				/* Code (jalon 24) : couleurs du thème par défaut de VS Code
+				   (Dark+), quel que soit le thème de l'application — c'est le
+				   rendu reconnaissable demandé. */
+				.code-block { margin: .5rem 0 1.25rem; border-radius: 8px; overflow: hidden; border: 1px solid #2b2b2b; }
+				.code-file { background: #252526; color: #9d9d9d; font: 12px Menlo, Monaco, "SF Mono", Consolas, monospace; padding: .35rem .8rem; border-bottom: 1px solid #1a1a1a; }
+				pre.code { margin: 0; background: #1e1e1e; color: #d4d4d4; font: 12.5px/1.55 Menlo, Monaco, "SF Mono", Consolas, "Courier New", monospace; padding: .6rem 0; overflow-x: auto; tab-size: 4; }
+				pre.code code { font: inherit; }
+				.code-line { display: inline-block; min-width: 100%; padding-right: 1rem; }
+				.code-line:hover { background: #2a2d2e; }
+				.code-line::before { content: attr(data-ln); display: inline-block; width: 3.2em; padding-right: 1.2em; text-align: right; color: #6e7681; user-select: none; }
+				.tok-kw { color: #569cd6; }
+				.tok-ctl { color: #c586c0; }
+				.tok-type { color: #4ec9b0; }
+				.tok-fn { color: #dcdcaa; }
+				.tok-var { color: #9cdcfe; }
+				.tok-str { color: #ce9178; }
+				.tok-num { color: #b5cea8; }
+				.tok-com { color: #6a9955; }
+
+				/* Classes : barre latérale, fiche UML, relations */
+				.sidebar-filter { margin-bottom: .6rem; }
+				.kind-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 2px; margin-right: .45rem; background: var(--accent); vertical-align: .05em; }
+				.kind-dot.kind-interface { background: var(--warn); border-radius: 50%; }
+				.kind-dot.kind-other { background: var(--muted); }
+				.type-page { max-width: 1100px; }
+				.type-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
+				.type-head h2 { margin: 0; font-size: 1.5rem; letter-spacing: -.01em; }
+				.type-overview { display: grid; grid-template-columns: minmax(320px, 520px) 1fr; gap: 1.5rem; align-items: start; margin-bottom: 1rem; }
+				.uml { border: 1.5px solid var(--accent); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; font-size: .86rem; }
+				.uml-interface { border-color: var(--warn); }
+				.uml-head { text-align: center; padding: .6rem .8rem .55rem; background: var(--accent-soft); border-bottom: 1.5px solid var(--accent); }
+				.uml-interface .uml-head { background: var(--warn-soft); border-bottom-color: var(--warn); }
+				.uml-stereo { font-size: .72rem; color: var(--muted); font-style: italic; }
+				.uml-name { font-weight: 700; font-size: 1.05rem; }
+				.uml-interface .uml-name { font-style: italic; }
+				.uml-pkg { font-size: .72rem; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+				.uml-section { padding: .4rem 0; border-bottom: 1px solid var(--border); }
+				.uml-section:last-child { border-bottom: 0; }
+				.uml-row { display: grid; grid-template-columns: 1.1rem auto 1fr; gap: .5rem; padding: .12rem .8rem; font-family: ui-monospace, Menlo, monospace; font-size: .8rem; align-items: baseline; }
+				.uml-row:hover { background: var(--surface-2); }
+				.uml-vis { color: var(--muted); }
+				.uml-member { font-weight: 600; }
+				.uml-method { color: var(--text); }
+				.uml-embed .uml-member { font-style: italic; color: var(--muted); }
+				.uml-type { color: var(--text-2); word-break: break-all; }
+				.uml-type a { color: var(--accent); }
+				.uml-ref { margin-left: .4rem; font-size: .75rem; }
+				.uml-empty { padding: .1rem .8rem; color: var(--muted); font-size: .78rem; font-style: italic; }
+				.relations { display: flex; flex-direction: column; gap: .9rem; }
+				.rel-title { font-size: .78rem; font-weight: 700; color: var(--text-2); margin-bottom: .3rem; }
+				.rel-arrow { color: var(--accent); }
+
+				/* Modèle de données (jalon 24) */
+				.model-page { display: flex; flex-direction: column; height: calc(100vh - var(--header-h)); }
+				.model-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; padding: .6rem 1.25rem; border-bottom: 1px solid var(--border); background: var(--surface); }
+				.model-toolbar label.inline { display: flex; align-items: center; gap: .45rem; margin: 0; font-size: .82rem; }
+				.model-toolbar select { width: auto; padding: .3rem .5rem; font-size: .85rem; }
+				.model-toolbar .checkbox input { margin: 0; }
+				.zoom-controls { display: flex; gap: .25rem; }
+				.zoom-controls button { padding: .25rem .6rem; }
+				.legend { display: flex; gap: 1rem; font-size: .75rem; color: var(--muted); margin-left: auto; }
+				.legend span { display: inline-flex; align-items: center; gap: .3rem; }
+				.model-body { flex: 1; display: grid; grid-template-columns: 1fr 380px; min-height: 0; }
+				.diagram-viewport { position: relative; overflow: hidden; background-color: var(--bg); background-image: radial-gradient(color-mix(in srgb, var(--muted) 25%, transparent) 1px, transparent 1px); background-size: 20px 20px; cursor: grab; }
+				.diagram-viewport:active { cursor: grabbing; }
+				.diagram-viewport svg { width: 100%; height: 100%; display: block; user-select: none; }
+				.model-side { overflow-y: auto; padding: 1rem; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; gap: .9rem; }
+				.dbox { fill: var(--surface); stroke: var(--border); stroke-width: 1.2; }
+				.dhead { fill: var(--surface-2); }
+				.dnode:hover .dbox { stroke: var(--accent); }
+				.dnode.focus .dbox { stroke: var(--accent); stroke-width: 2.5; }
+				.dnode.focus .dhead { fill: var(--accent-soft); }
+				.dnode.iface .dbox { stroke-dasharray: 5 3; }
+				.dnode.iface .dhead { fill: var(--warn-soft); }
+				.dname { font: 700 13px -apple-system, BlinkMacSystemFont, sans-serif; fill: var(--text); }
+				.dnode.iface .dname { font-style: italic; }
+				.dpkg { font: 10.5px ui-monospace, Menlo, monospace; fill: var(--muted); }
+				.drow { font: 12px ui-monospace, Menlo, monospace; }
+				.dfield { fill: var(--text); }
+				.dtype { fill: var(--muted); }
+				.dmore { font: italic 11px -apple-system, sans-serif; fill: var(--muted); }
+				.dedge { fill: none; stroke: color-mix(in srgb, var(--muted) 80%, transparent); stroke-width: 1.4; }
+				.dedge-embed { stroke: var(--accent); }
+				.dedge-implements { stroke: var(--warn); stroke-dasharray: 6 4; }
+				g:hover > .dedge { stroke: var(--accent); stroke-width: 2.2; }
+				.marker-fill { fill: var(--muted); }
+				.marker-hollow { fill: var(--surface); stroke: var(--muted); stroke-width: 1.3; }
+				.dcard { font: 600 11px ui-monospace, Menlo, monospace; fill: var(--accent); }
+
+				/* Tests : ligne dépliable avec le code (jalon 24) */
+				.test-item { position: relative; border-bottom: 1px solid var(--border); }
+				.test-item:last-child { border-bottom: none; }
+				.test-item > details > summary { list-style: none; cursor: pointer; padding-right: 3rem; border-bottom: none; }
+				.test-item > details > summary::-webkit-details-marker { display: none; }
+				.test-item > details > summary::before { content: "▸"; color: var(--muted); width: .8rem; }
+				.test-item > details[open] > summary::before { content: "▾"; }
+				.test-item > details > .code-block { margin: .3rem 0 .8rem 1.2rem; }
+				.test-run { position: absolute; top: .15rem; right: 0; padding: .15rem .55rem; font-size: .8rem; }
+
+				@media (max-width: 1000px) {
+					.type-overview, .model-body { grid-template-columns: 1fr; }
+					.model-side { border-left: 0; border-top: 1px solid var(--border); }
+				}
+
 				/* Commun */
 				h2 { margin-top: 0; }
 				h3 { font-size: .95rem; color: var(--text-2); margin-bottom: .3rem; }
@@ -269,9 +373,10 @@ templ Layout(title string, active string) {
 					<a href="/" class={ templ.KV("active", active == "upload") }>Importer</a>
 					<a href="/documents" class={ templ.KV("active", active == "documents") }>Documents</a>
 					<a href="/classes" class={ templ.KV("active", active == "classes") }>Classes</a>
+					<a href="/model" class={ templ.KV("active", active == "model") }>Modèle</a>
 					<a href="/tests" class={ templ.KV("active", active == "tests") }>Tests</a>
 				</nav>
-				if active == "classes" || active == "tests" {
+				if active == "classes" || active == "tests" || active == "model" {
 					<form hx-post="/refresh" hx-target="body" hx-swap="outerHTML">
 						<button type="submit" class="button-ghost">↻ Rescanner le code</button>
 					</form>

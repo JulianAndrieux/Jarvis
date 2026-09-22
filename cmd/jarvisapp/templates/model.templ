@@ -1,0 +1,247 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/JulianAndrieux/Jarvis/internal/diagram"
+)
+
+// ModelPageView est la page "Modèle" (jalon 24) : diagramme centré sur un
+// type, fiche de ce type, sélecteur de types.
+type ModelPageView struct {
+	Diagram    diagram.Diagram
+	Focus      TypeDetailView
+	Depth      int
+	Implements bool
+	Types      []TypeOptionGroup
+}
+
+type TypeOptionGroup struct {
+	Label   string
+	Options []TypeOption
+}
+
+type TypeOption struct {
+	Value    string // "chemin/du/package#Nom"
+	Label    string
+	Selected bool
+}
+
+// nodeURL recentre le diagramme sur n en gardant les réglages courants
+// (paramètres ajoutés seulement s'ils diffèrent du défaut).
+func nodeURL(v ModelPageView, n diagram.Node) string {
+	u := modelURL(n.Ref.Package, n.Ref.Name)
+	if v.Depth != 1 {
+		u += fmt.Sprintf("&depth=%d", v.Depth)
+	}
+	if v.Implements {
+		u += "&impl=1"
+	}
+	return u
+}
+
+func nodeClass(n diagram.Node) string {
+	c := "dnode"
+	if n.Focus {
+		c += " focus"
+	}
+	if n.Kind == "interface" {
+		c += " iface"
+	}
+	return c
+}
+
+func f1(v float64) string { return fmt.Sprintf("%.1f", v) }
+
+func rowY(n diagram.Node, i int) string {
+	return f1(n.Y + diagram.HeaderHeight + float64(i)*diagram.RowHeight + diagram.RowHeight*0.72)
+}
+
+// fitRow tronque "nom type" à la largeur de la boîte (police 12px
+// monospace, ~7px par caractère).
+func fitType(n diagram.Node, r diagram.Row) string {
+	max := int((n.W-26)/7) - len(r.Name) - 1
+	if max < 3 {
+		max = 3
+	}
+	runes := []rune(r.Type)
+	if len(runes) <= max {
+		return r.Type
+	}
+	return string(runes[:max-1]) + "…"
+}
+
+func edgeClass(e diagram.Edge) string { return "dedge dedge-" + string(e.Kind) }
+
+func edgeMarker(e diagram.Edge) string {
+	if e.Kind == diagram.EdgeField {
+		return "url(#arrow)"
+	}
+	return "url(#triangle)"
+}
+
+func cardX(e diagram.Edge) string {
+	if e.TX >= e.SX {
+		return f1(e.TX - 8)
+	}
+	return f1(e.TX + 8)
+}
+
+func cardAnchor(e diagram.Edge) string {
+	if e.TX >= e.SX {
+		return "end"
+	}
+	return "start"
+}
+
+func edgeTitle(e diagram.Edge) string {
+	switch e.Kind {
+	case diagram.EdgeEmbed:
+		return e.From.Name + " embarque " + e.To.Name
+	case diagram.EdgeImplements:
+		return e.From.Name + " implémente " + e.To.Name
+	default:
+		return fmt.Sprintf("%s.%s → %s (%s)", e.From.Name, e.Label, e.To.Name, e.Card)
+	}
+}
+
+func viewBox(d diagram.Diagram) string {
+	return fmt.Sprintf("0 0 %.0f %.0f", d.Width, d.Height)
+}
+
+templ ModelPage(v ModelPageView) {
+	@Layout("Jarvis — modèle de données", "model") {
+		<main class="model-page">
+			<form class="model-toolbar" method="get" action="/model">
+				<label class="inline">
+					Type
+					<select name="t" onchange="this.form.submit()">
+						for _, g := range v.Types {
+							<optgroup label={ g.Label }>
+								for _, o := range g.Options {
+									<option value={ o.Value } selected?={ o.Selected }>{ o.Label }</option>
+								}
+							</optgroup>
+						}
+					</select>
+				</label>
+				<label class="inline">
+					Profondeur
+					<select name="depth" onchange="this.form.submit()">
+						for _, d := range []int{1, 2, 3} {
+							<option value={ fmt.Sprint(d) } selected?={ d == v.Depth }>{ fmt.Sprint(d) }</option>
+						}
+					</select>
+				</label>
+				<label class="inline checkbox">
+					<input type="checkbox" name="impl" value="1" checked?={ v.Implements } onchange="this.form.submit()"/>
+					Interfaces implémentées
+				</label>
+				<div class="zoom-controls">
+					<button type="button" onclick="diagramZoom(1/1.25)" title="Zoom avant">+</button>
+					<button type="button" onclick="diagramZoom(1.25)" title="Zoom arrière">−</button>
+					<button type="button" onclick="diagramFit()" title="Tout afficher">Ajuster</button>
+				</div>
+				<div class="legend">
+					<span><svg width="34" height="10"><line x1="0" y1="5" x2="26" y2="5" class="dedge dedge-field" marker-end="url(#arrow)"></line></svg>contient</span>
+					<span><svg width="34" height="10"><line x1="0" y1="5" x2="26" y2="5" class="dedge dedge-embed" marker-end="url(#triangle)"></line></svg>embarque</span>
+					<span><svg width="34" height="10"><line x1="0" y1="5" x2="26" y2="5" class="dedge dedge-implements" marker-end="url(#triangle)"></line></svg>implémente</span>
+				</div>
+			</form>
+			<div class="model-body">
+				<div class="diagram-viewport" id="diagram-viewport">
+					@diagramSVG(v)
+				</div>
+				<aside class="model-side">
+					@UMLCard(v.Focus)
+					<a class="button" href={ templ.SafeURL(classURL(v.Focus.Package, v.Focus.Name)) }>Ouvrir la fiche et le code →</a>
+					<p class="muted">Clique sur un type pour recentrer le diagramme. Molette : zoom · glisser : déplacer.</p>
+				</aside>
+			</div>
+		</main>
+		<script>
+			(function () {
+				var svg = document.querySelector("#diagram-viewport svg");
+				if (!svg) return;
+				var full = svg.getAttribute("viewBox").split(" ").map(Number);
+				var vb = full.slice();
+				function apply() { svg.setAttribute("viewBox", vb.join(" ")); }
+				function zoomAt(f, cx, cy) {
+					vb[0] = cx - (cx - vb[0]) * f; vb[1] = cy - (cy - vb[1]) * f;
+					vb[2] *= f; vb[3] *= f; apply();
+				}
+				function toSvg(e) {
+					var r = svg.getBoundingClientRect();
+					var s = Math.max(vb[2] / r.width, vb[3] / r.height);
+					var ox = (r.width * s - vb[2]) / 2, oy = (r.height * s - vb[3]) / 2;
+					return [vb[0] - ox + (e.clientX - r.left) * s, vb[1] - oy + (e.clientY - r.top) * s, s];
+				}
+				window.diagramZoom = function (f) { zoomAt(f, vb[0] + vb[2] / 2, vb[1] + vb[3] / 2); };
+				window.diagramFit = function () { vb = full.slice(); apply(); };
+				svg.addEventListener("wheel", function (e) {
+					e.preventDefault();
+					var p = toSvg(e);
+					zoomAt(e.deltaY > 0 ? 1.1 : 1 / 1.1, p[0], p[1]);
+				}, { passive: false });
+				var drag = null, moved = false;
+				svg.addEventListener("mousedown", function (e) { drag = toSvg(e); moved = false; });
+				window.addEventListener("mousemove", function (e) {
+					if (!drag) return;
+					var p = toSvg(e);
+					var dx = p[0] - drag[0], dy = p[1] - drag[1];
+					if (Math.abs(dx) + Math.abs(dy) > 2 * p[2]) moved = true;
+					if (moved) { vb[0] -= dx; vb[1] -= dy; apply(); }
+				});
+				window.addEventListener("mouseup", function () { drag = null; });
+				// Un glisser ne doit pas déclencher le lien de la boîte sous la souris.
+				svg.addEventListener("click", function (e) { if (moved) { e.preventDefault(); moved = false; } }, true);
+			})();
+		</script>
+	}
+}
+
+templ diagramSVG(v ModelPageView) {
+	<svg xmlns="http://www.w3.org/2000/svg" viewBox={ viewBox(v.Diagram) } preserveAspectRatio="xMidYMid meet">
+		<defs>
+			<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+				<path d="M0 0 L10 5 L0 10 z" class="marker-fill"></path>
+			</marker>
+			<marker id="triangle" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="11" markerHeight="11" orient="auto-start-reverse">
+				<path d="M1 1 L11 6 L1 11 z" class="marker-hollow"></path>
+			</marker>
+		</defs>
+		for _, e := range v.Diagram.Edges {
+			<g>
+				<title>{ edgeTitle(e) }</title>
+				<path d={ e.Path } class={ edgeClass(e) } marker-end={ edgeMarker(e) }></path>
+				if e.Card != "" {
+					<text x={ cardX(e) } y={ f1(e.TY - 6) } text-anchor={ cardAnchor(e) } class="dcard">{ e.Card }</text>
+				}
+			</g>
+		}
+		for _, n := range v.Diagram.Nodes {
+			<a href={ templ.SafeURL(nodeURL(v, n)) }>
+				<g class={ nodeClass(n) }>
+					<title>{ n.Package }.{ n.Ref.Name }</title>
+					<rect class="dbox" x={ f1(n.X) } y={ f1(n.Y) } width={ f1(n.W) } height={ f1(n.H) } rx="7"></rect>
+					<path class="dhead" d={ fmt.Sprintf("M%.1f %.1f h%.1f v%.1f h%.1f z", n.X, n.Y+diagram.HeaderHeight, n.W, -diagram.HeaderHeight+7, -n.W) }></path>
+					<rect class="dhead" x={ f1(n.X) } y={ f1(n.Y) } width={ f1(n.W) } height="14" rx="7"></rect>
+					<text class="dname" x={ f1(n.X + 10) } y={ f1(n.Y + 20) }>{ n.Ref.Name }</text>
+					<text class="dpkg" x={ f1(n.X + n.W - 9) } y={ f1(n.Y + 20) } text-anchor="end">
+						if n.Kind == "interface" {
+							«interface» { n.Package }
+						} else {
+							{ n.Package }
+						}
+					</text>
+					for i, r := range n.Rows {
+						<text class="drow" x={ f1(n.X + 10) } y={ rowY(n, i) }><tspan class="dfield">{ r.Name }</tspan><tspan class="dtype" dx="7">{ fitType(n, r) }</tspan></text>
+					}
+					if n.More > 0 {
+						<text class="dmore" x={ f1(n.X + 10) } y={ rowY(n, len(n.Rows)) }>+{ fmt.Sprint(n.More) } autres…</text>
+					}
+				</g>
+			</a>
+		}
+	</svg>
+}

@@ -13,11 +13,14 @@ type TestRowView struct {
 	Status      string // "" | "pass" | "fail" | "skip"
 	Elapsed     float64
 	Output      string
+	// Code est le code du test, coloré (jalon 24).
+	Code CodeView
 }
 
 // TestCategoryView regroupe les tests d'un package pour la page de tests.
 type TestCategoryView struct {
 	Package string
+	Label   string // chemin relatif au module (jalon 24)
 	Tests   []TestRowView
 }
 
@@ -89,7 +92,7 @@ templ TestCategories(categories []TestCategoryView) {
 templ TestCategoryCard(cat TestCategoryView) {
 	<div class="cat-card" id={ "cat-" + safeID(cat.Package) }>
 		<h3>
-			{ cat.Package }
+			<span class="mono">{ cat.Label }</span>
 			<span class="muted">({ fmt.Sprintf("%d", len(cat.Tests)) } tests)</span>
 			<button
 				hx-post={ fmt.Sprintf("/tests/run?pkg=%s", cat.Package) }
@@ -107,28 +110,39 @@ templ TestCategoryCard(cat TestCategoryView) {
 }
 
 templ TestRow(pkg string, tr TestRowView) {
-	<div class={ "test-row", statusClass(tr.Status) }>
-		<span class="status-dot" title={ testStatusLabel(tr.Status) }></span>
-		<span class="test-name">{ tr.Name }</span>
-		if tr.Integration {
-			<span class="tag tag-integration">integration</span>
-		}
-		<span class="muted">{ tr.File }:{ fmt.Sprintf("%d", tr.Line) }</span>
-		if tr.Status != "" {
-			<span class="muted">{ fmt.Sprintf("%.3fs", tr.Elapsed) }</span>
-		}
+	<div class={ "test-item", statusClass(tr.Status) }>
+		<details>
+			<summary class={ "test-row", statusClass(tr.Status) }>
+				<span class="status-dot" title={ testStatusLabel(tr.Status) }></span>
+				<span class="test-name">{ tr.Name }</span>
+				if tr.Integration {
+					<span class="tag tag-integration">integration</span>
+				}
+				<span class="muted">{ tr.File }:{ fmt.Sprintf("%d", tr.Line) }</span>
+				if tr.Status != "" {
+					<span class="muted">{ fmt.Sprintf("%.3fs", tr.Elapsed) }</span>
+				}
+			</summary>
+			if len(tr.Code.Lines) > 0 {
+				@CodeBlock(tr.Code)
+			} else {
+				<p class="muted">Code source indisponible.</p>
+			}
+		</details>
 		<button
+			class="test-run"
+			title="Lancer ce test"
 			hx-post={ fmt.Sprintf("/tests/run?pkg=%s&name=%s", pkg, tr.Name) }
-			hx-target="closest .test-row"
+			hx-target="closest .test-item"
 			hx-swap="outerHTML"
 			hx-indicator="#run-spinner"
 		>
 			▶
 		</button>
+		if tr.Status == "fail" && tr.Output != "" {
+			<pre class="output">{ tr.Output }</pre>
+		}
 	</div>
-	if tr.Status == "fail" && tr.Output != "" {
-		<pre class="output">{ tr.Output }</pre>
-	}
 }
 
 func safeID(pkg string) string {

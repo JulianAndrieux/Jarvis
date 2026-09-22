@@ -900,3 +900,178 @@ func TestHandleJobStatus_Running_ShowsPageProgress(t *testing.T) {
 		t.Errorf("upload card does not show 2/5 progress: %s", body)
 	}
 }
+
+// --- Jalon 24 : Classes en fiches UML + code coloré, Modèle de données
+// navigable, code des tests coloré ---
+
+const widgetPkg = "example.com/fixture/widget"
+
+func newCodeTestServer() *Server {
+	baseRef := codemap.TypeRef{Package: widgetPkg, Name: "Base"}
+	return &Server{
+		model: &codemap.Model{ModulePath: "example.com/fixture", Packages: []*codemap.Package{{
+			Path: widgetPkg, Name: "widget", ImportNames: []string{"fmt"},
+			Types: []*codemap.TypeInfo{
+				{
+					Name: "Gadget", Package: widgetPkg, Kind: codemap.KindStruct, Exported: true,
+					Fields: []codemap.FieldInfo{
+						{Name: "Label", Type: "string"},
+						{Name: "Parent", Type: "*Base", Refs: []codemap.TypeRef{baseRef}, Optional: true},
+					},
+					Methods: []codemap.MethodInfo{{Name: "String", Signature: "func() string",
+						Source: "func (g Gadget) String() string {\n\treturn fmt.Sprint(g.Label)\n}", File: "widget/gadget.go", Line: 20}},
+					Source: "// Gadget est un gadget.\ntype Gadget struct {\n\tLabel  string\n\tParent *Base\n}",
+					File:   "widget/gadget.go", Line: 12,
+				},
+				{Name: "Base", Package: widgetPkg, Kind: codemap.KindStruct, Exported: true,
+					Source: "type Base struct{}", File: "widget/base.go", Line: 3},
+				{Name: "Lonely", Package: widgetPkg, Kind: codemap.KindStruct, Exported: true},
+			},
+		}}},
+		modulePath: "example.com/fixture",
+		categories: []testmap.Category{{Package: widgetPkg, Tests: []testmap.TestFunc{{
+			Name: "TestGadget_String", File: "widget/gadget_test.go", Line: 7, Imports: []string{"testing"},
+			Source: "func TestGadget_String(t *testing.T) {\n\tif (Gadget{}).String() != \"\" {\n\t\tt.Fatal(\"boom\")\n\t}\n}",
+		}}}},
+		results: map[string]testrunner.TestResult{},
+	}
+}
+
+func TestClasses_SidebarShowsPathsRelativeToModule(t *testing.T) {
+	body := get(t, newCodeTestServer(), "/classes").Body.String()
+	if !strings.Contains(body, ">widget<") {
+		t.Errorf("sidebar does not show the short package path 'widget': %s", body)
+	}
+	if strings.Contains(body, ">example.com/fixture/widget<") {
+		t.Errorf("sidebar still shows the full import path as a label")
+	}
+}
+
+func TestClassDetail_UMLCardWithLinkedFieldTypes(t *testing.T) {
+	body := get(t, newCodeTestServer(), "/classes/detail?pkg="+widgetPkg+"&name=Gadget").Body.String()
+	for _, want := range []string{`class="uml`, "Label", "Parent", "*Base", "String"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("UML card does not contain %q", want)
+		}
+	}
+	if !strings.Contains(body, `href="/classes?pkg=example.com/fixture/widget&amp;name=Base"`) {
+		t.Errorf("field type *Base is not a link to Base: %s", body)
+	}
+	if !strings.Contains(body, `href="/model?pkg=example.com/fixture/widget&amp;name=Gadget"`) {
+		t.Errorf("no link to view Gadget in the data model diagram")
+	}
+}
+
+func TestClassDetail_SourceCodeHighlightedWithLocation(t *testing.T) {
+	body := get(t, newCodeTestServer(), "/classes/detail?pkg="+widgetPkg+"&name=Gadget").Body.String()
+	for _, want := range []string{
+		`<span class="tok-kw">type</span>`,
+		`<span class="tok-type">Gadget</span>`,
+		`<span class="tok-com">// Gadget est un gadget.</span>`,
+		`<span class="tok-fn">String</span>`, // méthode déclarée
+		`<span class="tok-fn">Sprint</span>`, // fmt.Sprint : fmt connu via ImportNames
+		"widget/gadget.go:12",
+		"widget/gadget.go:20",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("class source does not contain %q", want)
+		}
+	}
+}
+
+func TestModel_FocusedDiagramWithNavigableNodes(t *testing.T) {
+	rec := get(t, newCodeTestServer(), "/model?pkg="+widgetPkg+"&name=Gadget")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"<svg",
+		`class="dnode focus"`, // Gadget, centre du diagramme
+		`href="/model?pkg=example.com/fixture/widget&amp;name=Base"`, // clic = recentrer
+		"0..1", // cardinalité de Parent *Base
+		`class="active">Modèle`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("model page does not contain %q", want)
+		}
+	}
+	// Lonely reste proposé dans le sélecteur de types, mais n'a aucune
+	// relation avec Gadget : pas de boîte pour lui dans le diagramme.
+	if strings.Contains(body, "<title>widget.Lonely</title>") {
+		t.Errorf("Lonely has no relation with Gadget, should not be drawn")
+	}
+	if !strings.Contains(body, "<title>widget.Base</title>") {
+		t.Errorf("Base should be drawn as a node")
+	}
+}
+
+func TestModel_DefaultsToAConnectedTypeAndRejectsUnknown(t *testing.T) {
+	s := newCodeTestServer()
+	if body := get(t, s, "/model").Body.String(); !strings.Contains(body, `class="dnode focus"`) {
+		t.Errorf("/model without a type should focus a default type: %s", body)
+	}
+	if rec := get(t, s, "/model?pkg="+widgetPkg+"&name=Nope"); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown type: status = %d, want 404", rec.Code)
+	}
+}
+
+func TestTests_ShortPathsAndHighlightedTestSource(t *testing.T) {
+	body := get(t, newCodeTestServer(), "/tests").Body.String()
+	if !strings.Contains(body, ">widget<") {
+		t.Errorf("tests page does not show the short package path: %s", body)
+	}
+	for _, want := range []string{"<details", `<span class="tok-fn">TestGadget_String</span>`, `<span class="tok-ctl">if</span>`, `<span class="tok-str">&#34;boom&#34;</span>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("tests page does not contain %q", want)
+		}
+	}
+}
+
+// Le type central par défaut est celui qui contient le plus d'autres
+// types (le cœur du modèle), pas le plus référencé : sur Jarvis,
+// schema.Field est utilisé partout mais n'est qu'une brique.
+func TestModel_DefaultFocusIsTheBiggestContainer(t *testing.T) {
+	leaf := codemap.TypeRef{Package: widgetPkg, Name: "Leaf"}
+	fieldTo := func(name string) codemap.FieldInfo {
+		return codemap.FieldInfo{Name: name, Type: "Leaf", Refs: []codemap.TypeRef{leaf}}
+	}
+	s := &Server{model: &codemap.Model{ModulePath: "example.com/fixture", Packages: []*codemap.Package{{Path: widgetPkg, Name: "widget", Types: []*codemap.TypeInfo{
+		{Name: "Leaf", Package: widgetPkg, Kind: codemap.KindStruct},
+		{Name: "A", Package: widgetPkg, Kind: codemap.KindStruct, Fields: []codemap.FieldInfo{fieldTo("X")}},
+		{Name: "B", Package: widgetPkg, Kind: codemap.KindStruct, Fields: []codemap.FieldInfo{fieldTo("X")}},
+		{Name: "C", Package: widgetPkg, Kind: codemap.KindStruct, Fields: []codemap.FieldInfo{fieldTo("X")}},
+		{Name: "Root", Package: widgetPkg, Kind: codemap.KindStruct, Fields: []codemap.FieldInfo{
+			{Name: "A", Type: "A", Refs: []codemap.TypeRef{{Package: widgetPkg, Name: "A"}}},
+			{Name: "B", Type: "B", Refs: []codemap.TypeRef{{Package: widgetPkg, Name: "B"}}},
+		}},
+	}}}}}
+
+	body := get(t, s, "/model").Body.String()
+	if !strings.Contains(body, `value="example.com/fixture/widget#Root" selected`) {
+		t.Errorf("default focus should be Root (contains the most types), not Leaf (most referenced)")
+	}
+}
+
+// Le modèle de données, ce sont les structs : un orchestrateur relié à
+// de nombreuses interfaces de service (Pipeline sur Jarvis) ne doit pas
+// l'emporter sur le type qui contient le plus de données.
+func TestModel_DefaultFocusCountsOnlyDataTypes(t *testing.T) {
+	ref := func(n string) codemap.TypeRef { return codemap.TypeRef{Package: widgetPkg, Name: n} }
+	f := func(n string) codemap.FieldInfo {
+		return codemap.FieldInfo{Name: n, Type: n, Refs: []codemap.TypeRef{ref(n)}}
+	}
+	s := &Server{model: &codemap.Model{ModulePath: "example.com/fixture", Packages: []*codemap.Package{{Path: widgetPkg, Name: "widget", Types: []*codemap.TypeInfo{
+		{Name: "S1", Package: widgetPkg, Kind: codemap.KindInterface},
+		{Name: "S2", Package: widgetPkg, Kind: codemap.KindInterface},
+		{Name: "S3", Package: widgetPkg, Kind: codemap.KindInterface},
+		{Name: "D1", Package: widgetPkg, Kind: codemap.KindStruct},
+		{Name: "D2", Package: widgetPkg, Kind: codemap.KindStruct},
+		{Name: "Orchestrator", Package: widgetPkg, Kind: codemap.KindStruct, Fields: []codemap.FieldInfo{f("S1"), f("S2"), f("S3")}},
+		{Name: "Result", Package: widgetPkg, Kind: codemap.KindStruct, Fields: []codemap.FieldInfo{f("D1"), f("D2")}},
+	}}}}}
+
+	if body := get(t, s, "/model").Body.String(); !strings.Contains(body, `value="example.com/fixture/widget#Result" selected`) {
+		t.Errorf("default focus should be Result (2 data types) rather than Orchestrator (3 interfaces)")
+	}
+}

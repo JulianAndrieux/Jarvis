@@ -3,6 +3,7 @@ package testmap
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -146,5 +147,42 @@ func mustWriteFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Jalon 24 : chaque test porte son code source (commentaire de doc
+// compris) et les noms des packages importés par son fichier — pour
+// l'afficher coloré dans la page Tests.
+func TestDiscover_TestSourceAndFileImports(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "go.mod"), "module example.com/fixture\n\ngo 1.25\n")
+	mustWriteFile(t, filepath.Join(dir, "pkg", "unit_test.go"), `package pkg
+
+import (
+	"testing"
+
+	js "encoding/json"
+)
+
+// TestSomething vérifie quelque chose.
+func TestSomething(t *testing.T) {
+	_ = js.Valid(nil)
+}
+`)
+
+	cats, err := Discover(dir)
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	tf := cats[0].Tests[0]
+	wantSource := "// TestSomething vérifie quelque chose.\nfunc TestSomething(t *testing.T) {\n\t_ = js.Valid(nil)\n}"
+	if tf.Source != wantSource {
+		t.Errorf("Source = %q, want %q", tf.Source, wantSource)
+	}
+	if tf.Line != 10 {
+		t.Errorf("Line = %d, want 10 (the func line, unchanged meaning)", tf.Line)
+	}
+	if strings.Join(tf.Imports, ",") != "js,testing" {
+		t.Errorf("Imports = %v, want [js testing] (alias kept, sorted)", tf.Imports)
 	}
 }

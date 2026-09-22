@@ -27,6 +27,11 @@ type TestFunc struct {
 	File        string // chemin relatif à moduleDir
 	Line        int
 	Integration bool
+	// Source est le texte de la fonction de test (commentaire de doc
+	// compris) ; Imports les noms sous lesquels son fichier importe des
+	// packages (alias compris, triés) — pour l'afficher coloré (jalon 24).
+	Source  string
+	Imports []string
 }
 
 // Category regroupe les tests d'un même package.
@@ -92,11 +97,16 @@ func Discover(moduleDir string) ([]Category, error) {
 }
 
 func parseTestFile(path, rel string) ([]TestFunc, error) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, content, parser.ParseComments)
+	if err != nil {
+		return nil, err
+	}
+	imports := fileImportNames(file)
 
 	integration := hasIntegrationBuildTag(file)
 
@@ -113,11 +123,36 @@ func parseTestFile(path, rel string) ([]TestFunc, error) {
 			continue
 		}
 		pos := fset.Position(fn.Pos())
+		start := fn.Pos()
+		if fn.Doc != nil {
+			start = fn.Doc.Pos()
+		}
 		tests = append(tests, TestFunc{
 			Name: fn.Name.Name, File: rel, Line: pos.Line, Integration: integration,
+			Source:  string(content[fset.Position(start).Offset:fset.Position(fn.End()).Offset]),
+			Imports: imports,
 		})
 	}
 	return tests, nil
+}
+
+// fileImportNames retourne les noms sous lesquels file importe des
+// packages : l'alias s'il y en a un, sinon le dernier élément du chemin
+// (convention quasi universelle, suffisante pour colorer "pkg.Nom").
+func fileImportNames(file *ast.File) []string {
+	var names []string
+	for _, imp := range file.Imports {
+		if imp.Name != nil {
+			if imp.Name.Name != "_" && imp.Name.Name != "." {
+				names = append(names, imp.Name.Name)
+			}
+			continue
+		}
+		path := strings.Trim(imp.Path.Value, "\"`")
+		names = append(names, path[strings.LastIndex(path, "/")+1:])
+	}
+	sort.Strings(names)
+	return names
 }
 
 // hasTestingTParam vérifie que fn a exactement un paramètre de type

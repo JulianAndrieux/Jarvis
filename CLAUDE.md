@@ -227,7 +227,8 @@ tournant simultanément :
 **Un seul binaire, un seul port** — remplace depuis le jalon 13 les deux
 anciens binaires `cmd/jarvisweb` (upload/suivi) et `cmd/codebrowser`
 (navigateur de code/tests), fusionnés sous une nav commune (Importer ·
-Documents · Classes · Tests — renommée au jalon 22). Voir "État des jalons" plus bas pour le détail de la
+Documents · Classes · Modèle · Tests — renommée au jalon 22, Modèle
+ajouté au jalon 24). Voir "État des jalons" plus bas pour le détail de la
 fusion, et "Atelier de code" pour le détail du navigateur de code/tests
 lui-même (moteurs inchangés par la fusion).
 
@@ -1483,6 +1484,74 @@ spécifique à `localhost`.
     l'utilisateur. Détail cosmétique relevé au
     passage : le message d'erreur VLM est préfixé deux fois
     (`vlm: vlm: ...`).
+- **Jalon 24 — Classes en fiches UML + code coloré, modèle de données
+  navigable, code des tests : fait, en attente de validation
+  utilisateur.** Demandé : "une représentation plus graphique des objets
+  avec le détail du code pour les générer [...] le code couleur par
+  défaut de Visual Studio Code [...] retirer tout ce qui est répétitif
+  github...Jarvis [...] une représentation graphique du modèle de données
+  dans lequel je pourrais naviguer [...] voir le code du test avec aussi
+  le code couleur".
+  - **`internal/highlight`** (nouveau, bibliothèque standard seule —
+    `go/scanner`) : coloration Go aux couleurs de VS Code Dark+
+    (mots-clés `#569cd6`, contrôle `#c586c0`, types `#4ec9b0`, fonctions
+    `#dcdcaa`, variables `#9cdcfe`, chaînes `#ce9178`, nombres `#b5cea8`,
+    commentaires `#6a9955`). Classification lexicale comme la grammaire
+    TextMate de VS Code (pas de jetons sémantiques) : nom après `type`/
+    `func`, appel suivi de `(`, sélecteur après un package importé
+    (alias compris, imports détectés dans la source), type connu hors
+    position de nom (`Result *Result` : le premier est un champ). La
+    concaténation des jetons reproduit exactement la source (testé).
+    Les blocs de code restent sombres quel que soit le thème de l'app
+    (le rendu VS Code reconnaissable) ; tabulations affichées en 4
+    espaces (une tabulation dans un `<pre>` s'alignait sur un taquet
+    décalé par la gouttière des numéros de ligne — trouvé sur capture).
+  - **`internal/codemap`** : types écrits courts (`[]extraction.Result`,
+    non qualifiés dans leur propre package — plus de chemin d'import
+    complet), texte source (doc comprise) + fichier:ligne de chaque type
+    et méthode, `FieldInfo.Refs/Many/Optional` (types du module
+    référencés par un champ, à travers pointeurs/tranches/maps/génériques,
+    cardinalité), `Model.ModulePath` + `ShortPath`, `Package.ImportNames`.
+    **Trou comblé au passage** : les méthodes d'une interface n'étaient
+    jamais listées (portées par le type sous-jacent, pas par le type
+    nommé) — fiches et diagramme vides pour toute interface.
+  - **`internal/testmap`** : `TestFunc.Source` (doc comprise) et
+    `Imports` (noms d'import du fichier, pour la coloration).
+  - **`internal/diagram`** (nouveau, fonction pure sur `codemap.Model`) :
+    voisinage d'un type sur N sauts — ce qu'il contient à droite, ce qui
+    le référence à gauche (couche = distance signée), ordre des colonnes
+    par barycentre, flèches partant de la ligne du champ, arrivées
+    réparties sur le bord de la cible (sinon convergence en un point et
+    cardinalités superposées — trouvé sur capture), lignes masquées
+    au-delà d'une limite sauf celles qui portent une flèche. Aucune
+    bibliothèque de graphes ni JS externe : SVG rendu côté serveur, petit
+    script de zoom/déplacement inline.
+  - **UI** : **Classes** — barre latérale en chemins relatifs avec
+    filtre, fiche UML (stéréotype, visibilité +/-, types de champs
+    cliquables), relations (embed, implémente, implémenté par, référencé
+    par), code source coloré de la déclaration et de chaque méthode.
+    **Modèle** (nouvel onglet, `GET /model`) — diagramme centré sur un
+    type, clic = recentrer, profondeur 1-3, interfaces implémentées en
+    option, fiche UML du type central à droite. Type par défaut : celui
+    qui contient le plus d'autres **structs** (`pipeline.Result` sur
+    Jarvis) — ni le plus référencé (`schema.Field`, une brique), ni
+    l'orchestrateur relié au plus d'interfaces (`Pipeline`), deux
+    premiers choix écartés après capture. **Tests** — chemins relatifs,
+    chaque test dépliable sur son code coloré (bouton ▶ hors du
+    `<summary>` pour ne pas plier/déplier en lançant).
+  - Testé : unitaire pour chaque paquet (`highlight` : classes et cas
+    pièges ; `codemap` sur le module Jarvis lui-même ; `testmap` sur un
+    module synthétique ; `diagram` sur un modèle construit à la main :
+    côtés, cardinalités, ancrage sur la ligne du champ, profondeur,
+    interfaces, non-chevauchement, limite de lignes, arrivées réparties,
+    largeur d'en-tête) + `cmd/jarvisapp` (rendu des trois pages, liens,
+    échappement du code, type par défaut). Suite complète verte
+    (`-race -tags=integration`). Validation visuelle : binaire sur :8091
+    (collection `jobs_test` — une instance sur la vraie collection
+    marquerait en échec les jobs en cours de l'application principale au
+    démarrage), captures Chrome headless des trois pages ; quatre défauts
+    trouvés ainsi et corrigés (indentation, arrivées de flèches, type par
+    défaut ×2, chevauchement d'en-tête).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

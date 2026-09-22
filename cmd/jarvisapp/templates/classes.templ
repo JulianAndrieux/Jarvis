@@ -9,8 +9,11 @@ type TypeSummary struct {
 }
 
 // PackageSummary regroupe les types d'un package pour la barre latérale.
+// Label est le chemin relatif au module (jalon 24), Path le chemin
+// d'import complet (utilisé dans les liens).
 type PackageSummary struct {
 	Path  string
+	Label string
 	Types []TypeSummary
 }
 
@@ -19,23 +22,30 @@ type FieldInfoView struct {
 	Type      string
 	Tag       string
 	Anonymous bool
+	Exported  bool
+	// Links : types du module référencés par le champ (cliquables).
+	Links []RefView
 }
 
 type MethodView struct {
 	Name            string
-	Signature       string
+	Signature       string // sans le "func" initial : "(ctx context.Context) error"
 	PointerReceiver bool
+	Exported        bool
+	Code            CodeView
 }
 
 type RefView struct {
-	Package string
-	Name    string
+	Package      string
+	Name         string
+	PackageLabel string
 }
 
-// TypeDetailView est le détail d'un type sélectionné.
+// TypeDetailView est la fiche d'un type : UML, relations, code source.
 type TypeDetailView struct {
 	Name          string
 	Package       string
+	PackageLabel  string
 	Kind          string
 	Fields        []FieldInfoView
 	Methods       []MethodView
@@ -43,41 +53,88 @@ type TypeDetailView struct {
 	EmbeddedBy    []RefView
 	Implements    []RefView
 	ImplementedBy []RefView
+	ReferencedBy  []RefView
+	Code          CodeView
 }
 
+// classURL : page Classes complète (lien normal, marche sans HTMX).
+func classURL(pkg, name string) string {
+	return fmt.Sprintf("/classes?pkg=%s&name=%s", pkg, name)
+}
+
+// typeLink : fragment de détail, chargé par HTMX dans la page Classes.
 func typeLink(pkg, name string) string {
 	return fmt.Sprintf("/classes/detail?pkg=%s&name=%s", pkg, name)
+}
+
+func modelURL(pkg, name string) string {
+	return fmt.Sprintf("/model?pkg=%s&name=%s", pkg, name)
+}
+
+func visibility(exported bool) string {
+	if exported {
+		return "+"
+	}
+	return "-"
+}
+
+func stereotype(kind string) string {
+	switch kind {
+	case "interface":
+		return "«interface»"
+	case "struct":
+		return "«struct»"
+	default:
+		return "«type»"
+	}
 }
 
 templ ClassesPage(packages []PackageSummary, selected *TypeDetailView) {
 	@Layout("Jarvis — classes", "classes") {
 		<main class="two-pane">
 			<div class="sidebar">
+				<input type="text" class="sidebar-filter" placeholder="Filtrer les types…" oninput="filterTypes(this.value)"/>
 				for _, pkg := range packages {
-					<details class="pkg-group" open?={ len(packages) <= 6 }>
-						<summary>{ pkg.Path }</summary>
+					<details class="pkg-group" open>
+						<summary>{ pkg.Label }</summary>
 						for _, t := range pkg.Types {
 							<a
 								class={ "type-link", templ.KV("kind-interface", t.Kind == "interface") }
-								href={ templ.SafeURL(typeLink(pkg.Path, t.Name)) }
+								data-name={ t.Name }
+								href={ templ.SafeURL(classURL(pkg.Path, t.Name)) }
 								hx-get={ typeLink(pkg.Path, t.Name) }
 								hx-target="#detail"
-								hx-push-url="true"
+								hx-push-url={ classURL(pkg.Path, t.Name) }
 							>
+								<span class={ "kind-dot", "kind-" + t.Kind }></span>
 								{ t.Name }
-								if t.Kind == "interface" {
-									<span class="badge badge-interface">interface</span>
-								}
 							</a>
 						}
 					</details>
 				}
+				<script>
+					function filterTypes(q) {
+						q = q.toLowerCase();
+						document.querySelectorAll(".sidebar .pkg-group").forEach(function (g) {
+							var any = false;
+							g.querySelectorAll(".type-link").forEach(function (a) {
+								var ok = a.dataset.name.toLowerCase().indexOf(q) >= 0;
+								a.style.display = ok ? "" : "none";
+								any = any || ok;
+							});
+							g.style.display = any ? "" : "none";
+						});
+					}
+				</script>
 			</div>
 			<div class="detail" id="detail">
 				if selected != nil {
 					@TypeDetail(*selected)
 				} else {
-					<p class="muted">Choisis un type dans la liste à gauche.</p>
+					<div class="empty-state">
+						<p>Choisis un type dans la liste à gauche,</p>
+						<a class="button" href="/model">ou explore le modèle de données →</a>
+					</div>
 				}
 			</div>
 		</main>
@@ -85,86 +142,100 @@ templ ClassesPage(packages []PackageSummary, selected *TypeDetailView) {
 }
 
 templ TypeDetail(d TypeDetailView) {
-	<h2>
-		{ d.Name }
-		if d.Kind == "interface" {
-			<span class="badge badge-interface">interface</span>
-		} else {
-			<span class="badge badge-struct">{ d.Kind }</span>
+	<div class="type-page">
+		<div class="type-head">
+			<div>
+				<h2>{ d.Name }</h2>
+				<div class="muted mono">{ d.PackageLabel }</div>
+			</div>
+			<a class="button" href={ templ.SafeURL(modelURL(d.Package, d.Name)) }>Voir dans le modèle de données →</a>
+		</div>
+		<div class="type-overview">
+			@UMLCard(d)
+			@Relations(d)
+		</div>
+		if len(d.Code.Lines) > 0 {
+			<div class="section-title">Déclaration</div>
+			@CodeBlock(d.Code)
 		}
-	</h2>
-	<p class="muted mono">{ d.Package }</p>
+		for _, m := range d.Methods {
+			if len(m.Code.Lines) > 0 {
+				<div class="section-title">Méthode { m.Name }</div>
+				@CodeBlock(m.Code)
+			}
+		}
+	</div>
+}
 
-	if len(d.Embeds) > 0 {
-		<h3>Embed (équivalent "superclasses")</h3>
-		<div class="rel-list">
-			for _, r := range d.Embeds {
-				<a href={ templ.SafeURL(typeLink(r.Package, r.Name)) } hx-get={ typeLink(r.Package, r.Name) } hx-target="#detail" hx-push-url="true">{ r.Name }</a>
+// UMLCard est la fiche du type en notation UML : stéréotype, nom,
+// package, attributs (champs) et opérations (méthodes).
+templ UMLCard(d TypeDetailView) {
+	<div class={ "uml", "uml-" + d.Kind }>
+		<div class="uml-head">
+			<div class="uml-stereo">{ stereotype(d.Kind) }</div>
+			<div class="uml-name">{ d.Name }</div>
+			<div class="uml-pkg">{ d.PackageLabel }</div>
+		</div>
+		if d.Kind != "interface" {
+			<div class="uml-section">
+				if len(d.Fields) == 0 {
+					<div class="uml-empty">aucun champ</div>
+				}
+				for _, f := range d.Fields {
+					<div class={ "uml-row", templ.KV("uml-embed", f.Anonymous) }>
+						<span class="uml-vis">{ visibility(f.Exported) }</span>
+						<span class="uml-member">{ f.Name }</span>
+						<span class="uml-type">
+							if len(f.Links) == 1 {
+								<a href={ templ.SafeURL(classURL(f.Links[0].Package, f.Links[0].Name)) }>{ f.Type }</a>
+							} else {
+								{ f.Type }
+								for _, l := range f.Links {
+									<a class="uml-ref" href={ templ.SafeURL(classURL(l.Package, l.Name)) }>{ l.Name }</a>
+								}
+							}
+						</span>
+					</div>
+				}
+			</div>
+		}
+		<div class="uml-section">
+			if len(d.Methods) == 0 {
+				<div class="uml-empty">aucune méthode</div>
+			}
+			for _, m := range d.Methods {
+				<div class="uml-row">
+					<span class="uml-vis">{ visibility(m.Exported) }</span>
+					<span class="uml-member uml-method">{ m.Name }</span>
+					<span class="uml-type">{ m.Signature }</span>
+				</div>
 			}
 		</div>
-	}
-	if len(d.EmbeddedBy) > 0 {
-		<h3>Embeddé par (équivalent "sous-classes")</h3>
-		<div class="rel-list">
-			for _, r := range d.EmbeddedBy {
-				<a href={ templ.SafeURL(typeLink(r.Package, r.Name)) } hx-get={ typeLink(r.Package, r.Name) } hx-target="#detail" hx-push-url="true">{ r.Name }</a>
-			}
-		</div>
-	}
-	if len(d.Implements) > 0 {
-		<h3>Implémente</h3>
-		<div class="rel-list">
-			for _, r := range d.Implements {
-				<a href={ templ.SafeURL(typeLink(r.Package, r.Name)) } hx-get={ typeLink(r.Package, r.Name) } hx-target="#detail" hx-push-url="true">{ r.Name }</a>
-			}
-		</div>
-	}
-	if len(d.ImplementedBy) > 0 {
-		<h3>Implémenté par</h3>
-		<div class="rel-list">
-			for _, r := range d.ImplementedBy {
-				<a href={ templ.SafeURL(typeLink(r.Package, r.Name)) } hx-get={ typeLink(r.Package, r.Name) } hx-target="#detail" hx-push-url="true">{ r.Name }</a>
-			}
-		</div>
-	}
+	</div>
+}
 
-	if len(d.Fields) > 0 {
-		<h3>Champs</h3>
-		<table>
-			<tr><th>Nom</th><th>Type</th><th>Tag</th></tr>
-			for _, f := range d.Fields {
-				<tr>
-					<td class="mono">
-						if f.Anonymous {
-							<em>{ f.Name }</em>
-						} else {
-							{ f.Name }
-						}
-					</td>
-					<td class="mono">{ f.Type }</td>
-					<td class="mono muted">{ f.Tag }</td>
-				</tr>
-			}
-		</table>
+templ refGroup(title, arrow string, refs []RefView) {
+	if len(refs) > 0 {
+		<div class="rel-group">
+			<div class="rel-title"><span class="rel-arrow">{ arrow }</span> { title }</div>
+			<div class="rel-list">
+				for _, r := range refs {
+					<a href={ templ.SafeURL(classURL(r.Package, r.Name)) } title={ r.PackageLabel }>{ r.Name }</a>
+				}
+			</div>
+		</div>
 	}
+}
 
-	if len(d.Methods) > 0 {
-		<h3>Méthodes déclarées</h3>
-		<table>
-			<tr><th>Nom</th><th>Signature</th><th>Récepteur</th></tr>
-			for _, meth := range d.Methods {
-				<tr>
-					<td class="mono">{ meth.Name }</td>
-					<td class="mono">{ meth.Signature }</td>
-					<td class="muted">
-						if meth.PointerReceiver {
-							pointeur
-						} else {
-							valeur
-						}
-					</td>
-				</tr>
-			}
-		</table>
-	}
+templ Relations(d TypeDetailView) {
+	<div class="relations">
+		@refGroup("Embarque (embed, l'« héritage » Go)", "▲", d.Embeds)
+		@refGroup("Embarqué par", "▼", d.EmbeddedBy)
+		@refGroup("Implémente", "◇", d.Implements)
+		@refGroup("Implémenté par", "◆", d.ImplementedBy)
+		@refGroup("Référencé par (champs)", "←", d.ReferencedBy)
+		if len(d.Embeds)+len(d.EmbeddedBy)+len(d.Implements)+len(d.ImplementedBy)+len(d.ReferencedBy) == 0 {
+			<p class="muted">Aucune relation avec les autres types du module.</p>
+		}
+	</div>
 }

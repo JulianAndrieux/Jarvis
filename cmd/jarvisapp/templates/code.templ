@@ -1,0 +1,13 @@
+package templates
+
+// CodeBlock affiche un extrait de code Go aux couleurs de VS Code (Dark+).
+templ CodeBlock(c CodeView) {
+	if len(c.Lines) > 0 {
+		<div class="code-block">
+			if c.File != "" {
+				<div class="code-file">{ codeLocation(c) }</div>
+			}
+			@rawCode(c)
+		</div>
+	}
+}
