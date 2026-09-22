@@ -43,6 +43,15 @@ type Pipeline struct {
 	// utilisé par la CLI) n'en a pas besoin.
 	Classifier classify.Classifier
 	Registry   *doctype.Registry
+
+	// Concurrency borne le nombre de pages traitées en parallèle, pour le
+	// VLM (Parsing) ET pour l'extraction LLM — 0 ou 1 (par défaut) =
+	// séquentiel, comportement inchangé par rapport aux jalons précédents.
+	// À aligner sur les "slots" parallèles exposés par les serveurs
+	// llama.cpp (jalon 21 — un document multi-pages ne payait jusqu'ici
+	// aucun bénéfice des slots parallèles du serveur, traité une page à
+	// la fois quel que soit son nombre de slots disponibles).
+	Concurrency int
 }
 
 // Result rassemble les résultats des trois étages pour un document, pour
@@ -198,7 +207,7 @@ func (p Pipeline) prepare(ctx context.Context, path string) (triageResult triage
 	triageResult = triage.Score(nativePages, thresholds)
 
 	pagesToParse := parsing.PagesNeedingParsing(triageResult)
-	parser := parsing.Parser{Renderer: p.Renderer, VLM: p.VLM, DPI: p.DPI}
+	parser := parsing.Parser{Renderer: p.Renderer, VLM: p.VLM, DPI: p.DPI, Concurrency: p.Concurrency}
 	parseResults, err = parser.ParsePages(ctx, path, pagesToParse)
 	if err != nil {
 		return triageResult, nil, nil, nil, fmt.Errorf("pipeline: parsing %s: %w", path, err)
@@ -215,7 +224,7 @@ func (p Pipeline) prepare(ctx context.Context, path string) (triageResult triage
 // extractPages appelle l'étage Extraction pour reg — factorisé entre Run
 // et RunAuto.
 func (p Pipeline) extractPages(ctx context.Context, reg doctype.Registration, pageTexts []triage.PageText) ([]extraction.Result, error) {
-	extractor := extraction.Extractor{LLM: p.LLM, ConfidenceThreshold: p.ConfidenceThreshold}
+	extractor := extraction.Extractor{LLM: p.LLM, ConfidenceThreshold: p.ConfidenceThreshold, Concurrency: p.Concurrency}
 	results, err := extractor.ExtractPages(ctx, reg, pageTexts)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: extraction %s: %w", reg.Name, err)

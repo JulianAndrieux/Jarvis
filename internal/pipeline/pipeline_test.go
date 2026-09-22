@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
@@ -164,4 +167,111 @@ func (f fakeRenderer) RenderPage(ctx context.Context, path string, page int, dpi
 		return nil, f.err
 	}
 	return f.png, nil
+}
+
+// --- Concurrency (jalon 21) : vérifie que Pipeline.Concurrency est bien
+// transmis aux deux étages qui en tirent parti (Parsing/VLM et
+// Extraction/LLM), pas seulement documenté sur le champ.
+
+type maxConcurrencyLLM struct {
+	limit   int32
+	current int32
+	max     int32
+}
+
+func (m *maxConcurrencyLLM) Extract(ctx context.Context, req llm.ExtractRequest) (llm.ExtractResult, error) {
+	cur := atomic.AddInt32(&m.current, 1)
+	defer atomic.AddInt32(&m.current, -1)
+	for {
+		old := atomic.LoadInt32(&m.max)
+		if cur <= old || atomic.CompareAndSwapInt32(&m.max, old, cur) {
+			break
+		}
+	}
+	time.Sleep(20 * time.Millisecond)
+	if cur > m.limit {
+		return llm.ExtractResult{}, fmt.Errorf("concurrency limit exceeded: %d > %d", cur, m.limit)
+	}
+	return llm.ExtractResult{JSON: json.RawMessage(`{
+		"numero": {"value": "F", "confidence": 0.9, "source_snippet": "F"},
+		"fournisseur": {"value": "Acme", "confidence": 0.9, "source_snippet": "Acme"},
+		"total_ttc": {"value": 1.0, "confidence": 0.9, "source_snippet": "1.0"}
+	}`)}, nil
+}
+
+func TestPipeline_Run_ConcurrencyThreadedToExtraction(t *testing.T) {
+	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{
+		{Page: 1, Text: "page 1 - " + longEnoughText()},
+		{Page: 2, Text: "page 2 - " + longEnoughText()},
+		{Page: 3, Text: "page 3 - " + longEnoughText()},
+	}}
+	llmClient := &maxConcurrencyLLM{limit: 3}
+
+	p := Pipeline{TextExtractor: textExtractor, VLM: &vlm.FakeClient{}, LLM: llmClient, Concurrency: 3}
+
+	got, err := p.Run(context.Background(), factureRegistration(t), "doc.pdf")
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+	for _, r := range got.Extraction {
+		if r.Failed {
+			t.Errorf("page %d failed: %s (Pipeline.Concurrency not respected)", r.Page, r.Error)
+		}
+	}
+	if atomic.LoadInt32(&llmClient.max) < 2 {
+		t.Errorf("max observed LLM concurrency = %d, want >= 2 (Pipeline.Concurrency was not threaded to extraction.Extractor)", llmClient.max)
+	}
+}
+
+type maxConcurrencyVLM struct {
+	limit   int32
+	current int32
+	max     int32
+}
+
+func (m *maxConcurrencyVLM) ParsePage(ctx context.Context, img vlm.PageImage) (vlm.ParseResult, error) {
+	cur := atomic.AddInt32(&m.current, 1)
+	defer atomic.AddInt32(&m.current, -1)
+	for {
+		old := atomic.LoadInt32(&m.max)
+		if cur <= old || atomic.CompareAndSwapInt32(&m.max, old, cur) {
+			break
+		}
+	}
+	time.Sleep(20 * time.Millisecond)
+	if cur > m.limit {
+		return vlm.ParseResult{}, fmt.Errorf("concurrency limit exceeded: %d > %d", cur, m.limit)
+	}
+	return vlm.ParseResult{Markdown: fmt.Sprintf("page-%d", img.Page)}, nil
+}
+
+func TestPipeline_Run_ConcurrencyThreadedToParsing(t *testing.T) {
+	textExtractor := triage.FakeExtractor{Pages: []triage.PageText{
+		{Page: 1, Text: ""}, {Page: 2, Text: ""}, {Page: 3, Text: ""},
+	}}
+	vlmClient := &maxConcurrencyVLM{limit: 3}
+	llmClient := &llm.FakeClient{Results: map[int]llm.ExtractResult{
+		1: {JSON: json.RawMessage(`{}`)}, 2: {JSON: json.RawMessage(`{}`)}, 3: {JSON: json.RawMessage(`{}`)},
+	}}
+
+	p := Pipeline{
+		TextExtractor: textExtractor,
+		Renderer:      fakeRenderer{png: []byte("x")},
+		VLM:           vlmClient,
+		LLM:           llmClient,
+		Concurrency:   3,
+	}
+
+	got, err := p.Run(context.Background(), factureRegistration(t), "doc.pdf")
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+	for _, r := range got.Parsing {
+		if r.Failed {
+			t.Errorf("page %d failed: %s (Pipeline.Concurrency not respected)", r.Page, r.Error)
+		}
+	}
+	if atomic.LoadInt32(&vlmClient.max) < 2 {
+		t.Errorf("max observed VLM concurrency = %d, want >= 2 (Pipeline.Concurrency was not threaded to parsing.Parser)", vlmClient.max)
+	}
 }

@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
@@ -172,5 +175,95 @@ func TestExtractor_ExtractPages_UsesDefaultConfidenceThreshold(t *testing.T) {
 	}
 	if !got[0].NeedsReview {
 		t.Errorf("NeedsReview = false, want true (0.69 < default threshold %v)", DefaultConfidenceThreshold)
+	}
+}
+
+// maxConcurrencyLLM piste le nombre d'appels Extract réellement en vol
+// simultanément et échoue si ce nombre dépasse limit — même principe que
+// internal/parsing (jalon 21) : prouve à la fois qu'un vrai parallélisme
+// a lieu et que la borne est respectée.
+type maxConcurrencyLLM struct {
+	limit   int32
+	current int32
+	max     int32
+}
+
+func (m *maxConcurrencyLLM) Extract(ctx context.Context, req llm.ExtractRequest) (llm.ExtractResult, error) {
+	cur := atomic.AddInt32(&m.current, 1)
+	defer atomic.AddInt32(&m.current, -1)
+	for {
+		old := atomic.LoadInt32(&m.max)
+		if cur <= old {
+			break
+		}
+		if atomic.CompareAndSwapInt32(&m.max, old, cur) {
+			break
+		}
+	}
+	time.Sleep(20 * time.Millisecond)
+	if cur > m.limit {
+		return llm.ExtractResult{}, fmt.Errorf("concurrency limit exceeded: %d > %d", cur, m.limit)
+	}
+	return llm.ExtractResult{JSON: json.RawMessage(fmt.Sprintf(`{
+		"numero": {"value": "F-%d", "confidence": 0.9, "source_snippet": "F-%d"},
+		"fournisseur": {"value": "Acme", "confidence": 0.9, "source_snippet": "Acme"},
+		"total_ttc": {"value": 1.0, "confidence": 0.9, "source_snippet": "1.0"}
+	}`, req.Page, req.Page))}, nil
+}
+
+func TestExtractor_ExtractPages_Concurrency0Or1_ProcessesSequentially(t *testing.T) {
+	tracker := &maxConcurrencyLLM{limit: 1}
+	e := Extractor{LLM: tracker}
+
+	got, err := e.ExtractPages(context.Background(), factureRegistration(t), []triage.PageText{
+		{Page: 1, Text: "a"}, {Page: 2, Text: "b"}, {Page: 3, Text: "c"},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPages() error = %v, want nil (default Concurrency must stay sequential)", err)
+	}
+	for _, r := range got {
+		if r.Failed {
+			t.Errorf("page %d failed: %s (concurrency limit exceeded even at default)", r.Page, r.Error)
+		}
+	}
+}
+
+func TestExtractor_ExtractPages_Concurrency_ProcessesInParallelWithinBound(t *testing.T) {
+	tracker := &maxConcurrencyLLM{limit: 2}
+	e := Extractor{LLM: tracker, Concurrency: 2}
+
+	got, err := e.ExtractPages(context.Background(), factureRegistration(t), []triage.PageText{
+		{Page: 1, Text: "a"}, {Page: 2, Text: "b"}, {Page: 3, Text: "c"}, {Page: 4, Text: "d"},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPages() error = %v, want nil", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("len(results) = %d, want 4", len(got))
+	}
+	for _, r := range got {
+		if r.Failed {
+			t.Errorf("page %d failed: %s (concurrency limit of 2 was exceeded)", r.Page, r.Error)
+		}
+	}
+	if atomic.LoadInt32(&tracker.max) < 2 {
+		t.Errorf("max observed concurrency = %d, want >= 2 (pages were not actually processed in parallel)", tracker.max)
+	}
+	for i, r := range got {
+		if r.Page != i+1 {
+			t.Errorf("results[%d].Page = %d, want %d (order must be preserved)", i, r.Page, i+1)
+		}
+	}
+}
+
+func TestExtractor_ExtractPages_Concurrency_CanceledContext_ReturnsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	e := Extractor{LLM: &llm.FakeClient{Results: map[int]llm.ExtractResult{1: {JSON: json.RawMessage(`{}`)}}}, Concurrency: 4}
+
+	_, err := e.ExtractPages(ctx, factureRegistration(t), []triage.PageText{{Page: 1, Text: "x"}})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("ExtractPages() error = %v, want it to wrap context.Canceled", err)
 	}
 }

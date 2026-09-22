@@ -39,6 +39,7 @@ func runParse(ctx context.Context, args []string, stdout io.Writer) error {
 	vlmVersion := fs.String("vlm-model-version", "", "Version/quantization du modèle (journalisé pour la reproductibilité)")
 	dpi := fs.Int("dpi", 200, "Résolution de rendu des pages (DPI)")
 	timeout := fs.Duration("vlm-timeout", 120*time.Second, "Timeout par appel VLM")
+	concurrency := fs.Int("concurrency", 4, "Nombre de pages traitées en parallèle ; 1 = séquentiel. À aligner sur les slots parallèles du serveur llama.cpp")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -78,7 +79,8 @@ func runParse(ctx context.Context, args []string, stdout io.Writer) error {
 			ModelVersion: *vlmVersion,
 			HTTP:         &http.Client{Timeout: *timeout},
 		},
-		DPI: *dpi,
+		DPI:         *dpi,
+		Concurrency: *concurrency,
 	}
 
 	results, err := parser.ParsePages(ctx, path, pagesToParse)

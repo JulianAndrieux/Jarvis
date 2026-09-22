@@ -263,8 +263,10 @@ process` — MongoDB reste la source de vérité), `--dpi`/`--vlm-timeout`/
 `--llm-timeout` (mêmes défauts que la CLI), `--module-dir` (racine du
 module pour le navigateur de code, vide = répertoire courant),
 `--watch-dir`/`--watch-interval` (ingestion automatique de PDF déposés
-dans un dossier, jalon 16 ; vide = désactivée). `make run-app` lance
-tout avec les valeurs par défaut du setup ci-dessus
+dans un dossier, jalon 16 ; vide = désactivée), `--concurrency` (pages
+traitées en parallèle par document, VLM et extraction — défaut 4, aligné
+sur les slots par défaut de `llama-server` ; 1 = séquentiel, jalon 21).
+`make run-app` lance tout avec les valeurs par défaut du setup ci-dessus
 (`MONGO_URI` doit être exporté dans l'environnement).
 
 **Hébergement plus tard :** le binaire est un serveur `net/http`
@@ -1168,8 +1170,63 @@ spécifique à `localhost`.
     `llama-server` expose déjà 4 slots parallèles alors que
     `internal/parsing.Parser.ParsePages` et `internal/extraction.
     Extractor.ExtractPages` traitent les pages séquentiellement) —
-    proposée à l'utilisateur, pas encore implémentée : voir échange en
-    dehors de ce document, à documenter ici si retenue.
+    proposée à l'utilisateur, retenue : voir jalon 21.
+- **Jalon 21 — traitement des pages en parallèle (VLM + extraction) :
+  fait, validé end-to-end.** Suite directe de l'analyse de rapidité du
+  jalon 20, retenue par l'utilisateur ("oui, les deux").
+  - **`parsing.Parser.Concurrency`** et **`extraction.Extractor.
+    Concurrency`** (nouveaux champs, même principe dans les deux
+    paquets) : 0 ou 1 (par défaut) = séquentiel, comportement strictement
+    inchangé par rapport aux jalons précédents (branché vers l'ancienne
+    boucle simple, pas juste "goroutine unique" — zéro risque
+    additionnel pour qui n'active pas l'option). `> 1` borne un pool de
+    goroutines (sémaphore par canal) à ce nombre ; les résultats sont
+    écrits par index (jamais un `append` concurrent) pour préserver
+    l'ordre des pages malgré l'exécution parallèle. `Pipeline.
+    Concurrency` (nouveau) transmet la même valeur aux deux étages.
+  - **`--concurrency`** (CLI `jarvis process`/`jarvis parse` et
+    `cmd/jarvisapp`), défaut **4** — aligné sur `n_slots = 4`, la valeur
+    par défaut de `llama-server` observée dans ses logs de démarrage
+    dans ce projet (aucun flag `--parallel` explicite dans le setup
+    documenté ici). Contrairement à DPI/timeouts (déjà par défaut non
+    nuls), ce n'est pas un paramètre de provenance : un défaut non nul
+    est cohérent avec le reste de la CLI.
+  - **Un vrai data race trouvé par `go test -race` en écrivant les
+    tests de ce jalon**, pas en relecture : `llm.FakeClient` et
+    `vlm.FakeClient` accumulaient `Calls` via un `append` non protégé —
+    inoffensif tant que rien n'appelait ces fakes en parallèle, ce qui
+    n'arrivait jamais avant ce jalon. Un test de parallélisme du jalon
+    21 (`TestPipeline_Run_ConcurrencyThreadedToParsing`) l'a immédiatement
+    fait échouer avec `-race`. Corrigé (mutex sur `Calls` dans les deux
+    fakes) — même classe de bug que les races déjà trouvées et
+    corrigées aux jalons 8 et 12, cette fois dans du code de test
+    partagé plutôt que applicatif.
+  - Les tests de parallélisme (dans les trois paquets) suivent le même
+    schéma : un client fake qui piste son nombre d'appels **réellement
+    simultanés** via un compteur atomique, échoue si la borne configurée
+    est dépassée, et le test vérifie après coup que le maximum observé a
+    bien atteint ≥ 2 — preuve positive qu'un vrai parallélisme a eu
+    lieu, pas seulement qu'aucune erreur n'est remontée (un bug qui
+    resterait strictement séquentiel malgré `Concurrency > 1`
+    passerait un test qui se contenterait de vérifier l'absence
+    d'erreur).
+  - **Validé en conditions réelles, avec mesure** : un document natif de
+    4 pages généré pour l'occasion, traité par `jarvis process --doc-type
+    facture` contre les deux vrais serveurs — `--concurrency 1` :
+    **~51s** ; `--concurrency 4` : **~35.5s** (environ 30% plus rapide).
+    Résultats extraits strictement identiques entre les deux runs (diff
+    vide), confirmant que la parallélisation ne change aucune valeur
+    extraite. Gain réel mais **inférieur au x4 théorique** : la
+    classification (jalon 15) reste un appel séquentiel avant
+    l'extraction, et les 4 "slots" de `llama-server` partagent le même
+    GPU Metal sous-jacent — pas 4 machines indépendantes, juste un
+    meilleur pipelining des requêtes. Attendu, pas un signe de bug.
+  - Testé : `internal/parsing`/`internal/extraction` (comportement
+    séquentiel inchangé à `Concurrency` ≤ 1, parallélisme réel et borne
+    respectée à `Concurrency` > 1, ordre des résultats préservé, contexte
+    annulé retourne toujours une erreur même en mode parallèle),
+    `internal/pipeline` (`Concurrency` bien transmis aux deux étages,
+    pas seulement déclaré sur le champ) + la mesure réelle ci-dessus.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

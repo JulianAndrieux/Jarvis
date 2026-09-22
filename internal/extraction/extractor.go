@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
@@ -57,13 +58,19 @@ type Extractor struct {
 	ConfidenceThreshold float64
 	// PromptTemplate : "" retombe sur DefaultPromptTemplate.
 	PromptTemplate string
+	// Concurrency borne le nombre de pages extraites en parallèle ; 0 ou 1
+	// (par défaut) = séquentiel, comportement inchangé par rapport aux
+	// jalons précédents. Même principe que parsing.Parser.Concurrency —
+	// à aligner sur les "slots" parallèles du serveur LLM (jalon 21).
+	Concurrency int
 }
 
-// ExtractPages traite chaque page de pages dans l'ordre, pour le type de
-// document reg. Une erreur de niveau document (typiquement : contexte
-// annulé) interrompt le traitement et est retournée ; les échecs par page
-// (LLM ou JSON non conforme) sont capturés dans Result.Failed/Error sans
-// interrompre les autres pages.
+// ExtractPages traite chaque page de pages, pour le type de document reg.
+// Une erreur de niveau document (typiquement : contexte annulé)
+// interrompt le traitement et est retournée ; les échecs par page (LLM ou
+// JSON non conforme) sont capturés dans Result.Failed/Error sans
+// interrompre les autres pages. L'ordre des résultats correspond toujours
+// à celui de pages, y compris en mode parallèle (Concurrency > 1).
 func (e Extractor) ExtractPages(ctx context.Context, reg doctype.Registration, pages []triage.PageText) ([]Result, error) {
 	threshold := ResolveConfidenceThreshold(e.ConfidenceThreshold)
 
@@ -82,13 +89,54 @@ func (e Extractor) ExtractPages(ctx context.Context, reg doctype.Registration, p
 		return nil, fmt.Errorf("extraction: marshal schema for %q: %w", reg.Name, err)
 	}
 
+	if e.Concurrency <= 1 {
+		return e.extractPagesSequential(ctx, reg.Name, pages, schemaJSON, prompt, threshold)
+	}
+	return e.extractPagesParallel(ctx, reg.Name, pages, schemaJSON, prompt, threshold)
+}
+
+func (e Extractor) extractPagesSequential(ctx context.Context, regName string, pages []triage.PageText, schemaJSON json.RawMessage, prompt string, threshold float64) ([]Result, error) {
 	results := make([]Result, 0, len(pages))
 	for _, page := range pages {
 		if err := ctx.Err(); err != nil {
-			return results, fmt.Errorf("extraction: %s: %w", reg.Name, err)
+			return results, fmt.Errorf("extraction: %s: %w", regName, err)
+		}
+		results = append(results, e.extractOnePage(ctx, page, schemaJSON, prompt, threshold))
+	}
+	return results, nil
+}
+
+// extractPagesParallel traite jusqu'à Concurrency pages simultanément.
+// Les résultats sont écrits par index (pas un append concurrent) pour
+// préserver l'ordre de pages malgré l'exécution parallèle.
+func (e Extractor) extractPagesParallel(ctx context.Context, regName string, pages []triage.PageText, schemaJSON json.RawMessage, prompt string, threshold float64) ([]Result, error) {
+	results := make([]Result, len(pages))
+	sem := make(chan struct{}, e.Concurrency)
+	var wg sync.WaitGroup
+
+	for i, page := range pages {
+		if err := ctx.Err(); err != nil {
+			wg.Wait()
+			return results, fmt.Errorf("extraction: %s: %w", regName, err)
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			wg.Wait()
+			return results, fmt.Errorf("extraction: %s: %w", regName, ctx.Err())
 		}
 
-		results = append(results, e.extractOnePage(ctx, page, schemaJSON, prompt, threshold))
+		wg.Add(1)
+		go func(i int, page triage.PageText) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			results[i] = e.extractOnePage(ctx, page, schemaJSON, prompt, threshold)
+		}(i, page)
+	}
+	wg.Wait()
+
+	if err := ctx.Err(); err != nil {
+		return results, fmt.Errorf("extraction: %s: %w", regName, err)
 	}
 	return results, nil
 }

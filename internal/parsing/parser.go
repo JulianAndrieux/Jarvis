@@ -3,6 +3,7 @@ package parsing
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/JulianAndrieux/Jarvis/internal/vlm"
 )
@@ -34,25 +35,76 @@ type Parser struct {
 	VLM      vlm.Client
 	// DPI est la résolution de rendu ; 0 retombe sur defaultDPI (200).
 	DPI int
+	// Concurrency borne le nombre de pages traitées en parallèle ; 0 ou 1
+	// (par défaut) = séquentiel, comportement inchangé par rapport aux
+	// jalons précédents. À aligner sur les "slots" parallèles exposés par
+	// le serveur VLM (llama-server annonce "n_slots = N" à son démarrage)
+	// — un document multi-pages ne paie plus N fois un aller-retour
+	// séquentiel si le serveur peut en traiter plusieurs à la fois
+	// (jalon 21, cf. CLAUDE.md).
+	Concurrency int
 }
 
-// ParsePages traite chaque page de pages dans l'ordre. Une erreur de
-// niveau document (typiquement : contexte annulé) interrompt le traitement
-// et est retournée ; les échecs par page (rendu ou VLM) sont capturés dans
-// PageResult.Failed/Error sans interrompre les autres pages.
+// ParsePages traite chaque page de pages. Une erreur de niveau document
+// (typiquement : contexte annulé) interrompt le traitement et est
+// retournée ; les échecs par page (rendu ou VLM) sont capturés dans
+// PageResult.Failed/Error sans interrompre les autres pages. L'ordre des
+// résultats correspond toujours à celui de pages, y compris en mode
+// parallèle (Concurrency > 1).
 func (p Parser) ParsePages(ctx context.Context, path string, pages []int) ([]PageResult, error) {
 	dpi := p.DPI
 	if dpi == 0 {
 		dpi = defaultDPI
 	}
 
+	if p.Concurrency <= 1 {
+		return p.parsePagesSequential(ctx, path, pages, dpi)
+	}
+	return p.parsePagesParallel(ctx, path, pages, dpi)
+}
+
+func (p Parser) parsePagesSequential(ctx context.Context, path string, pages []int, dpi int) ([]PageResult, error) {
 	results := make([]PageResult, 0, len(pages))
 	for _, page := range pages {
 		if err := ctx.Err(); err != nil {
 			return results, fmt.Errorf("parsing: %s: %w", path, err)
 		}
-
 		results = append(results, p.parseOnePage(ctx, path, page, dpi))
+	}
+	return results, nil
+}
+
+// parsePagesParallel traite jusqu'à Concurrency pages simultanément. Les
+// résultats sont écrits par index (pas un append concurrent) pour
+// préserver l'ordre de pages malgré l'exécution parallèle.
+func (p Parser) parsePagesParallel(ctx context.Context, path string, pages []int, dpi int) ([]PageResult, error) {
+	results := make([]PageResult, len(pages))
+	sem := make(chan struct{}, p.Concurrency)
+	var wg sync.WaitGroup
+
+	for i, page := range pages {
+		if err := ctx.Err(); err != nil {
+			wg.Wait()
+			return results, fmt.Errorf("parsing: %s: %w", path, err)
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			wg.Wait()
+			return results, fmt.Errorf("parsing: %s: %w", path, ctx.Err())
+		}
+
+		wg.Add(1)
+		go func(i, page int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			results[i] = p.parseOnePage(ctx, path, page, dpi)
+		}(i, page)
+	}
+	wg.Wait()
+
+	if err := ctx.Err(); err != nil {
+		return results, fmt.Errorf("parsing: %s: %w", path, err)
 	}
 	return results, nil
 }

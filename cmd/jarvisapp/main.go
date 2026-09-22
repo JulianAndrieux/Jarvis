@@ -58,6 +58,7 @@ func main() {
 	moduleDir := flag.String("module-dir", "", "Racine du module Go à analyser pour le navigateur de code (vide = répertoire courant)")
 	watchDir := flag.String("watch-dir", "", "Dossier surveillé pour l'ingestion automatique de PDF ; vide = désactivée")
 	watchInterval := flag.Duration("watch-interval", watch.DefaultInterval, "Intervalle de sondage de --watch-dir")
+	concurrency := flag.Int("concurrency", 4, "Nombre de pages traitées en parallèle (VLM et extraction) par document ; 1 = séquentiel. À aligner sur les slots parallèles des serveurs llama.cpp")
 	flag.Parse()
 
 	if *vlmURL == "" || *vlmModel == "" {
@@ -101,6 +102,11 @@ func main() {
 		// automatique".
 		Classifier: classify.LLMClassifier{Client: llmClient},
 		Registry:   registry,
+		// Jalon 21 : les pages d'un même document sont désormais traitées
+		// en parallèle (VLM et extraction), bornées à --concurrency, au
+		// lieu d'une page à la fois quel que soit le nombre de slots
+		// disponibles côté serveur — voir CLAUDE.md.
+		Concurrency: *concurrency,
 	}
 
 	connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
