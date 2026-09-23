@@ -42,6 +42,41 @@ type Manager struct {
 	// DeployMaxWait : attente maximale (0 : 2 h) avant d'abandonner.
 	DeployPoll    time.Duration
 	DeployMaxWait time.Duration
+	// Pusher permet de pousser main vers GitHub depuis un ticket déployé.
+	Pusher Pusher
+}
+
+// Push pousse main vers GitHub depuis un ticket déployé (action explicite
+// de l'utilisateur). Un échec est consigné dans le fil, pas renvoyé : le
+// ticket reste déployé et le push peut être retenté.
+func (m *Manager) Push(ctx context.Context, id string) error {
+	if m.Pusher == nil {
+		return fmt.Errorf("tickets: le push vers GitHub n'est pas configuré")
+	}
+	t, ok, err := m.Store.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("tickets: %s introuvable", id)
+	}
+	if t.Status != Deployed {
+		return fmt.Errorf("tickets: seul un ticket déployé se pousse vers GitHub (statut : %s)", t.Status.Label())
+	}
+	commit, err := m.Pusher.Push(ctx)
+	if err != nil {
+		m.event(ctx, id, Event{Kind: EventError, Author: AuthorUser, Text: "Push vers GitHub impossible", Detail: err.Error()})
+		return nil
+	}
+	t.Pushed = commit
+	if err := m.Store.Update(ctx, t); err != nil {
+		return err
+	}
+	if len(commit) > 7 {
+		commit = commit[:7]
+	}
+	m.event(ctx, id, Event{Kind: EventStatus, Author: AuthorUser, Text: "Poussé vers GitHub : origin/main à " + commit})
+	return nil
 }
 
 // Create enregistre un nouveau ticket en brouillon.

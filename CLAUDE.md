@@ -1960,8 +1960,22 @@ spécifique à `localhost`.
     renvoie le ticket en revue avec la raison. Une seule fois par
     déploiement. Sans lanceur (application lancée à la main), pas de
     retour arrière automatique : l'essai à blanc reste le filet principal.
-  - **Rien n'est poussé vers GitHub** (action externe laissée à
-    l'utilisateur, rappelée sur le ticket déployé).
+  - **Push vers GitHub : bouton du ticket déployé** (demandé ensuite par
+    l'utilisateur ; jamais automatique — chaque push est un clic). Le volet
+    liste les commits de main pas encore sur GitHub (selon la dernière
+    connaissance locale d'`origin/main`) : **tout main part**, pas seulement
+    le ticket, et la confirmation le dit. `workspace.Manager.Push` : depuis
+    main uniquement, **jamais de push forcé** (GitHub en avance : refus qui
+    explique quoi faire), délai de 2 min, **aucune invite** (toutes les
+    commandes git de Jarvis tournent avec `GIT_TERMINAL_PROMPT=0` : sans
+    terminal, une invite bloquerait sans fin) — identifiants du trousseau
+    macOS (remote HTTPS + osxkeychain, vérifié sans invite par un
+    `push --dry-run`). Un échec est consigné dans le fil, le ticket reste
+    déployé, le push se retente. `Ticket.Pushed` persisté. Sans source
+    d'information sur GitHub, le volet ne prétend pas que main est à jour
+    (régression attrapée par un test existant). Validé en réel dans le
+    clone, `origin` pointé sur un dépôt nu local (rien envoyé au vrai
+    GitHub) : ticket déployé, 2 commits listés, push, dépôt distant à jour.
   - `internal/workspace` : `SyncWithBase`, `BaseClean`, `BaseHead`,
     `Promote` (avance rapide, dépôt principal forcément sur main),
     `RestoreBase`. Piège trouvé par les tests : `TrimSpace` sur la sortie

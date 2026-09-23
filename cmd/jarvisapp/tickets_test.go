@@ -349,3 +349,43 @@ func TestTickets_AcceptedTicketCanBeDeployedLater(t *testing.T) {
 	}
 	waitTicketStatus(t, store, tk.ID, tickets.Deploying)
 }
+
+type stubPusher struct{ pushed bool }
+
+func (p *stubPusher) Push(ctx context.Context) (string, error) {
+	p.pushed = true
+	return "abc1234def", nil
+}
+
+func TestTickets_DeployedTicketOffersPushWithPendingCommits(t *testing.T) {
+	s, store, tk := newDevTicketServer(t, true)
+	s.Tickets.Deployer = stubDeployer{}
+	pusher := &stubPusher{}
+	s.Tickets.Pusher = pusher
+	pending := []string{"abc1234 Ticket x : commentaires", "0ff1ce0 Commit fait à la main"}
+	s.Unpushed = func(ctx context.Context) ([]string, error) {
+		if pusher.pushed {
+			return nil, nil
+		}
+		return pending, nil
+	}
+	postForm(t, s, "/tickets/"+tk.ID+"/approve", nil)
+	waitTicketStatus(t, store, tk.ID, tickets.Review)
+	postForm(t, s, "/tickets/"+tk.ID+"/accept", nil)
+	waitTicketStatus(t, store, tk.ID, tickets.Deploying)
+	s.Tickets.ConfirmDeployment(context.Background(), tk.ID, "abc1234def")
+
+	body := get(t, s, "/tickets/"+tk.ID).Body.String()
+	for _, want := range []string{`hx-post="/tickets/` + tk.ID + `/push"`, "Pousser vers GitHub", "2 commit(s)", "Commit fait à la main", "hx-confirm="} {
+		if !strings.Contains(body, want) {
+			t.Errorf("deployed ticket lacks %q", want)
+		}
+	}
+	rec := postForm(t, s, "/tickets/"+tk.ID+"/push", nil)
+	if rec.Code != http.StatusOK || !pusher.pushed {
+		t.Fatalf("push = %d, pushed=%v", rec.Code, pusher.pushed)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "Poussé vers GitHub") || strings.Contains(body, `/push"`) {
+		t.Error("after the push, the panel should say so and no longer offer the button")
+	}
+}

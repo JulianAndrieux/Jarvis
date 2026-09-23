@@ -268,11 +268,15 @@ func main() {
 			Smoke:      smokeTest(*mongoCollection, *ticketsCollection),
 		}
 		ticketManager.Busy = busyReason(jobs, ticketManager)
+		ticketManager.Pusher = git // push vers GitHub, bouton du ticket déployé
 		log.Printf("jarvisapp: déploiement des tickets activé (binaire %s)", binary)
 	}
 	log.Printf("jarvisapp: agent des tickets -> %s (%s)", *agentURL, *agentModel)
 
 	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager}
+	if *agentDev {
+		srv.Unpushed = git.Unpushed
+	}
 	srv.Infra = srv.buildInfra(InfraConfig{
 		Addr:   *addr,
 		VLMURL: *vlmURL, VLMModel: *vlmModel,

@@ -45,6 +45,8 @@ type Server struct {
 	// Infra : composants sondés et dessinés sur la page Architecture
 	// (jalon 29) ; vide, le schéma est vide.
 	Infra projectinfo.Diagram
+	// Unpushed : commits de main pas encore sur GitHub (tickets déployés).
+	Unpushed func(ctx context.Context) ([]string, error)
 
 	ModuleDir string
 

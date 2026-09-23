@@ -128,7 +128,10 @@ func (m Manager) git(ctx context.Context, dir string, args ...string) (string, e
 	// Auteur explicite : les commits de l'agent sont identifiables.
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=Agent Jarvis", "GIT_AUTHOR_EMAIL=agent@jarvis.local",
-		"GIT_COMMITTER_NAME=Agent Jarvis", "GIT_COMMITTER_EMAIL=agent@jarvis.local")
+		"GIT_COMMITTER_NAME=Agent Jarvis", "GIT_COMMITTER_EMAIL=agent@jarvis.local",
+		// Jamais d'invite interactive (identifiants) : l'application n'a
+		// pas de terminal, une invite bloquerait sans fin.
+		"GIT_TERMINAL_PROMPT=0")
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	if err := cmd.Run(); err != nil {

@@ -114,3 +114,23 @@ func renderDiff(diff string) templ.Component {
 	}
 	return templ.Raw(b.String())
 }
+
+// TicketActions : ce que l'instance permet sur un ticket (jalon 30).
+type TicketActions struct {
+	// Deploy : déploiement automatique configuré.
+	Deploy bool
+	// Push : push vers GitHub depuis l'application configuré ; Unpushed :
+	// commits de main pas encore sur GitHub (ticket déployé seulement).
+	Push bool
+	// PushKnown : on sait ce qui manque sur GitHub (Unpushed renseigné).
+	PushKnown   bool
+	Unpushed    []string
+	UnpushedErr string
+}
+
+func shortHash(h string) string {
+	if len(h) > 7 {
+		return h[:7]
+	}
+	return h
+}

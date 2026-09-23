@@ -131,9 +131,11 @@ type Ticket struct {
 	// Branch, Diff et Report : la branche git du développement (jalon
 	// 28), le diff par rapport à main soumis à la revue, et le dernier
 	// rapport de vérification (gofmt, vet, tests).
-	Branch    string    `bson:"branch,omitempty"`
-	Diff      string    `bson:"diff,omitempty"`
-	Report    string    `bson:"report,omitempty"`
+	Branch string `bson:"branch,omitempty"`
+	Diff   string `bson:"diff,omitempty"`
+	Report string `bson:"report,omitempty"`
+	// Pushed : commit de main poussé vers GitHub depuis ce ticket.
+	Pushed    string    `bson:"pushed,omitempty"`
 	CreatedAt time.Time `bson:"created_at"`
 	UpdatedAt time.Time `bson:"updated_at"`
 	Events    []Event   `bson:"events,omitempty"`
@@ -215,6 +217,12 @@ type Workspace interface {
 // restés (ou revenus) comme avant.
 type Deployer interface {
 	Deploy(ctx context.Context, id string, onStep func(text, detail string)) error
+}
+
+// Pusher pousse main vers GitHub — workspace.Manager en production.
+// Jamais de push forcé.
+type Pusher interface {
+	Push(ctx context.Context) (string, error)
 }
 
 // Verifier refait la vérification finale, indépendamment de ce que

@@ -36,6 +36,9 @@ func (s *Server) ticketRoutes(r chi.Router) {
 	r.Post("/tickets/{id}/changes", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.RequestChanges(ctx, id, r.FormValue("feedback"))
 	}))
+	r.Post("/tickets/{id}/push", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
+		return s.Tickets.Push(ctx, id)
+	}))
 	r.Post("/tickets/{id}/deploy", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.StartDeployment(ctx, id)
 	}))
@@ -112,7 +115,7 @@ func (s *Server) handleTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.TicketPage(t, s.Tickets.Deployer != nil).Render(r.Context(), w); err != nil {
+	if err := templates.TicketPage(t, s.ticketActions(r.Context(), t)).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render ticket: %v\n", err)
 	}
 }
@@ -123,7 +126,7 @@ func (s *Server) handleTicketPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.TicketPanel(t, s.Tickets.Deployer != nil).Render(r.Context(), w); err != nil {
+	if err := templates.TicketPanel(t, s.ticketActions(r.Context(), t)).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render ticket panel: %v\n", err)
 	}
 }
@@ -161,4 +164,19 @@ func (s *Server) handleTicketDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("HX-Redirect", "/tickets")
 	w.WriteHeader(http.StatusOK)
+}
+
+// ticketActions : les actions possibles sur t ; pour un ticket déployé,
+// les commits de main pas encore sur GitHub.
+func (s *Server) ticketActions(ctx context.Context, t tickets.Ticket) templates.TicketActions {
+	a := templates.TicketActions{Deploy: s.Tickets.Deployer != nil, Push: s.Tickets.Pusher != nil}
+	if t.Status == tickets.Deployed && s.Unpushed != nil {
+		a.PushKnown = true
+		pending, err := s.Unpushed(ctx)
+		if err != nil {
+			a.UnpushedErr = err.Error()
+		}
+		a.Unpushed = pending
+	}
+	return a
 }

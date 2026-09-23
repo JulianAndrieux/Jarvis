@@ -42,7 +42,7 @@ func TestMongoStore_TicketLifecycle(t *testing.T) {
 		}
 	}
 	tk.Status, tk.Plan = PlanReady, "1. ajouter ListQuery.Since"
-	tk.Branch, tk.Diff, tk.Report = "ticket/"+id, "+\tSince string", "ok  tous les paquets"
+	tk.Branch, tk.Diff, tk.Report, tk.Pushed = "ticket/"+id, "+\tSince string", "ok  tous les paquets", "abc1234"
 	if err := s.Update(ctx, tk); err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +53,9 @@ func TestMongoStore_TicketLifecycle(t *testing.T) {
 	}
 	if got.Branch != "ticket/"+id || got.Diff != "+\tSince string" || got.Report == "" {
 		t.Errorf("Get() branch %q diff %q report %q (jalon 28 fields not persisted)", got.Branch, got.Diff, got.Report)
+	}
+	if got.Pushed != "abc1234" {
+		t.Errorf("Get() pushed %q (push vers GitHub not persisted)", got.Pushed)
 	}
 	if got.Status != PlanReady || got.Plan == "" || len(got.Events) != 2 || got.Events[1].Text != "cherche ListQuery" {
 		t.Errorf("Get() = status %s plan %q events %+v", got.Status, got.Plan, got.Events)

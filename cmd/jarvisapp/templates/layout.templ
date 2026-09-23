@@ -115,6 +115,7 @@ templ Layout(title string, active string) {
 				.status-failed { color: var(--danger); }
 				.error-box { background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); border-radius: 8px; padding: .7rem .9rem; color: var(--danger); font-size: .9rem; white-space: pre-wrap; }
 				.warn-box { background: var(--warn-soft); border-radius: 8px; padding: .7rem .9rem; color: var(--warn); font-size: .9rem; }
+				.push-commits { margin: .2rem 0 .8rem; padding-left: 1.2rem; font-size: .86rem; }
 				.ok-box { background: var(--ok-soft); border-radius: 8px; padding: .7rem .9rem; color: var(--ok); font-size: .9rem; }
 				.spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -.15em; }
 				@keyframes spin { to { transform: rotate(360deg); } }

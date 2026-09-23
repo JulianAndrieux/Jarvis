@@ -1,6 +1,10 @@
 package templates
 
-import "github.com/JulianAndrieux/Jarvis/internal/tickets"
+import (
+	"fmt"
+
+	"github.com/JulianAndrieux/Jarvis/internal/tickets"
+)
 
 templ TicketsPage(list []tickets.Ticket) {
 	@Layout("Jarvis — tickets", "tickets") {
@@ -36,7 +40,7 @@ templ TicketsPage(list []tickets.Ticket) {
 	}
 }
 
-templ TicketPage(t tickets.Ticket, deploy bool) {
+templ TicketPage(t tickets.Ticket, a TicketActions) {
 	@Layout("Jarvis — " + t.Title, "tickets") {
 		<div class="page-wide ticket-page">
 			<a class="panel-back" href="/tickets">← Tickets</a>
@@ -57,28 +61,27 @@ templ TicketPage(t tickets.Ticket, deploy bool) {
 					<div class="section-title">Zone dangereuse</div>
 					<button class="button-danger" hx-delete={ "/tickets/" + t.ID } hx-confirm="Supprimer définitivement ce ticket ?">Supprimer le ticket</button>
 				</div>
-				@TicketPanel(t, deploy)
+				@TicketPanel(t, a)
 			</div>
 		</div>
 	}
 }
 
 // TicketPanel : statut, actions, plan et fil de l'agent. Se sonde lui-même
-// pendant que l'agent travaille ou que le déploiement a lieu. deploy : le
-// déploiement automatique est configuré (jalon 30).
-templ TicketPanel(t tickets.Ticket, deploy bool) {
+// pendant que l'agent travaille ou que le déploiement a lieu.
+templ TicketPanel(t tickets.Ticket, a TicketActions) {
 	if t.Status.Active() {
 		<div id="ticket-panel" class="ticket-panel" hx-get={ "/tickets/" + t.ID + "/panel" } hx-trigger="load delay:2s" hx-swap="outerHTML">
-			@ticketPanelBody(t, deploy)
+			@ticketPanelBody(t, a)
 		</div>
 	} else {
 		<div id="ticket-panel" class="ticket-panel">
-			@ticketPanelBody(t, deploy)
+			@ticketPanelBody(t, a)
 		</div>
 	}
 }
 
-templ ticketPanelBody(t tickets.Ticket, deploy bool) {
+templ ticketPanelBody(t tickets.Ticket, a TicketActions) {
 	<div class="ticket-status">
 		<span class={ ticketChipClass(t.Status) }>
 			if t.Status.Active() {
@@ -101,7 +104,7 @@ templ ticketPanelBody(t tickets.Ticket, deploy bool) {
 			case tickets.Developing:
 				<p class="muted">L'agent développe dans une copie isolée (branche { "ticket/" + t.ID }) : tests d'abord, puis Jarvis refait toute la vérification. Le fil se met à jour en direct.</p>
 			case tickets.Review:
-				if deploy {
+				if a.Deploy {
 					<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/accept" } hx-target="#ticket-panel" hx-swap="outerHTML" hx-confirm="Fusionner ce diff dans main et redémarrer l'application sur la nouvelle version ?">🚀 Accepter et déployer</button>
 				} else {
 					<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/accept" } hx-target="#ticket-panel" hx-swap="outerHTML">✓ Accepter le diff</button>
@@ -112,13 +115,14 @@ templ ticketPanelBody(t tickets.Ticket, deploy bool) {
 				</form>
 			case tickets.Accepted:
 				<p class="warn-box">Diff accepté sans déploiement (branche { t.Branch }) : main n'a pas changé.</p>
-				if deploy && t.Branch != "" {
+				if a.Deploy && t.Branch != "" {
 					<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/deploy" } hx-target="#ticket-panel" hx-swap="outerHTML" hx-confirm="Fusionner ce diff dans main et redémarrer l'application sur la nouvelle version ?">🚀 Déployer</button>
 				}
 			case tickets.Deploying:
 				<p class="muted">Déploiement : intégration de main dans la branche, vérification complète, compilation, essai à blanc de la nouvelle version — main n'avance qu'ensuite, puis l'application redémarre (quelques secondes d'indisponibilité). Si la nouvelle version ne démarre pas, l'ancienne est rétablie. Le fil se met à jour en direct.</p>
 			case tickets.Deployed:
-				<p class="ok-box">Déployé : le changement est dans main et l'application tourne sur la nouvelle version. main n'est pas poussé vers GitHub — <code>git push</code> quand tu veux.</p>
+				<p class="ok-box">Déployé : le changement est dans main et l'application tourne sur la nouvelle version.</p>
+				@pushBlock(t, a)
 			case tickets.PlanReady:
 				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/approve" } hx-target="#ticket-panel" hx-swap="outerHTML">✓ Valider le plan</button>
 				<form class="revise-form" hx-post={ "/tickets/" + t.ID + "/revise" } hx-target="#ticket-panel" hx-swap="outerHTML">
@@ -166,4 +170,32 @@ templ ticketPanelBody(t tickets.Ticket, deploy bool) {
 			</li>
 		}
 	</ol>
+}
+
+// pushBlock : ce qui partira vers GitHub, et le bouton pour l'envoyer.
+templ pushBlock(t tickets.Ticket, a TicketActions) {
+	if !a.PushKnown {
+		<p class="muted">main n'est pas poussé automatiquement vers GitHub : <code>git push</code> quand tu veux.</p>
+	} else if a.UnpushedErr != "" {
+		<p class="warn-box">État de GitHub inconnu : { a.UnpushedErr }</p>
+	}
+	if a.PushKnown && len(a.Unpushed) > 0 {
+		<div class="push-block">
+			<div class="section-title">{ fmt.Sprint(len(a.Unpushed)) } commit(s) de main pas encore sur GitHub</div>
+			<ul class="push-commits">
+				for _, c := range a.Unpushed {
+					<li><code>{ c }</code></li>
+				}
+			</ul>
+			if a.Push {
+				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/push" } hx-target="#ticket-panel" hx-swap="outerHTML" hx-disabled-elt="this" hx-confirm={ fmt.Sprintf("Pousser main vers GitHub ? Les %d commit(s) listés partiront (jamais de push forcé).", len(a.Unpushed)) }>⬆ Pousser vers GitHub</button>
+			} else {
+				<p class="muted">Push depuis l'application non configuré : <code>git push</code> depuis le dépôt.</p>
+			}
+		</div>
+	} else if t.Pushed != "" {
+		<p class="ok-box">Poussé vers GitHub (origin/main à <code>{ shortHash(t.Pushed) }</code>).</p>
+	} else if a.PushKnown && a.UnpushedErr == "" {
+		<p class="muted">main est à jour sur GitHub.</p>
+	}
 }
