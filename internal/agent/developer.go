@@ -23,6 +23,8 @@ type Developer struct {
 	ContextChars    int
 	ToolOutputChars int
 	DisableThinking bool
+	// CodeMap : voir Analyzer.CodeMap.
+	CodeMap string
 	// Instructions : voir Analyzer.Instructions (défaut :
 	// DefaultDevelopmentPrompt).
 	Instructions func() string
@@ -61,6 +63,7 @@ func (d *Developer) systemPrompt() string {
 	if d.ProjectBrief != "" {
 		b.WriteString("\nContexte du projet :\n" + d.ProjectBrief + "\n")
 	}
+	writeCodeMap(&b, d.CodeMap)
 	if d.DisableThinking {
 		b.WriteString("\n/no_think\n")
 	}

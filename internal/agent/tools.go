@@ -258,7 +258,13 @@ func (t Tools) Search(pattern, dir string) string {
 		maxResults = 60
 	}
 
+	// Toutes les correspondances sont comptées (dans une limite large) :
+	// si elles ne tiennent pas dans la sortie, un résumé par fichier
+	// montre où elles sont — vu en réel, une liste coupée aux premières
+	// lignes, dans l'ordre alphabétique, cachait les fichiers utiles.
 	var results []string
+	var files []string
+	counts := map[string]int{}
 	walkErr := filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -278,14 +284,21 @@ func (t Tools) Search(pattern, dir string) string {
 		}
 		defer f.Close()
 		rel, _ := filepath.Rel(root, p)
+		rel = filepath.ToSlash(rel)
 		sc := bufio.NewScanner(f)
 		sc.Buffer(make([]byte, 64*1024), 1024*1024)
 		line := 0
 		for sc.Scan() {
 			line++
 			if re.MatchString(sc.Text()) {
-				results = append(results, fmt.Sprintf("%s:%d: %s", filepath.ToSlash(rel), line, strings.TrimSpace(sc.Text())))
-				if len(results) >= maxResults {
+				if counts[rel] == 0 {
+					files = append(files, rel)
+				}
+				counts[rel]++
+				if len(results) < maxResults {
+					results = append(results, fmt.Sprintf("%s:%d: %s", rel, line, strings.TrimSpace(sc.Text())))
+				}
+				if len(files) >= maxCountedFiles {
 					return fs.SkipAll
 				}
 			}
@@ -298,15 +311,49 @@ func (t Tools) Search(pattern, dir string) string {
 	if len(results) == 0 {
 		return "(aucun résultat)"
 	}
-	out := strings.Join(results, "\n")
-	if len(results) >= maxResults {
-		out += fmt.Sprintf("\n... (limité à %d résultats : affine l'expression ou le dossier)", maxResults)
+	total := 0
+	for _, n := range counts {
+		total += n
 	}
-	return out
+	out := strings.Join(results, "\n")
+	if total <= len(results) && len(out) <= searchOutputChars {
+		return out
+	}
+	return searchSummary(files, counts, total)
+}
+
+// searchOutputChars : au-delà, la liste des lignes serait coupée par la
+// boucle de l'agent (3000 caractères par sortie d'outil) ; on résume.
+const searchOutputChars = 2400
+
+// maxCountedFiles borne le parcours d'une recherche très large.
+const maxCountedFiles = 500
+
+func searchSummary(files []string, counts map[string]int, total int) string {
+	// Les fichiers les plus concernés d'abord (à égalité : par chemin).
+	files = append([]string(nil), files...)
+	sort.SliceStable(files, func(i, j int) bool { return counts[files[i]] > counts[files[j]] })
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d résultats dans %d fichiers — trop pour tout afficher. Correspondances par fichier :\n", total, len(files))
+	for i, f := range files {
+		line := fmt.Sprintf("%s (%d)\n", f, counts[f])
+		if b.Len()+len(line) > searchOutputChars-200 {
+			fmt.Fprintf(&b, "… et %d autres fichiers\n", len(files)-i)
+			break
+		}
+		b.WriteString(line)
+	}
+	b.WriteString("Précise le motif, limite la recherche au dossier d'un de ces fichiers (argument dir), ou lis-le avec read_file.")
+	return b.String()
 }
 
 // searchable : fichiers texte du projet (code, gabarits, docs, config).
 func searchable(name string) bool {
+	// Ni fichiers générés (_templ.go : l'agent modifie le .templ), ni
+	// minifiés : ils doublaient ou noyaient les résultats utiles.
+	if strings.HasSuffix(name, "_templ.go") || strings.HasSuffix(name, ".min.js") {
+		return false
+	}
 	// Pas de Markdown : vu en réel, CLAUDE.md noyait les résultats du code
 	// (le contexte du projet est déjà donné à part).
 	switch strings.ToLower(filepath.Ext(name)) {

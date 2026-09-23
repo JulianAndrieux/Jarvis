@@ -48,7 +48,7 @@ func Defaults(m Models) []Definition {
 			Model:         m.Tickets,
 			Tools:         toolNames(agent.ReadOnlySpecs()),
 			DefaultPrompt: agent.DefaultAnalysisPrompt,
-			Appended:      "Le contexte du projet (début de CLAUDE.md), /no_think, puis le ticket : titre, besoin, critères d'acceptation, plan précédent et retours.",
+			Appended:      "Le contexte du projet (début de CLAUDE.md), la carte du code (chaque paquet et son rôle), /no_think, puis le ticket : titre, besoin, critères d'acceptation, plan précédent et retours.",
 		},
 		{
 			ID: Development, Name: "Développement", Group: "Tickets",
@@ -56,7 +56,7 @@ func Defaults(m Models) []Definition {
 			Model:         m.Tickets,
 			Tools:         toolNames(agent.DevSpecs()),
 			DefaultPrompt: agent.DefaultDevelopmentPrompt,
-			Appended:      "Le contexte du projet (début de CLAUDE.md), /no_think, puis le ticket, son plan validé et le rapport de la vérification précédente.",
+			Appended:      "Le contexte du projet (début de CLAUDE.md), la carte du code (chaque paquet et son rôle), /no_think, puis le ticket, son plan validé et le rapport de la vérification précédente.",
 		},
 	}
 }

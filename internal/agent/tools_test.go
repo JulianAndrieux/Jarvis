@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,5 +151,69 @@ func TestTools_ListFilesOnAFileSaysSo(t *testing.T) {
 	out := Tools{Root: writeRepo(t)}.ListFiles("internal/store/store.go")
 	if !strings.Contains(out, "est un fichier") || !strings.Contains(out, "read_file") {
 		t.Errorf("ListFiles(file) = %q", out)
+	}
+}
+
+// Vu en réel (ticket "Ajouter un filtre sur les documents") : une
+// recherche large renvoyait 60 lignes, coupées ensuite à 3000 caractères —
+// le modèle n'en voyait que 8, toutes dans cmd/jarvis/ (ordre
+// alphabétique), jamais internal/webapp/ ni la page Documents. Trop de
+// résultats : un résumé par fichier, qui tient dans la sortie et montre
+// où se trouvent les correspondances.
+func TestTools_Search_TooManyResultsGivesPerFileSummary(t *testing.T) {
+	root := t.TempDir()
+	write := func(name string, n int) {
+		p := filepath.Join(root, name)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(strings.Repeat("// documents : une ligne de code assez longue pour remplir la sortie\n", n)), 0o644)
+	}
+	for i := 0; i < 12; i++ {
+		write(fmt.Sprintf("cmd/aaa/f%02d.go", i), 10)
+	}
+	write("internal/webapp/store.go", 3)
+	write("cmd/jarvisapp/templates/documents.templ", 25)
+
+	out := Tools{Root: root}.Search("documents", ".")
+	if len(out) > 2600 {
+		t.Errorf("output = %d chars, want it to fit the tool output budget", len(out))
+	}
+	for _, want := range []string{"148 résultats dans 14 fichiers", "cmd/jarvisapp/templates/documents.templ (25)", "internal/webapp/store.go (3)", "cmd/aaa/f00.go (10)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("summary lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// Peu de résultats : les lignes elles-mêmes, comme avant.
+func TestTools_Search_FewResultsListsLines(t *testing.T) {
+	out := Tools{Root: writeRepo(t)}.Search("ListQuery", ".")
+	if !strings.Contains(out, "internal/store/store.go:3: // ListQuery filtre une liste.") {
+		t.Errorf("out = %q", out)
+	}
+}
+
+// Le résumé met en tête les fichiers les plus concernés, et ignore les
+// fichiers générés (_templ.go : l'agent modifie le .templ) et minifiés.
+func TestTools_Search_SummaryRanksFilesAndSkipsGenerated(t *testing.T) {
+	root := t.TempDir()
+	write := func(name string, n int) {
+		p := filepath.Join(root, name)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(strings.Repeat("// documents : une ligne de code assez longue pour remplir la sortie\n", n)), 0o644)
+	}
+	for i := 0; i < 80; i++ {
+		write(fmt.Sprintf("cmd/aaa/f%02d.go", i), 1)
+	}
+	write("internal/webapp/store.go", 9)
+	write("cmd/jarvisapp/templates/documents_templ.go", 50)
+	write("cmd/jarvisapp/static/htmx.min.js", 50)
+
+	out := Tools{Root: root}.Search("documents", ".")
+	if !strings.Contains(out, "résultats dans 81 fichiers") {
+		t.Errorf("generated files counted:\n%s", out)
+	}
+	lines := strings.Split(out, "\n")
+	if len(lines) < 2 || lines[1] != "internal/webapp/store.go (9)" {
+		t.Errorf("first file listed = %q, want the file with the most matches", lines[1])
 	}
 }

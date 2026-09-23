@@ -42,6 +42,8 @@ type Analyzer struct {
 	// DisableThinking ajoute "/no_think" (Qwen3 : sans lui, le modèle
 	// peut générer des milliers de jetons de réflexion — cf. jalon 11).
 	DisableThinking bool
+	// CodeMap : les paquets du dépôt et leur rôle (PackageMap).
+	CodeMap string
 	// Instructions, si renseigné, donne les consignes en vigueur, relues
 	// à chaque analyse (agents.Registry) ; vide : DefaultAnalysisPrompt.
 	Instructions func() string
@@ -86,6 +88,7 @@ func (a *Analyzer) systemPrompt() string {
 		b.WriteString(a.ProjectBrief)
 		b.WriteString("\n")
 	}
+	writeCodeMap(&b, a.CodeMap)
 	if a.DisableThinking {
 		b.WriteString("\n/no_think\n")
 	}
@@ -183,7 +186,7 @@ func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, 
 		if result, ok := resultFrom(reply, cfg.terminal, cfg.terminalArg); ok {
 			return result, nil
 		}
-		msgs = append(msgs, reply)
+		msgs = append(msgs, historySafe(reply))
 		if len(reply.ToolCalls) == 0 {
 			msgs = append(msgs, Message{Role: "user", Content: fmt.Sprintf("Continue avec les outils, ou appelle %s quand tu as terminé.", cfg.terminal)})
 			continue
@@ -260,6 +263,24 @@ const (
 // isSterile : un appel qui n'a rien apporté.
 func isSterile(out string) bool {
 	return out == "(aucun résultat)" || strings.HasPrefix(out, "ERREUR") || strings.HasPrefix(out, "Appel déjà fait")
+}
+
+// historySafe : la réponse telle qu'elle sera renvoyée au modèle dans
+// l'historique, arguments JSON invalides remplacés par {}. Vu en réel :
+// des arguments coupés (le modèle bouclait dans un write_file), renvoyés
+// tels quels, font répondre 500 à llama.cpp à chaque requête suivante —
+// il relit les appels passés. L'outil, lui, reçoit les arguments d'origine
+// et répond par une ERREUR que le modèle voit.
+func historySafe(reply Message) Message {
+	calls := make([]ToolCall, len(reply.ToolCalls))
+	for i, c := range reply.ToolCalls {
+		if !json.Valid([]byte(c.Arguments)) {
+			c.Arguments = "{}"
+		}
+		calls[i] = c
+	}
+	reply.ToolCalls = calls
+	return reply
 }
 
 // maxTruncations : réponses coupées tolérées avant d'abandonner.

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -311,5 +312,40 @@ func TestDevelop_UsesCurrentInstructions(t *testing.T) {
 func TestDefaultInstructionsAreExported(t *testing.T) {
 	if !strings.Contains(DefaultAnalysisPrompt, "propose_plan") || !strings.Contains(DefaultDevelopmentPrompt, "finish") {
 		t.Error("default instructions must describe each agent's terminal tool")
+	}
+}
+
+// Vu en réel (ticket "Ajouter un filtre sur les documents") : le modèle a
+// bouclé dans un write_file jusqu'à produire des arguments JSON coupés.
+// Renvoyés tels quels dans l'historique, llama.cpp les relit et répond
+// 500 à chaque requête suivante ("Failed to parse tool call arguments") :
+// les relances échouaient toutes dans la même seconde. L'historique ne
+// doit contenir que des arguments JSON valides.
+func TestLoop_InvalidToolArgumentsAreNotSentBack(t *testing.T) {
+	broken := `{"path": "internal/store/records.go", "content": "package store\n// Le champ est utilisé`
+	model := &scriptedModel{replies: []Message{
+		call("w", "write_file", broken),
+		call("f", "finish", `{"summary": "ok"}`),
+	}}
+	d := &Developer{Model: model, Checker: &fakeChecker{ok: true}}
+	if _, err := d.Develop(context.Background(), devRequest(writeRepo(t)), nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.calls) != 2 {
+		t.Fatalf("model called %d times, want 2", len(model.calls))
+	}
+	var toolReply string
+	for _, m := range model.calls[1] {
+		for _, c := range m.ToolCalls {
+			if !json.Valid([]byte(c.Arguments)) {
+				t.Errorf("history sends invalid arguments back: %q", c.Arguments)
+			}
+		}
+		if m.Role == "tool" && m.ToolCallID == "w" {
+			toolReply = m.Content
+		}
+	}
+	if !strings.Contains(toolReply, "ERREUR") {
+		t.Errorf("tool reply = %q, want the model told its call was unreadable", toolReply)
 	}
 }

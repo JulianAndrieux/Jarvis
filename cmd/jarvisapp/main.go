@@ -243,13 +243,19 @@ func main() {
 		log.Fatalf("jarvisapp: tickets : %v", err)
 	}
 	claudeMD, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	// Contexte donné aux agents des tickets : le début de CLAUDE.md et la
+	// carte des paquets (où vit quoi). Le prompt système entier doit
+	// laisser de la place à la conversation (--agent-context-chars).
+	brief := agent.ProjectBrief(string(claudeMD), 2500)
+	codeMap := agent.PackageMap(dir, 3000)
 	ticketManager := &tickets.Manager{
 		Store: ticketStore,
 		Gate:  modelGate,
 		Analyst: &agent.Analyzer{
 			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}},
 			Tools:           agent.Tools{Root: dir},
-			ProjectBrief:    agent.ProjectBrief(string(claudeMD), 4000),
+			ProjectBrief:    brief,
+			CodeMap:         codeMap,
 			ContextChars:    *agentContext,
 			DisableThinking: true,
 			Instructions:    agentRegistry.PromptFunc(agents.Analysis),
@@ -272,7 +278,8 @@ func main() {
 		ticketManager.Developer = &agent.Developer{
 			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}},
 			Checker:         checker,
-			ProjectBrief:    agent.ProjectBrief(string(claudeMD), 4000),
+			ProjectBrief:    brief,
+			CodeMap:         codeMap,
 			ContextChars:    *agentContext,
 			DisableThinking: true,
 			Instructions:    agentRegistry.PromptFunc(agents.Development),
