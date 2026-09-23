@@ -60,7 +60,7 @@ func main() {
 	llmTimeout := flag.Duration("llm-timeout", 180*time.Second, "Timeout par appel LLM")
 	workDir := flag.String("work-dir", "", "Répertoire des fichiers temporaires de traitement (vide = répertoire temporaire du système)")
 	outDir := flag.String("out-dir", "", "Répertoire de persistance locale additionnelle des résultats (JSON par page + log de rejeu) ; vide = pas de copie locale")
-	mongoURI := flag.String("mongo-uri", "", "URI de connexion MongoDB (ex: Atlas) — stocke les jobs (document source, statut, résultat)")
+	mongoURIFlag := flag.String("mongo-uri", "", "URI de connexion MongoDB (ex: Atlas) — stocke les jobs (document source, statut, résultat) ; vide = variable d'environnement MONGO_URI (préférable : une option est visible de tous dans ps)")
 	mongoDB := flag.String("mongo-db", "jarvis", "Base MongoDB")
 	mongoCollection := flag.String("mongo-collection", "jobs", "Collection MongoDB pour les jobs")
 	moduleDir := flag.String("module-dir", "", "Racine du module Go à analyser pour le navigateur de code (vide = répertoire courant)")
@@ -85,8 +85,9 @@ func main() {
 	if *llmURL == "" || *llmModel == "" {
 		log.Fatal("jarvisapp: --llm-url et --llm-model sont requis")
 	}
-	if *mongoURI == "" {
-		log.Fatal("jarvisapp: --mongo-uri est requis (les jobs sont persistés dans MongoDB)")
+	mongoConn := mongoURI(*mongoURIFlag, os.Getenv)
+	if mongoConn == "" {
+		log.Fatal("jarvisapp: MONGO_URI (ou --mongo-uri) est requis (les jobs sont persistés dans MongoDB)")
 	}
 
 	registry := doctype.NewDefaultRegistry()
@@ -130,7 +131,7 @@ func main() {
 
 	connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	jobStore, err := webapp.NewMongoStore(connectCtx, *mongoURI, *mongoDB, *mongoCollection)
+	jobStore, err := webapp.NewMongoStore(connectCtx, mongoConn, *mongoDB, *mongoCollection)
 	if err != nil {
 		log.Fatalf("jarvisapp: %v", err)
 	}
@@ -210,7 +211,7 @@ func main() {
 	jobs.Gate = modelGate
 	ticketsCtx, cancelTickets := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelTickets()
-	ticketStore, err := tickets.NewMongoStore(ticketsCtx, *mongoURI, *mongoDB, *ticketsCollection)
+	ticketStore, err := tickets.NewMongoStore(ticketsCtx, mongoConn, *mongoDB, *ticketsCollection)
 	if err != nil {
 		log.Fatalf("jarvisapp: tickets : %v", err)
 	}
@@ -369,4 +370,14 @@ func persistJobLocally(outDir string) func(webapp.Job) {
 			fmt.Fprintf(os.Stderr, "jarvisapp: append run log for %s: %v\n", job.Filename, err)
 		}
 	}
+}
+
+// mongoURI : l'option --mongo-uri si elle est donnée, sinon MONGO_URI.
+// Le lanceur passe l'URI par l'environnement : en argument, son mot de
+// passe serait lisible par tout utilisateur de la machine (ps).
+func mongoURI(flagValue string, getenv func(string) string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return getenv("MONGO_URI")
 }

@@ -114,7 +114,7 @@ func run(jarvisDir, home string) error {
 		log.Printf("VLM : un serveur écoute déjà sur %s, réutilisé tel quel", vlmAddr)
 	} else {
 		log.Printf("VLM : démarrage de %s...", cfg.LlamaServerBinary)
-		cmd, err := launcher.StartProcess(cfg.LlamaServerBinary, launcher.ArgsForVLM(cfg), cfg.RepoDir, filepath.Join(logDir, "vlm.log"))
+		cmd, err := launcher.StartProcess(cfg.LlamaServerBinary, launcher.ArgsForVLM(cfg), nil, cfg.RepoDir, filepath.Join(logDir, "vlm.log"))
 		if err != nil {
 			return fmt.Errorf("démarrage VLM : %w", err)
 		}
@@ -126,7 +126,7 @@ func run(jarvisDir, home string) error {
 		log.Printf("LLM : un serveur écoute déjà sur %s, réutilisé tel quel", llmAddr)
 	} else {
 		log.Printf("LLM : démarrage de %s...", cfg.LlamaServerBinary)
-		cmd, err := launcher.StartProcess(cfg.LlamaServerBinary, launcher.ArgsForLLM(cfg), cfg.RepoDir, filepath.Join(logDir, "llm.log"))
+		cmd, err := launcher.StartProcess(cfg.LlamaServerBinary, launcher.ArgsForLLM(cfg), nil, cfg.RepoDir, filepath.Join(logDir, "llm.log"))
 		if err != nil {
 			return fmt.Errorf("démarrage LLM : %w", err)
 		}
@@ -151,7 +151,7 @@ func run(jarvisDir, home string) error {
 
 	appLog := filepath.Join(logDir, "jarvisapp.log")
 	startApp := func() (*exec.Cmd, error) {
-		cmd, err := launcher.StartProcess(jarvisAppPath, launcher.ArgsForJarvisApp(cfg), cfg.RepoDir, appLog)
+		cmd, err := launcher.StartProcess(jarvisAppPath, launcher.ArgsForJarvisApp(cfg), launcher.EnvForJarvisApp(cfg, os.Environ()), cfg.RepoDir, appLog)
 		if err != nil {
 			return nil, err
 		}

@@ -24,13 +24,13 @@ templ:
 
 # Lance l'application web unifiée en local. Adapter les URLs/modèles/Mongo
 # à ton setup (cf. CLAUDE.md, section "Application web unifiée") —
-# MONGO_URI doit être exporté dans l'environnement. Les deux serveurs
+# MONGO_URI doit être exporté dans l'environnement (jarvisapp la lit
+# là : en option, son mot de passe serait visible dans ps). Les deux serveurs
 # llama.cpp (VLM :8080, LLM :8081) doivent déjà tourner.
 run-app: build-app
 	./bin/jarvisapp \
 		--vlm-url http://127.0.0.1:8080/v1 --vlm-model olmOCR-2-7B-1025 \
 		--llm-url http://127.0.0.1:8081/v1 --llm-model qwen3-8b \
-		--mongo-uri "$$MONGO_URI" \
 		--out-dir ./data/results
 
 # Lanceur : démarre VLM + LLM + jarvisapp en un geste, ouvre le

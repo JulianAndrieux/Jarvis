@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // ResolvePath retourne path tel quel s'il est absolu, sinon path joint
@@ -45,8 +46,10 @@ func ArgsForLLM(cfg Config) []string {
 }
 
 // ArgsForJarvisApp construit les arguments de cmd/jarvisapp. MongoURI
-// n'est jamais omis même vide : jarvisapp refuse déjà de démarrer sans
-// (message explicite), pas la peine de dupliquer cette validation ici.
+// n'y figure jamais : elle contient un mot de passe, lisible par tout
+// utilisateur de la machine dans la ligne de commande (ps). Elle passe
+// par l'environnement (EnvForJarvisApp) ; jarvisapp refuse de démarrer
+// sans, avec un message explicite.
 func ArgsForJarvisApp(cfg Config) []string {
 	return []string{
 		"--vlm-url", fmt.Sprintf("http://127.0.0.1:%d/v1", cfg.VLMPort),
@@ -55,7 +58,6 @@ func ArgsForJarvisApp(cfg Config) []string {
 		"--llm-url", fmt.Sprintf("http://127.0.0.1:%d/v1", cfg.LLMPort),
 		"--llm-model", cfg.LLMModel,
 		"--llm-model-version", cfg.LLMModelVersion,
-		"--mongo-uri", cfg.MongoURI,
 		"--mongo-db", cfg.MongoDB,
 		"--mongo-collection", cfg.MongoCollection,
 		"--out-dir", ResolvePath(cfg.RepoDir, cfg.OutDir),
@@ -64,14 +66,28 @@ func ArgsForJarvisApp(cfg Config) []string {
 	}
 }
 
-// StartProcess démarre name avec args (répertoire de travail dir),
+// EnvForJarvisApp : l'environnement base, avec MONGO_URI fixée à celle de
+// la configuration (toute valeur précédente retirée). base n'est pas
+// modifié.
+func EnvForJarvisApp(cfg Config, base []string) []string {
+	env := make([]string, 0, len(base)+1)
+	for _, kv := range base {
+		if !strings.HasPrefix(kv, "MONGO_URI=") {
+			env = append(env, kv)
+		}
+	}
+	return append(env, "MONGO_URI="+cfg.MongoURI)
+}
+
+// StartProcess démarre name avec args et l'environnement env (nil :
+// celui du lanceur), répertoire de travail dir,
 // redirigeant stdout+stderr vers un fichier de log (créé/complété, pas
 // écrasé — pour garder la trace d'exécutions précédentes le temps d'une
 // session de debug). Ne bloque pas : l'appelant surveille cmd (Wait,
 // Process.Signal) séparément. Essentiel ici puisque le lanceur est
 // pensé pour tourner sans terminal visible (raccourci Dock) — sans ce
 // fichier, toute sortie des serveurs serait perdue.
-func StartProcess(name string, args []string, dir, logPath string) (*exec.Cmd, error) {
+func StartProcess(name string, args, env []string, dir, logPath string) (*exec.Cmd, error) {
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return nil, fmt.Errorf("launcher: create log dir for %s: %w", logPath, err)
 	}
@@ -82,6 +98,7 @@ func StartProcess(name string, args []string, dir, logPath string) (*exec.Cmd, e
 
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	cmd.Env = env
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 

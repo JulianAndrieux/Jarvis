@@ -46,7 +46,6 @@ func TestArgsForJarvisApp_IncludesAllRequiredFlags(t *testing.T) {
 		"--llm-url", "http://127.0.0.1:8081/v1",
 		"--llm-model", "qwen3-8b",
 		"--llm-model-version", "Q5_K_M",
-		"--mongo-uri", "mongodb+srv://user:pass@cluster/",
 		"--mongo-db", "jarvis",
 		"--mongo-collection", "jobs",
 		"--out-dir", "/home/andri/Documents/Jarvis/data/results",
@@ -56,12 +55,31 @@ func TestArgsForJarvisApp_IncludesAllRequiredFlags(t *testing.T) {
 	assertArgsEqual(t, args, want)
 }
 
-func TestArgsForJarvisApp_EmptyMongoURI_OmitsNothingButLeavesItEmpty(t *testing.T) {
-	cfg := testConfig()
-	cfg.MongoURI = ""
-	args := ArgsForJarvisApp(cfg)
-	if !containsFlag(args, "--mongo-uri", "") {
-		t.Errorf("args = %v, want --mongo-uri \"\" present (jarvisapp itself refuses to start without it, with a clear message)", args)
+// L'URI MongoDB contient un mot de passe : en argument, elle serait
+// lisible par tout utilisateur de la machine (ps). Elle passe par
+// l'environnement du processus (EnvForJarvisApp).
+func TestArgsForJarvisApp_NeverCarriesTheMongoURI(t *testing.T) {
+	for _, a := range ArgsForJarvisApp(testConfig()) {
+		if a == "--mongo-uri" || strings.Contains(a, "pass@") {
+			t.Fatalf("args carry the Mongo URI: %v", ArgsForJarvisApp(testConfig()))
+		}
+	}
+}
+
+func TestEnvForJarvisApp_SetsMongoURIOnce(t *testing.T) {
+	base := []string{"HOME=/home/andri", "MONGO_URI=ancienne", "PATH=/usr/bin"}
+	env := EnvForJarvisApp(testConfig(), base)
+	var uris []string
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "MONGO_URI=") {
+			uris = append(uris, kv)
+		}
+	}
+	if len(uris) != 1 || uris[0] != "MONGO_URI=mongodb+srv://user:pass@cluster/" {
+		t.Errorf("MONGO_URI entries = %v, want exactly the configured one", uris)
+	}
+	if len(env) != 3 || base[1] != "MONGO_URI=ancienne" {
+		t.Errorf("env = %v (base %v), want the rest kept and base untouched", env, base)
 	}
 }
 
@@ -104,7 +122,7 @@ func TestStartProcess_RunsAndCapturesOutputToLogFile(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "sub", "echo.log")
 
-	cmd, err := StartProcess("/bin/echo", []string{"hello-from-launcher"}, dir, logPath)
+	cmd, err := StartProcess("/bin/echo", []string{"hello-from-launcher"}, nil, dir, logPath)
 	if err != nil {
 		t.Fatalf("StartProcess() error = %v", err)
 	}
@@ -123,8 +141,21 @@ func TestStartProcess_RunsAndCapturesOutputToLogFile(t *testing.T) {
 
 func TestStartProcess_UnknownBinary_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	_, err := StartProcess("/no/such/binary-xyz", nil, dir, filepath.Join(dir, "x.log"))
+	_, err := StartProcess("/no/such/binary-xyz", nil, nil, dir, filepath.Join(dir, "x.log"))
 	if err == nil {
 		t.Fatal("StartProcess() error = nil, want an error for a missing binary")
+	}
+}
+
+func TestStartProcess_PassesTheGivenEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "env.log")
+	cmd, err := StartProcess("/bin/sh", []string{"-c", "echo secret=$MONGO_URI"}, []string{"MONGO_URI=abc"}, dir, logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Wait()
+	if b, _ := os.ReadFile(logPath); !strings.Contains(string(b), "secret=abc") {
+		t.Errorf("log = %q, want the variable seen by the process", b)
 	}
 }
