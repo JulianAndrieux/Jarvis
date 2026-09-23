@@ -60,6 +60,11 @@ func setupLogging(path string) (*os.File, error) {
 }
 
 func run(jarvisDir, home string) error {
+	// Lancé depuis le Finder/Dock, le PATH est minimal : sans Homebrew ni
+	// Go, ni llama-server (ici), ni go et soffice (jarvisapp, qui hérite
+	// de cet environnement) ne sont trouvés. Trouvé au jalon 27.
+	os.Setenv("PATH", launcher.WithToolPaths(os.Getenv("PATH"), home))
+
 	defaultRepoDir := filepath.Join(home, "Documents", "Jarvis")
 	configPath := filepath.Join(jarvisDir, "launcher.json")
 

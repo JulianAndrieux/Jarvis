@@ -131,8 +131,11 @@ func (s *Server) Routes() chi.Router {
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Réponse déjà commencée : une erreur de rendu (typiquement le
+	// contrôle de santé du lanceur qui ferme la connexion) se journalise,
+	// un http.Error arriverait trop tard ("superfluous WriteHeader").
 	if err := templates.Upload(s.Registry.Names()).Render(r.Context(), w); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fmt.Fprintf(os.Stderr, "jarvisapp: render index: %v\n", err)
 	}
 }
 
