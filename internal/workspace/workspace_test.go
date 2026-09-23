@@ -112,3 +112,56 @@ func TestManager_RejectsUnsafeTicketIDs(t *testing.T) {
 		}
 	}
 }
+
+// Vu en réel : main avait avancé depuis la création de la copie ; le
+// diff contre la pointe de main montrait ces commits à l'envers, et un
+// agent qui n'avait rien modifié passait en revue avec un faux diff.
+func TestManager_DiffIgnoresMainMovingOn(t *testing.T) {
+	repo := newRepo(t)
+	m := Manager{Repo: repo, Root: t.TempDir()}
+	dir, _ := m.Prepare(context.Background(), "t1")
+
+	os.WriteFile(filepath.Join(repo, "main.go"), []byte("package a\n\nfunc Main() {}\n"), 0o644)
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "main avance"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	diff, err := m.Diff(context.Background(), dir)
+	if err != nil || diff != "" {
+		t.Fatalf("Diff() = %q, %v ; want empty: nothing changed in the workspace", diff, err)
+	}
+	os.WriteFile(filepath.Join(dir, "b.go"), []byte("package a\n"), 0o644)
+	diff, _ = m.Diff(context.Background(), dir)
+	if !strings.Contains(diff, "b.go") || strings.Contains(diff, "main.go") {
+		t.Errorf("diff = %q, want only the workspace's own change", diff)
+	}
+}
+
+// Une copie reprise (relance) sans travail propre repart du main actuel :
+// sinon l'agent développerait sur du code périmé.
+func TestManager_PrepareFastForwardsAnUntouchedWorkspace(t *testing.T) {
+	repo := newRepo(t)
+	m := Manager{Repo: repo, Root: t.TempDir()}
+	dir, _ := m.Prepare(context.Background(), "t1")
+
+	os.WriteFile(filepath.Join(repo, "main.go"), []byte("package a\n"), 0o644)
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "main avance"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if _, err := m.Prepare(context.Background(), "t1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "main.go")); err != nil {
+		t.Errorf("reused workspace not brought up to main: %v", err)
+	}
+}

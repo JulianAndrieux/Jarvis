@@ -50,6 +50,12 @@ func (m Manager) Prepare(ctx context.Context, id string) (string, error) {
 	}
 	dir := m.Dir(id)
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		// Copie reprise : si elle n'a aucun travail propre, la ramener au
+		// main actuel. Avance rapide seulement — un échec (travail en
+		// cours, branche divergente) laisse la copie telle quelle.
+		if out, err := m.git(ctx, dir, "status", "--porcelain"); err == nil && strings.TrimSpace(out) == "" {
+			m.git(ctx, dir, "merge", "--ff-only", "-q", m.base())
+		}
 		return dir, nil
 	}
 	if err := os.MkdirAll(m.Root, 0o755); err != nil {
@@ -70,13 +76,19 @@ func (m Manager) branchExists(ctx context.Context, branch string) bool {
 	return err == nil && strings.TrimSpace(out) != ""
 }
 
-// Diff retourne toutes les modifications de la copie de travail par
-// rapport à main — commitées ou non, fichiers nouveaux compris.
+// Diff retourne toutes les modifications de la copie de travail depuis
+// son point de départ sur main — commitées ou non, fichiers nouveaux
+// compris. Comparer à la base commune, pas à la pointe de main : main
+// peut avoir avancé depuis, et ses commits apparaîtraient à l'envers.
 func (m Manager) Diff(ctx context.Context, dir string) (string, error) {
 	if _, err := m.git(ctx, dir, "add", "-A"); err != nil {
 		return "", err
 	}
-	return m.git(ctx, dir, "diff", "--cached", m.base())
+	base, err := m.git(ctx, dir, "merge-base", "HEAD", m.base())
+	if err != nil {
+		return "", err
+	}
+	return m.git(ctx, dir, "diff", "--cached", strings.TrimSpace(base))
 }
 
 // Commit enregistre les modifications sur la branche du ticket.
