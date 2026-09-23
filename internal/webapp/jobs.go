@@ -227,9 +227,11 @@ func (m *JobManager) process(job Job, run runFunc) {
 		m.finish(ctx, job, pipeline.Result{}, fmt.Errorf("webapp: write temp file: %w", err))
 		return
 	}
-	defer cleanup()
-
 	result, err := run(ctx, path, m.progressRecorder(ctx, job.ID))
+	// Supprimer avant d'enregistrer la fin : qui voit le job terminé ne
+	// doit plus trouver son fichier temporaire (trouvé par un test devenu
+	// intermittent sous charge, jalon 30).
+	cleanup()
 	m.finish(ctx, job, result, err)
 }
 
