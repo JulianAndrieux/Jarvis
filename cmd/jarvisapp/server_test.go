@@ -1076,3 +1076,57 @@ func TestModel_DefaultFocusCountsOnlyDataTypes(t *testing.T) {
 		t.Errorf("default focus should be Result (2 data types) rather than Orchestrator (3 interfaces)")
 	}
 }
+
+// Ticket "Ajouter commentaire sur document" : la fiche du document porte
+// une zone de commentaire, qui s'enregistre sans recharger la page.
+func TestHandleDocumentComment_UpdatesAndReturnsCommentForm(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	body, contentType := multipartUpload(t, "doc.pdf", []byte("x"))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	id := extractJobID(t, rec.Body.String())
+	// La zone n'apparaît qu'une fois le document traité : pendant le
+	// traitement, la fiche se rafraîchit et effacerait la saisie.
+	for i := 0; i < 200; i++ {
+		if job, _, _ := s.Jobs.Get(context.Background(), id); job.Status == webapp.StatusDone {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	page := httptest.NewRecorder()
+	s.Routes().ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/documents/"+id, nil))
+	if !strings.Contains(page.Body.String(), `name="comment"`) {
+		t.Fatalf("document page has no comment box")
+	}
+
+	form := url.Values{"comment": {"Relancer le fournisseur <vite>"}}
+	req2 := httptest.NewRequest(http.MethodPost, "/documents/"+id+"/comment", strings.NewReader(form.Encode()))
+	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec2 := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec2.Code, rec2.Body.String())
+	}
+	if !strings.Contains(rec2.Body.String(), "Relancer le fournisseur &lt;vite&gt;") || !strings.Contains(rec2.Body.String(), "Enregistré") {
+		t.Errorf("fragment = %s, want the escaped comment and a saved notice", rec2.Body.String())
+	}
+	job, ok, err := s.Jobs.Get(context.Background(), id)
+	if err != nil || !ok || job.Comment != "Relancer le fournisseur <vite>" {
+		t.Errorf("job.Comment = %q (%v, %v)", job.Comment, ok, err)
+	}
+}
+
+func TestHandleDocumentComment_UnknownDocumentIs404(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	req := httptest.NewRequest(http.MethodPost, "/documents/inconnu/comment", strings.NewReader("comment=x"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}

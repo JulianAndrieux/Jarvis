@@ -63,6 +63,10 @@ type Job struct {
 	// Tags est librement éditable par l'utilisateur (bibliothèque de
 	// documents, jalon 17) — n'a aucune incidence sur le traitement.
 	Tags []string
+	// Comment est le commentaire libre de l'utilisateur sur le document
+	// (ticket "Ajouter commentaire sur document"). Ses mots sont trouvés
+	// par la barre de recherche, comme les tags.
+	Comment string
 	// SearchText est le texte du document (natif ou Markdown VLM, cf.
 	// pipeline.Result.SearchText) — recopié ici uniquement pour que
 	// Store.List puisse chercher dedans sans désérialiser tout Result
@@ -365,11 +369,11 @@ func (m *JobManager) finishStored(ctx context.Context, job Job) {
 
 // save écrit l'état du traitement (statut, dates, résultat, erreur) sur
 // la version à jour du job : ce que l'utilisateur modifie pendant le
-// traitement (tags) n'est jamais écrasé par la copie prise au démarrage
+// traitement (tags, commentaire) n'est jamais écrasé par la copie prise au démarrage
 // — bug réel, trouvé par un test devenu intermittent au jalon 27.
 func (m *JobManager) save(ctx context.Context, job Job) error {
 	if current, ok, err := m.store.Get(ctx, job.ID); err == nil && ok {
-		job.Tags = current.Tags
+		job.Tags, job.Comment = current.Tags, current.Comment
 	}
 	return m.store.Update(ctx, job)
 }
@@ -546,6 +550,23 @@ func (m *JobManager) SetTags(ctx context.Context, id string, tags []string) erro
 	job.Tags = tags
 	if err := m.store.Update(ctx, job); err != nil {
 		return fmt.Errorf("webapp: set tags %s: %w", id, err)
+	}
+	return nil
+}
+
+// SetComment remplace le commentaire du job id (espaces de début et de
+// fin retirés). Comme les tags, sans incidence sur le traitement.
+func (m *JobManager) SetComment(ctx context.Context, id, comment string) error {
+	job, ok, err := m.store.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("webapp: set comment %s: get: %w", id, err)
+	}
+	if !ok {
+		return fmt.Errorf("webapp: set comment %s: not found", id)
+	}
+	job.Comment = strings.TrimSpace(comment)
+	if err := m.store.Update(ctx, job); err != nil {
+		return fmt.Errorf("webapp: set comment %s: %w", id, err)
 	}
 	return nil
 }

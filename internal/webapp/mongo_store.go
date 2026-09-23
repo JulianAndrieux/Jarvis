@@ -182,6 +182,7 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 		"result_json": resultJSON,
 		"err":         job.Err,
 		"tags":        job.Tags,
+		"comment":     job.Comment,
 		"search_text": job.SearchText,
 	}}
 
@@ -243,9 +244,23 @@ func (s *MongoStore) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// MigrateComments donne un commentaire vide à chaque document qui n'en a
+// pas encore (documents antérieurs au ticket "Ajouter commentaire sur
+// document") et retourne le nombre de documents modifiés. Idempotente :
+// lancée à chaque démarrage, elle ne touche jamais un commentaire écrit.
+func (s *MongoStore) MigrateComments(ctx context.Context) (int64, error) {
+	res, err := s.Collection.UpdateMany(ctx,
+		bson.M{"comment": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"comment": ""}})
+	if err != nil {
+		return 0, fmt.Errorf("webapp: mongo migrate comments: %w", err)
+	}
+	return res.ModifiedCount, nil
+}
+
 // List retourne les jobs correspondant à q (bibliothèque de documents,
 // jalon 17), triés du plus récent au plus ancien. q.Search filtre sur
-// filename/doc_type/tags/search_text (le texte du document — jalon 18,
+// filename/doc_type/tags/comment/search_text (le texte du document — jalon 18,
 // "chercher dans les documents") via une regex insensible à la casse —
 // pas d'index de recherche plein texte dédié : la collection est petite,
 // $regex suffit et reste remplaçable en un jour si le volume grandit.
@@ -262,6 +277,7 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 			bson.M{"filename": re},
 			bson.M{"doc_type": re},
 			bson.M{"tags": re},
+			bson.M{"comment": re},
 			bson.M{"search_text": re},
 		}})
 	}
@@ -334,8 +350,11 @@ type mongoJobDoc struct {
 	ResultJSON []byte    `bson:"result_json,omitempty"`
 	Err        string    `bson:"err,omitempty"`
 	Tags       []string  `bson:"tags,omitempty"`
-	SearchText string    `bson:"search_text,omitempty"`
-	Thumbnail  []byte    `bson:"thumbnail,omitempty"`
+	// Comment sans omitempty : un commentaire vide reste un champ présent
+	// (critère d'acceptation, cf. MigrateComments).
+	Comment    string `bson:"comment"`
+	SearchText string `bson:"search_text,omitempty"`
+	Thumbnail  []byte `bson:"thumbnail,omitempty"`
 	// ProgressJSON : pipeline.Progress sérialisé (jalon 23), même
 	// principe que ResultJSON.
 	ProgressJSON []byte `bson:"progress_json,omitempty"`
@@ -351,7 +370,7 @@ func jobToDoc(job Job) (mongoJobDoc, error) {
 		ID: job.ID, DocType: job.DocType, Filename: job.Filename,
 		Status:    string(job.Status),
 		CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, FinishedAt: job.FinishedAt, Err: job.Err,
-		Tags: job.Tags, SearchText: job.SearchText, Thumbnail: job.Thumbnail,
+		Tags: job.Tags, Comment: job.Comment, SearchText: job.SearchText, Thumbnail: job.Thumbnail,
 		Format: job.Format, MIME: job.MIME, Size: job.Size, SourceHash: job.SourceHash,
 	}
 	if job.Result != nil {
@@ -376,7 +395,7 @@ func docToJob(doc mongoJobDoc) (Job, error) {
 		ID: doc.ID, DocType: doc.DocType, Filename: doc.Filename,
 		Status:    Status(doc.Status),
 		CreatedAt: doc.CreatedAt, StartedAt: doc.StartedAt, FinishedAt: doc.FinishedAt, Err: doc.Err,
-		Tags: doc.Tags, SearchText: doc.SearchText, Thumbnail: doc.Thumbnail,
+		Tags: doc.Tags, Comment: doc.Comment, SearchText: doc.SearchText, Thumbnail: doc.Thumbnail,
 		Format: doc.Format, MIME: doc.MIME, Size: doc.Size, SourceHash: doc.SourceHash,
 	}
 	if len(doc.ResultJSON) > 0 {

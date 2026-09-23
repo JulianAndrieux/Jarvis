@@ -492,3 +492,70 @@ func TestMongoStore_List_FiltersByFormatIncludingLegacyPDFs(t *testing.T) {
 		t.Errorf("List(Format=sheet) = %d, want 1", len(sheets))
 	}
 }
+
+// Ticket "Ajouter commentaire sur document" : le commentaire est
+// persisté, et ses mots sont trouvés par la recherche.
+func TestMongoStore_Comment_PersistsAndIsSearchable(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	stamp := time.Now().Format("20060102150405")
+	job := Job{ID: "test-comment-" + stamp, Filename: "doc.pdf", Status: StatusPending, CreatedAt: time.Now()}
+	defer cleanupJob(t, store, job.ID)
+
+	created, err := store.Create(ctx, job)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	created.Comment = "Envoyer au comptable " + stamp
+	if err := store.Update(ctx, created); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	got, ok, err := store.Get(ctx, job.ID)
+	if err != nil || !ok || got.Comment != created.Comment {
+		t.Fatalf("Get() = %q, %v, %v, want the comment back", got.Comment, ok, err)
+	}
+	found, err := store.List(ctx, ListQuery{Search: "COMPTABLE " + stamp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].ID != job.ID {
+		t.Errorf("search by comment = %d jobs, want just %s", len(found), job.ID)
+	}
+}
+
+// Critère d'acceptation : chaque document existant reçoit un commentaire
+// vide. La migration ne touche pas un commentaire déjà écrit, et la
+// relancer ne change plus rien.
+func TestMongoStore_MigrateComments_AddsEmptyCommentOnlyWhereMissing(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	stamp := time.Now().Format("20060102150405")
+	legacy, commented := "test-legacy-"+stamp, "test-commented-"+stamp
+	defer cleanupJob(t, store, legacy)
+	defer cleanupJob(t, store, commented)
+	// Document d'avant le ticket : pas de champ comment du tout.
+	if _, err := store.Collection.InsertOne(ctx, bson.M{"_id": legacy, "filename": "old.pdf", "status": "done", "created_at": time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Collection.InsertOne(ctx, bson.M{"_id": commented, "filename": "c.pdf", "status": "done", "created_at": time.Now(), "comment": "garder"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.MigrateComments(ctx); err != nil {
+		t.Fatalf("MigrateComments() error = %v", err)
+	}
+	var doc bson.M
+	if err := store.Collection.FindOne(ctx, bson.M{"_id": legacy}).Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	if c, ok := doc["comment"]; !ok || c != "" {
+		t.Errorf("legacy comment = %v (present %v), want an empty comment", c, ok)
+	}
+	if got, _, _ := store.Get(ctx, commented); got.Comment != "garder" {
+		t.Errorf("existing comment = %q, want it untouched", got.Comment)
+	}
+	n, err := store.MigrateComments(ctx)
+	if err != nil || n != 0 {
+		t.Errorf("second MigrateComments() = %d, %v, want 0 documents touched", n, err)
+	}
+}

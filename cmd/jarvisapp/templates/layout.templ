@@ -88,8 +88,10 @@ templ Layout(title string, active string) {
 				.button-danger { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); color: var(--danger); }
 				.button-danger:hover { background: var(--danger-soft); }
 				label { display: block; margin-bottom: .35rem; font-weight: 600; font-size: .85rem; color: var(--text-2); }
-				input[type=text], select { font: inherit; font-size: .92rem; padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); width: 100%; }
-				input[type=text]:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+				input[type=text], select, textarea { font: inherit; font-size: .92rem; padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); width: 100%; }
+				textarea { resize: vertical; line-height: 1.45; }
+				.comment-actions { margin-top: .5rem; }
+				input[type=text]:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 				.field-row { display: flex; gap: .5rem; align-items: center; }
 				.field-row > input, .field-row > select { flex: 1; }
 

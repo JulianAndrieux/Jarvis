@@ -2015,6 +2015,31 @@ spécifique à `localhost`.
     `cmd/jarvisapp` (règlement du marqueur au démarrage : confirmation,
     retour arrière, main bougé, erreur ; volet et routes). Suite complète
     verte (`-race`).
+- **Ticket "Ajouter commentaire sur document" : faux déploiement analysé,
+  garde-fous ajoutés, fonctionnalité livrée à la main.**
+  - **Ce qui s'était passé** : Qwen3-8B n'a rien écrit en trois
+    tentatives (recherches d'identifiants inventés). La 3e tentative a
+    tourné dans une copie restée sur un main antérieur à `bfb701a` : le
+    diff, alors calculé contre la pointe de main, montrait ces commits à
+    l'envers (déjà corrigé par `bc358d2`, base commune). Le résumé de
+    l'agent (« champ ajouté, tests écrits ») était faux. Au déploiement,
+    la branche intégrant main est devenue identique à main : « main avance
+    2f6a18f → 2f6a18f », ticket « Déployé » sans rien livrer.
+  - **Garde-fous** : `deploy.Deployer` refuse, juste après l'intégration
+    de main, une branche qui n'apporte aucune modification (« rien à
+    déployer ») ; `tickets.Manager.develop` renvoie à l'agent un diff qui
+    modifie du Go sans aucun `_test.go` (TDD strict ; `_templ.go` générés
+    exclus), puis échoue s'il persiste.
+  - **Fonctionnalité** : `webapp.Job.Comment`, `JobManager.SetComment`
+    (préservé pendant un traitement, comme les tags), recherche sur
+    `comment` (Fake et Mongo), `MongoStore.MigrateComments` lancée à chaque
+    démarrage (commentaire vide là où le champ manque, idempotente — critère
+    d'acceptation), zone de commentaire sous le titre de la fiche d'un
+    document traité (pas pendant le traitement : la fiche se rafraîchit et
+    effacerait la saisie), `POST /documents/{id}/comment` (HTMX).
+  - Validé en réel sur une instance séparée (:8091, `jobs_test`) :
+    migration d'un document sans champ, enregistrement, recherche,
+    rechargement. Tests Mongo d'intégration verts.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

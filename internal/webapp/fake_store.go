@@ -161,6 +161,9 @@ func jobMatchesSearch(j Job, lowerSearch string) bool {
 			return true
 		}
 	}
+	if strings.Contains(strings.ToLower(j.Comment), lowerSearch) {
+		return true
+	}
 	if strings.Contains(strings.ToLower(j.SearchText), lowerSearch) {
 		return true
 	}

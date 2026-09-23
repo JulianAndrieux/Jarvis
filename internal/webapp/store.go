@@ -14,7 +14,7 @@ const DefaultListLimit = 200
 // ListQuery filtre/borne un appel à Store.List.
 type ListQuery struct {
 	// Search, si non vide, ne retient que les jobs dont Filename,
-	// DocType, un des Tags, ou SearchText (le texte du document —
+	// DocType, un des Tags, Comment ou SearchText (le texte du document —
 	// jalon 18, "chercher dans les documents") contient cette
 	// sous-chaîne (insensible à la casse) — la barre de recherche de la
 	// bibliothèque de documents.

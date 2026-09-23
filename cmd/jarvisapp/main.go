@@ -135,6 +135,15 @@ func main() {
 		log.Fatalf("jarvisapp: %v", err)
 	}
 
+	// Ticket "Ajouter commentaire sur document" : chaque document existant
+	// reçoit un commentaire vide. Idempotent, donc sans risque à chaque
+	// démarrage ; un échec n'empêche pas l'application de servir.
+	if n, err := jobStore.MigrateComments(context.Background()); err != nil {
+		log.Printf("jarvisapp: migration des commentaires : %v", err)
+	} else if n > 0 {
+		log.Printf("jarvisapp: %d document(s) ont reçu un commentaire vide", n)
+	}
+
 	jobs := webapp.NewJobManager(jobStore, runner)
 	jobs.Renderer = parsing.PdftoppmRenderer{}
 	// Jalon 25 : conversion locale des fichiers non-PDF (LibreOffice,

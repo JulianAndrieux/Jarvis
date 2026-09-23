@@ -118,6 +118,7 @@ func (s *Server) Routes() chi.Router {
 	r.Get("/documents/{id}/thumbnail", s.handleDocumentThumbnail)
 	r.Get("/documents/{id}/panel", s.handleDocumentPanel)
 	r.Post("/documents/{id}/tags", s.handleDocumentTags)
+	r.Post("/documents/{id}/comment", s.handleDocumentComment)
 	r.Post("/documents/{id}/reprocess", s.handleDocumentReprocess)
 	r.Delete("/documents/{id}", s.handleDocumentDelete)
 
@@ -252,6 +253,24 @@ func (s *Server) handleDocumentTags(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.TagsForm(id, tags).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render tags form %s: %v\n", id, err)
+	}
+}
+
+func (s *Server) handleDocumentComment(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulaire invalide : "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	comment := strings.TrimSpace(r.FormValue("comment"))
+	if err := s.Jobs.SetComment(r.Context(), id, comment); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.CommentForm(id, comment, true).Render(r.Context(), w); err != nil {
+		fmt.Fprintf(os.Stderr, "jarvisapp: render comment form %s: %v\n", id, err)
 	}
 }
 

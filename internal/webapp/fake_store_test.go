@@ -371,3 +371,20 @@ func TestFakeStore_List_FiltersByFormat(t *testing.T) {
 		t.Errorf("List(Format=sheet) = %+v", got)
 	}
 }
+
+// Ticket "Ajouter commentaire sur document" : les mots du commentaire
+// sont trouvés par la barre de recherche.
+func TestFakeStore_List_FiltersBySearchOnComment(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	_, _ = s.Create(ctx, Job{ID: "1", Filename: "a.pdf", Comment: "À rappeler au Notaire avant lundi"})
+	_, _ = s.Create(ctx, Job{ID: "2", Filename: "b.pdf"})
+
+	got, err := s.List(ctx, ListQuery{Search: "notaire"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "1" {
+		t.Errorf("search by comment = %+v, want just job 1", got)
+	}
+}

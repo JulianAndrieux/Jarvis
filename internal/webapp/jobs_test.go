@@ -1024,3 +1024,50 @@ func TestJobManager_TagsSetDuringProcessingSurvive(t *testing.T) {
 		t.Errorf("DocType = %q, the processing result must still be written", done.DocType)
 	}
 }
+
+// --- Commentaire (ticket "Ajouter commentaire sur document") ---
+
+func TestJobManager_SetComment_UpdatesStoredComment(t *testing.T) {
+	m := newTestJobManager(&fakeRunner{})
+	job, err := m.Submit(context.Background(), "doc.pdf", []byte("content"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetComment(context.Background(), job.ID, "  Payée le 12/09  \n"); err != nil {
+		t.Fatalf("SetComment() error = %v, want nil", err)
+	}
+	got, ok, err := m.Get(context.Background(), job.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get() = %+v, %v, %v", got, ok, err)
+	}
+	if got.Comment != "Payée le 12/09" {
+		t.Errorf("got.Comment = %q, want the trimmed comment", got.Comment)
+	}
+}
+
+func TestJobManager_SetComment_UnknownJobID_ReturnsError(t *testing.T) {
+	m := newTestJobManager(&fakeRunner{})
+	if err := m.SetComment(context.Background(), "does-not-exist", "x"); err == nil {
+		t.Fatal("SetComment() error = nil, want non-nil for an unknown job id")
+	}
+}
+
+// Même piège que les tags (jalon 27) : un commentaire écrit pendant le
+// traitement ne doit pas être effacé quand le traitement se termine.
+func TestJobManager_CommentSetDuringProcessingSurvives(t *testing.T) {
+	store := NewFakeStore()
+	runner := &fakeRunner{started: make(chan struct{}), proceed: make(chan struct{}), result: pipeline.Result{DocType: "facture"}}
+	m := NewJobManager(store, runner)
+	m.WorkDir = t.TempDir()
+
+	job, _ := m.Submit(context.Background(), "a.pdf", []byte("%PDF"))
+	<-runner.started
+	if err := m.SetComment(context.Background(), job.ID, "à vérifier"); err != nil {
+		t.Fatal(err)
+	}
+	close(runner.proceed)
+	done := waitStatus(t, store, job.ID, StatusDone)
+	if done.Comment != "à vérifier" {
+		t.Errorf("comment after processing = %q, want it kept (set while running)", done.Comment)
+	}
+}

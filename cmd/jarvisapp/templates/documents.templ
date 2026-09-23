@@ -273,6 +273,10 @@ templ DocumentPanel(job webapp.Job, view ResultView, docTypes []string) {
 	} else {
 		<section class="doc-panel" id="doc-panel" data-tabs>
 			@panelHeader(job, view)
+			// Hors des onglets : visible dès l'ouverture du document.
+			<div class="card" id="comment-section">
+				@CommentForm(job.ID, job.Comment, false)
+			</div>
 			<nav class="tabs" role="tablist">
 				<button class="tab" role="tab" data-tab="data" aria-selected="true">Données</button>
 				<button class="tab" role="tab" data-tab="ocr" aria-selected="false">Texte OCR <span class="count">{ fmt.Sprint(len(view.OCRPages)) }</span></button>
@@ -465,6 +469,21 @@ templ infoTab(job webapp.Job, view ResultView, docTypes []string) {
 			Supprimer ce document
 		</button>
 	</div>
+}
+
+// CommentForm : commentaire libre sur le document, trouvé par la barre
+// de recherche. saved affiche la confirmation après un enregistrement.
+templ CommentForm(jobID, comment string, saved bool) {
+	<form hx-post={ "/documents/" + jobID + "/comment" } hx-target="#comment-section" hx-swap="innerHTML">
+		<label for="comment">Commentaire — ses mots sont trouvés par la recherche</label>
+		<textarea name="comment" id="comment" rows="4">{ comment }</textarea>
+		<div class="field-row comment-actions">
+			<button type="submit">Enregistrer</button>
+			if saved {
+				<span class="muted">✓ Enregistré</span>
+			}
+		</div>
+	</form>
 }
 
 templ TagsForm(jobID string, tags []string) {
