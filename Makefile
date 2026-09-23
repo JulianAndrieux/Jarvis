@@ -1,4 +1,4 @@
-.PHONY: test test-integration build build-app build-launcher package-app templ fmt vet run-app
+.PHONY: test test-integration build build-app build-launcher package-app signing-identity templ fmt vet run-app
 
 test:
 	go test ./...
@@ -38,14 +38,24 @@ run-app: build-app
 build-launcher:
 	go build -o bin/jarvis-launcher ./cmd/jarvis-launcher
 
+# Identité de signature locale et stable (une fois par machine) : macOS
+# reconnaît alors Jarvis.app d'une compilation à l'autre et garde son
+# autorisation d'accès au dossier Documents. Cf. scripts/signing_identity.sh.
+signing-identity:
+	./scripts/signing_identity.sh
+
 # Empaquette jarvis-launcher en .app macOS minimal (juste la structure
 # Info.plist standard, aucun outil tiers) pour un raccourci Dock.
-# Non signé : premier lancement via clic droit > Ouvrir dans le Finder.
+# Signé avec l'identité locale (make signing-identity), sinon ad hoc.
+# Premier lancement via clic droit > Ouvrir dans le Finder (Gatekeeper).
 package-app: build-launcher
 	rm -rf dist/Jarvis.app
 	mkdir -p dist/Jarvis.app/Contents/MacOS
-	cp packaging/macos/Info.plist dist/Jarvis.app/Contents/Info.plist
-	cp bin/jarvis-launcher dist/Jarvis.app/Contents/MacOS/jarvis-launcher
+	# cp -X : sans attributs étendus — com.apple.macl (posé par macOS,
+	# impossible à retirer ensuite) empêcherait la signature.
+	cp -X packaging/macos/Info.plist dist/Jarvis.app/Contents/Info.plist
+	cp -X bin/jarvis-launcher dist/Jarvis.app/Contents/MacOS/jarvis-launcher
+	./scripts/sign_app.sh dist/Jarvis.app
 	@echo "dist/Jarvis.app prêt — glisse-le dans /Applications ou le Dock."
 
 fmt:

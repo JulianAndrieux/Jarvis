@@ -2126,8 +2126,29 @@ spécifique à `localhost`.
     refusé ; l'agent s'arrête **dès la première erreur d'accès** et
     **vérifie l'accès au dépôt avant d'appeler le modèle**, avec un message
     qui désigne l'accès (et où le rétablir) au lieu d'accuser le ticket.
-  - Piste de fond, non tranchée : dépôt hors de `~/Documents` (dossier non
-    protégé), ou `Jarvis.app` signé avec une identité stable.
+  - **Suite retenue par l'utilisateur : `Jarvis.app` signé avec une
+    identité stable.** `make signing-identity` (une fois,
+    `scripts/signing_identity.sh`) : certificat auto-signé de signature
+    de code, trousseau dédié `~/.jarvis/signing/` (mot de passe aléatoire
+    à côté, 0600 ; ajouté à la liste de recherche des trousseaux, sans
+    quoi codesign ne trouve pas l'identité). `make package-app` signe
+    (`scripts/sign_app.sh`) : l'exigence désignée devient `identifier
+    "com.julianandrieux.jarvis.launcher" and certificate leaf = H"..."`,
+    **identique d'une compilation à l'autre** (vérifié : deux binaires
+    différents, même exigence) — l'autorisation macOS n'est plus liée à
+    l'empreinte du binaire. Sans identité : signature ad hoc et
+    avertissement.
+  - **Constat en chemin : iCloud Drive synchronise `~/Documents`**
+    (option « Bureau et Documents »), donc le dépôt. Son fournisseur de
+    fichiers pose des attributs étendus (`FinderInfo`, `fileprovider`)
+    quelques secondes après chaque écriture, et macOS pose
+    `com.apple.macl` (non retirable) sur le binaire : codesign refusait
+    par intermittence (« detritus not allowed »). Copie sans attributs
+    (`cp -X`), signature dans un dossier temporaire hors d'iCloud puis
+    recopie (`ditto --noextattr`), vérification non stricte (iCloud
+    repose `FinderInfo` sur le bundle ensuite ; la signature reste
+    valide). Un dépôt git synchronisé par iCloud reste fragile en soi
+    (conflits, fichiers évincés) : à garder en tête.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 
