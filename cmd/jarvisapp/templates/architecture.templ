@@ -1,0 +1,186 @@
+package templates
+
+import "fmt"
+
+templ ArchitecturePage(v ArchitectureView) {
+	@Layout("Jarvis — architecture", "architecture") {
+		<div class="page-wide arch-page" data-tabs>
+			<div class="page-title">
+				<h2>Architecture</h2>
+				<span class="muted arch-live">
+					<span class="live-dot"></span>
+					à jour en temps réel
+					if len(v.Commits) > 0 {
+						· dernier commit { v.Commits[0].Date.Local().Format("02/01/2006 15:04") }
+					}
+					if !v.DocModified.IsZero() {
+						· CLAUDE.md modifié { v.DocModified.Local().Format("02/01/2006 15:04") }
+					}
+				</span>
+			</div>
+			<!-- Empreinte du dépôt : la page se recharge quand elle change. -->
+			<div hx-get={ "/architecture/version?v=" + v.Fingerprint } hx-trigger="every 4s" hx-swap="none"></div>
+			for _, e := range v.Errors {
+				<div class="card arch-error">{ e }</div>
+			}
+			<nav class="tabs" role="tablist">
+				<button class="tab" role="tab" data-tab="infra" aria-selected="true">Infrastructure</button>
+				<button class="tab" role="tab" data-tab="decisions" aria-selected="false">Choix techniques</button>
+				<button class="tab" role="tab" data-tab="milestones" aria-selected="false">Jalons <span class="count">{ fmt.Sprint(len(v.Doc.Milestones)) }</span></button>
+				<button class="tab" role="tab" data-tab="commits" aria-selected="false">Commits <span class="count">{ fmt.Sprint(len(v.Commits)) }</span></button>
+			</nav>
+			<div class="tab-panel" data-tab-panel="infra">
+				<div hx-get="/architecture/infra" hx-trigger="load, every 5s" hx-swap="innerHTML">
+					<div class="muted">Sondage des composants…</div>
+				</div>
+			</div>
+			<div class="tab-panel" data-tab-panel="decisions" hidden>
+				@decisionsTab(v)
+			</div>
+			<div class="tab-panel" data-tab-panel="milestones" hidden>
+				@milestonesTab(v)
+			</div>
+			<div class="tab-panel" data-tab-panel="commits" hidden>
+				@commitsTab(v)
+			</div>
+		</div>
+		<script>
+			// L'onglet courant survit au rechargement automatique (ancre d'URL).
+			(function () {
+				var root = document.querySelector(".arch-page");
+				root.addEventListener("click", function (e) {
+					var tab = e.target.closest("[data-tab]");
+					if (tab) history.replaceState(null, "", "#" + tab.getAttribute("data-tab"));
+				});
+				var initial = location.hash && root.querySelector('[data-tab="' + location.hash.slice(1) + '"]');
+				if (initial) initial.click();
+			})();
+		</script>
+	}
+}
+
+templ decisionsTab(v ArchitectureView) {
+	<div class="arch-columns">
+		<aside class="arch-toc">
+			for _, s := range decisionSections(v.Doc) {
+				<a href={ templ.SafeURL("#" + sectionID(s.Title)) }>{ s.Title }</a>
+			}
+			if len(v.Doc.References) > 0 {
+				<div class="section-title">Référence</div>
+				for _, s := range v.Doc.References {
+					<a href={ templ.SafeURL("#" + sectionID(s.Title)) }>{ s.Title }</a>
+				}
+			}
+		</aside>
+		<div class="arch-doc">
+			for _, s := range decisionSections(v.Doc) {
+				<section class="card md" id={ sectionID(s.Title) }>
+					<h3>{ s.Title }</h3>
+					@markdown(s.Body)
+				</section>
+			}
+			for _, s := range v.Doc.References {
+				<details class="card md" id={ sectionID(s.Title) }>
+					<summary><h3>{ s.Title }</h3></summary>
+					@markdown(s.Body)
+				</details>
+			}
+		</div>
+	</div>
+}
+
+templ milestonesTab(v ArchitectureView) {
+	if len(v.Changes) > 0 {
+		<div class="card wip">
+			<div class="wip-head">
+				<span class="chip chip-running">En cours</span>
+				<strong>{ fmt.Sprint(len(v.Changes)) } fichier(s) modifié(s), pas encore commité(s)</strong>
+			</div>
+			<ul class="wip-files">
+				for _, c := range v.Changes {
+					<li><span class="muted">{ changeLabel(c.Status) }</span> <code>{ c.Path }</code></li>
+				}
+			</ul>
+		</div>
+	}
+	<div class="timeline">
+		for _, m := range milestonesNewestFirst(v.Doc) {
+			<details class="milestone">
+				<summary>
+					if m.Number != "" {
+						<span class="milestone-num">{ m.Number }</span>
+					} else {
+						<span class="milestone-num muted">—</span>
+					}
+					<span class="milestone-title">{ m.Title }</span>
+					<span class={ milestoneChip(m.Status) } title={ m.Status }>{ m.Status }</span>
+				</summary>
+				<div class="milestone-body md">
+					@markdown(m.Body)
+					if cs := milestoneCommits(m, v.Commits); len(cs) > 0 {
+						<div class="section-title">Commits</div>
+						for _, c := range cs {
+							<div class="commit-mini"><code>{ c.Short }</code> { c.Subject } <span class="muted">{ c.Date.Local().Format("02/01/2006") }</span></div>
+						}
+					}
+				</div>
+			</details>
+		}
+	</div>
+}
+
+templ commitsTab(v ArchitectureView) {
+	<div class="commit-list">
+		for _, c := range v.Commits {
+			<details class="commit" hx-get={ "/architecture/commits/" + c.Hash } hx-trigger="toggle once" hx-target="find .commit-diff" hx-swap="innerHTML">
+				<summary>
+					<code class="commit-hash">{ c.Short }</code>
+					<span class="commit-subject">{ c.Subject }</span>
+					if c.Milestone != "" {
+						<span class="chip chip-type">{ c.Milestone }</span>
+					}
+					<span class="muted commit-meta">{ c.Author } · { c.Date.Local().Format("02/01/2006 15:04") }</span>
+				</summary>
+				if c.Body != "" {
+					<div class="commit-body md">
+						@markdown(c.Body)
+					</div>
+				}
+				<div class="commit-diff"><div class="muted">Chargement du diff…</div></div>
+			</details>
+		}
+	</div>
+}
+
+templ CommitDiff(diff string) {
+	if diff == "" {
+		<div class="muted">Aucune modification de fichier.</div>
+	} else {
+		@renderDiff(diff)
+	}
+}
+
+templ InfraPanel(v InfraView) {
+	{{ label, chip := infraSummary(v.Diagram) }}
+	<div class="infra-head">
+		<span class={ chip }>{ label }</span>
+		<span class="muted">sondé à { v.CheckedAt.Format("15:04:05") } · toutes les 5 s</span>
+	</div>
+	<div class="card infra-diagram">
+		@templ.Raw(v.SVG)
+	</div>
+	<table class="infra-table">
+		<thead><tr><th>Composant</th><th>Rôle</th><th>État</th><th>Détail</th></tr></thead>
+		<tbody>
+			for _, n := range v.Diagram.Nodes {
+				<tr>
+					<td><strong>{ n.Title }</strong></td>
+					<td class="muted">{ n.Role }</td>
+					<td><span class={ healthChip(n.Status.Health) }>{ healthLabel(n.Status.Health) }</span></td>
+					<td class="mono">{ n.Status.Detail }</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+

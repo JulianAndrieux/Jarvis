@@ -399,6 +399,62 @@ templ Layout(title string, active string) {
 				.confidence { font-variant-numeric: tabular-nums; }
 				code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
 				.muted { color: var(--muted); font-size: .85rem; }
+				/* Architecture (jalon 29). */
+				.arch-live { display: inline-flex; align-items: center; gap: .4rem; }
+				.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+				.arch-error { border-color: var(--danger); color: var(--danger); }
+				.arch-columns { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+				.arch-toc { position: sticky; top: calc(var(--header-h) + 1rem); display: flex; flex-direction: column; gap: .15rem; }
+				.arch-toc a { color: var(--text-2); font-size: .88rem; padding: .3rem .5rem; border-radius: 6px; }
+				.arch-toc a:hover { background: var(--surface-2); text-decoration: none; }
+				.arch-doc .card:first-child { margin-top: 0; }
+				.md h3 { margin: 0 0 .6rem; font-size: 1.05rem; }
+				.md h4 { margin: 1rem 0 .4rem; font-size: .95rem; }
+				.md summary { cursor: pointer; }
+				.md summary h3 { display: inline; }
+				.md ul, .md ol { margin: .3rem 0; padding-left: 1.25rem; }
+				.md li { margin: .22rem 0; line-height: 1.5; font-size: .9rem; }
+				.md p { margin: .4rem 0; line-height: 1.55; font-size: .9rem; }
+				.md pre { background: var(--code-bg); color: var(--code-text); padding: .8rem 1rem; border-radius: 8px; overflow-x: auto; font-size: .8rem; }
+				.md del { color: var(--muted); }
+				.timeline { display: flex; flex-direction: column; gap: .5rem; }
+				.milestone, .commit { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+				.milestone > summary, .commit > summary { display: flex; align-items: center; gap: .75rem; padding: .7rem 1rem; cursor: pointer; list-style: none; }
+				.milestone > summary::-webkit-details-marker, .commit > summary::-webkit-details-marker { display: none; }
+				.milestone[open] > summary, .commit[open] > summary { border-bottom: 1px solid var(--border); }
+				.milestone-num { min-width: 3.4rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+				.milestone-title { flex: 1; font-weight: 600; }
+				.milestone .chip { max-width: 34%; overflow: hidden; text-overflow: ellipsis; }
+				.milestone-body, .commit-body { padding: .6rem 1.25rem 1rem; }
+				.commit-mini { font-size: .86rem; margin: .2rem 0; }
+				.commit-list { display: flex; flex-direction: column; gap: .4rem; }
+				.commit-hash { color: var(--accent); }
+				.commit-subject { flex: 1; font-weight: 550; }
+				.commit-meta { white-space: nowrap; }
+				.commit-diff { padding: 0 1rem 1rem; }
+				.wip { border-color: var(--warn); }
+				.wip-head { display: flex; gap: .6rem; align-items: center; }
+				.wip-files { margin: .6rem 0 0; padding-left: 1.2rem; font-size: .86rem; columns: 2; }
+				.infra-head { display: flex; gap: .75rem; align-items: center; }
+				.infra-diagram { overflow-x: auto; padding: .75rem; }
+				.infra-diagram svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+				svg.infra .node rect { fill: var(--surface-2); stroke: var(--border); stroke-width: 1.5; }
+				svg.infra .node.up rect { fill: var(--ok-soft); stroke: var(--ok); }
+				svg.infra .node.down rect { fill: var(--danger-soft); stroke: var(--danger); stroke-width: 2; }
+				svg.infra .node.off rect { stroke-dasharray: 5 4; }
+				svg.infra .dot { fill: var(--muted); }
+				svg.infra .up .dot { fill: var(--ok); }
+				svg.infra .down .dot { fill: var(--danger); }
+				svg.infra text { fill: var(--text); font-family: inherit; }
+				svg.infra .title { font-size: 14px; font-weight: 700; }
+				svg.infra .role { font-size: 11.5px; fill: var(--text-2); }
+				svg.infra .detail { font-size: 11px; fill: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+				svg.infra .down .detail { fill: var(--danger); }
+				svg.infra .edge { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+				svg.infra .arrowhead { fill: var(--muted); }
+				svg.infra .edge-label { font-size: 11px; fill: var(--text-2); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
+				.infra-table td.mono { font-size: .8rem; word-break: break-all; }
+				@media (max-width: 800px) { .arch-columns { grid-template-columns: 1fr; } .arch-toc { position: static; } .wip-files { columns: 1; } }
 			</style>
 			<script>
 				// Onglets de la vue détail (jalon 22). Délégation sur document :
@@ -427,6 +483,7 @@ templ Layout(title string, active string) {
 					<a href="/classes" class={ templ.KV("active", active == "classes") }>Classes</a>
 					<a href="/model" class={ templ.KV("active", active == "model") }>Modèle</a>
 					<a href="/tests" class={ templ.KV("active", active == "tests") }>Tests</a>
+					<a href="/architecture" class={ templ.KV("active", active == "architecture") }>Architecture</a>
 				</nav>
 				if active == "classes" || active == "tests" || active == "model" {
 					<form hx-post="/refresh" hx-target="body" hx-swap="outerHTML">

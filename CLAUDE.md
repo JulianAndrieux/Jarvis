@@ -161,8 +161,7 @@ pour les tests. **Aucun test ne doit nécessiter de GPU.**
       quasi-vide se présente en production : prévoir un timeout et
       accepter l'échec (cohérent avec la stratégie retenue).
 
-### Corpus de fixtures (testdata/fixtures/, régénéré par
-scripts/gen_fixtures.py)
+### Corpus de fixtures (testdata/fixtures/, régénéré par scripts/gen_fixtures.py)
 - `native.pdf` — texte natif, 1 page.
 - `scanned.pdf` — 1 page vide, aucun texte ni image (triage uniquement).
 - `mixed.pdf` — 2 pages, texte natif + page vide.
@@ -227,8 +226,8 @@ tournant simultanément :
 **Un seul binaire, un seul port** — remplace depuis le jalon 13 les deux
 anciens binaires `cmd/jarvisweb` (upload/suivi) et `cmd/codebrowser`
 (navigateur de code/tests), fusionnés sous une nav commune (Importer ·
-Documents · Tickets · Classes · Modèle · Tests — renommée au jalon 22,
-Modèle ajouté au jalon 24, Tickets au jalon 26). Voir "État des jalons" plus bas pour le détail de la
+Documents · Tickets · Classes · Modèle · Tests · Architecture — renommée au jalon 22,
+Modèle ajouté au jalon 24, Tickets au jalon 26, Architecture au jalon 29). Voir "État des jalons" plus bas pour le détail de la
 fusion, et "Atelier de code" pour le détail du navigateur de code/tests
 lui-même (moteurs inchangés par la fusion).
 
@@ -1847,8 +1846,83 @@ spécifique à `localhost`.
     `llama-server`, ni `go`, ni `soffice` trouvés) — `WithToolPaths`,
     testé, commit séparé.
 
-## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
-développement
+- **Correctifs du harnais de l'agent (ticket réel "Ajouter commentaire sur
+  document") : faits.** Le ticket de l'utilisateur échouait en
+  développement. Diagnostic : plan déjà faux (fichiers sans rapport ; la
+  vraie cible est `webapp.Job`, son store, la recherche et la vue détail),
+  puis 40 étapes à chercher des identifiants inventés sans rien modifier ;
+  la relance rejouait le même déroulé (température 0). Ticket trop gros
+  pour Qwen3-8B à 8k de contexte — mais cinq défauts du harnais trouvés et
+  corrigés (TDD, commit bfb701a) : stagnation détectée (recadrage après 6
+  appels stériles d'affilée, arrêt à 12 — un échec rapide et expliqué
+  plutôt que 40 étapes), température 0,5 à partir de la deuxième tentative,
+  vérification "aucun changement" avant la vérification complète (plus de
+  minutes de tests sur une copie intacte), délai et messages d'erreur.
+  - **Bug trouvé en relançant ce même ticket, corrigé** : l'agent n'avait
+    rien modifié, mais le ticket est passé en "diff à valider" avec un faux
+    diff — `workspace.Diff` comparait la copie à la **pointe** de main, qui
+    avait avancé depuis la création de la copie (commit bfb701a) : ces
+    commits apparaissaient à l'envers, le contrôle "diff vide" ne voyait
+    rien, et le résumé de l'agent ("champ Commentaire ajouté") était
+    invraisemblable sans que rien ne le contredise. Diff désormais calculé
+    depuis la **base commune** (`git merge-base`) ; une copie reprise sans
+    travail propre est ramenée au main actuel (avance rapide seulement),
+    sinon l'agent développerait sur du code périmé. Testé sur un vrai dépôt
+    (main qui avance après la création de la copie). Accepter un diff ne
+    fait encore que changer le statut (le déploiement est un jalon à
+    venir) : main n'a jamais été touché.
+- **Jalon 29 — page Architecture (choix techniques, jalons, commits,
+  infrastructure en temps réel) : fait, en attente de validation
+  utilisateur.** Demandé : "une page où je vois tous les choix techniques
+  qu'on a faits, les différents commits avec l'explication, un schéma de
+  l'infrastructure ; cette information devra être mise à jour en temps
+  réel". Le déploiement des tickets, prévu au jalon 29, devient le jalon 30.
+  - **Aucune donnée recopiée** : tout est relu à chaque affichage depuis
+    les sources — CLAUDE.md (décisions, contraintes, jalons), git
+    (commits, message complet, diff ; travail non commité) et les
+    composants eux-mêmes (sondés). Tenir CLAUDE.md et les messages de
+    commit à jour suffit à tenir la page à jour.
+  - **`internal/projectinfo`** (nouveau, bibliothèque standard + `git`) :
+    `Commits` (historique, jalon cité en tête du sujet), `Show` (diff d'un
+    commit — le hash vient de l'URL : **hexadécimal uniquement**, jamais
+    une révision ni une option, `--end-of-options`), `WorkingChanges`,
+    `Fingerprint` (commit courant + fichiers modifiés et leur date +
+    CLAUDE.md) ; `ParseProjectDoc` (sections `##`, jalons de "État des
+    jalons" avec numéro/titre/statut, titres sur plusieurs lignes, sous-
+    sections `###` en référence ; tolérant par construction, garde-fou sur
+    le vrai CLAUDE.md) ; `RenderMarkdown` (le sous-ensemble utilisé ici,
+    **tout échappé**) ; sondes (`LlamaCheck` : `/health` puis modèle servi ;
+    `BinaryCheck`, `DirCheck`, `FuncCheck`), `Diagram.Probe` (en parallèle,
+    délai commun) et `RenderSVG` (grille, liens verticaux entre rangées aux
+    arrivées réparties, couleurs par classes CSS du thème).
+  - **Temps réel sans tout redessiner** : la page sonde toutes les 4 s une
+    empreinte (`/architecture/version`) — 204 si rien n'a changé, sinon
+    `HX-Refresh` ; l'onglet courant survit au rechargement (ancre d'URL).
+    Un commit, une modification de fichier ou de CLAUDE.md apparaît donc en
+    quelques secondes, sans perdre sa place le reste du temps. Le schéma
+    d'infrastructure se re-sonde toutes les 5 s.
+  - **UI** (onglet Architecture) : **Infrastructure** (schéma SVG : entrées,
+    application, traitements, modèles, stockage — état et détail réels de
+    chaque composant : modèle servi, latence Atlas, documents en file,
+    outils trouvés — et tableau), **Choix techniques** (décisions
+    tranchées/en attente, contraintes, architecture, non-goals... avec
+    sommaire ; setup et corpus en référence), **Jalons** (du plus récent,
+    statut, détail, commits associés ; travail non commité en tête),
+    **Commits** (message complet, diff coloré chargé à l'ouverture).
+  - Deux titres de CLAUDE.md coupés sur deux lignes remis sur une (ils
+    s'affichaient tronqués).
+  - Testé : `projectinfo` (vrai dépôt git temporaire ; découpage d'un
+    CLAUDE.md d'exemple et du vrai ; Markdown : listes imbriquées,
+    continuations, code protégé, gras autour du code, échappement ; sondes
+    contre `httptest` ; délai et parallélisme ; SVG), `cmd/jarvisapp`
+    (page : décisions, jalons, commits, échappement ; empreinte inchangée
+    puis changée ; diff d'un commit, révision non-hash refusée ; schéma
+    sondé ; onglet de nav). Validation visuelle : binaire sur :8091
+    (collections de test), captures des quatre onglets — deux défauts
+    trouvés ainsi et corrigés (liens entre rangées qui s'entassaient sur le
+    flanc d'un nœud ; gras contenant du code non rendu).
+
+## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 
 **Fusionné dans `cmd/jarvisapp` au jalon 13** — cette section décrit les
 moteurs (`internal/codemap`/`internal/testmap`/`internal/testrunner`),

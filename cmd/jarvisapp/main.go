@@ -221,8 +221,9 @@ func main() {
 	}
 	// Développement (jalon 28) : copie de travail git isolée par ticket,
 	// vérification finale refaite par Jarvis.
+	var wtRoot string
 	if *agentDev {
-		wtRoot := *worktreesDir
+		wtRoot = *worktreesDir
 		if wtRoot == "" {
 			home, _ := os.UserHomeDir()
 			wtRoot = filepath.Join(home, ".jarvis", "worktrees")
@@ -247,6 +248,15 @@ func main() {
 	log.Printf("jarvisapp: agent des tickets -> %s (%s)", *agentURL, *agentModel)
 
 	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager}
+	srv.Infra = srv.buildInfra(InfraConfig{
+		Addr:   *addr,
+		VLMURL: *vlmURL, VLMModel: *vlmModel,
+		LLMURL: *llmURL, LLMModel: *llmModel,
+		AgentURL: *agentURL, AgentModel: *agentModel,
+		MongoDB: *mongoDB, JobsCollection: *mongoCollection, TicketsCol: *ticketsCollection,
+		WatchDir: *watchDir, OutDir: *outDir, WorktreesDir: wtRoot,
+		AgentDev: *agentDev,
+	})
 	log.Printf("jarvisapp: analyse de %s...", dir)
 	if err := srv.Refresh(); err != nil {
 		log.Fatalf("jarvisapp: %v", err)

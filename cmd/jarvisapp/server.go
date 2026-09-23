@@ -23,6 +23,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/diagram"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
+	"github.com/JulianAndrieux/Jarvis/internal/projectinfo"
 	"github.com/JulianAndrieux/Jarvis/internal/testmap"
 	"github.com/JulianAndrieux/Jarvis/internal/testrunner"
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
@@ -41,6 +42,9 @@ type Server struct {
 	// Tickets : outil de tickets et agent d'analyse (jalons 26-27) ; nil
 	// désactive l'onglet.
 	Tickets *tickets.Manager
+	// Infra : composants sondés et dessinés sur la page Architecture
+	// (jalon 29) ; vide, le schéma est vide.
+	Infra projectinfo.Diagram
 
 	ModuleDir string
 
@@ -123,6 +127,7 @@ func (s *Server) Routes() chi.Router {
 	r.Get("/tests", s.handleTests)
 	r.Post("/tests/run", s.handleTestsRun)
 	r.Post("/refresh", s.handleRefresh)
+	s.architectureRoutes(r)
 
 	return r
 }
