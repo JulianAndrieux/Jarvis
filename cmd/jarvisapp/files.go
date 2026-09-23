@@ -290,7 +290,7 @@ func emailViewHTML(m email.Message) string {
 	field("À", addresses(m.To))
 	field("Cc", addresses(m.Cc))
 	if !m.Date.IsZero() {
-		field("Date", m.Date.Format("02/01/2006 15:04"))
+		field("Date", m.Date.Local().Format("02/01/2006 15:04"))
 	}
 	b.WriteString("</dl></div>")
 	if m.HTML != "" {

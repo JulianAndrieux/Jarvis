@@ -18,7 +18,7 @@ func formatStarted(job webapp.Job) string {
 	if job.StartedAt.IsZero() {
 		return "en attente de démarrage"
 	}
-	return "démarré à " + job.StartedAt.Format("15:04:05")
+	return "démarré à " + job.StartedAt.Local().Format("15:04:05")
 }
 
 // formatDuration décrit le temps de traitement d'un job terminé — "" si
@@ -28,7 +28,7 @@ func formatDuration(job webapp.Job) string {
 	if job.StartedAt.IsZero() {
 		return ""
 	}
-	return fmt.Sprintf("démarré à %s, terminé en %s", job.StartedAt.Format("15:04:05"), job.FinishedAt.Sub(job.StartedAt).Round(100*time.Millisecond))
+	return fmt.Sprintf("démarré à %s, terminé en %s", job.StartedAt.Local().Format("15:04:05"), job.FinishedAt.Sub(job.StartedAt).Round(100*time.Millisecond))
 }
 
 // FieldView est la vue d'un champ extrait (schema.Field aplati), prête à

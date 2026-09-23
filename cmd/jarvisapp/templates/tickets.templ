@@ -1,0 +1,134 @@
+package templates
+
+import "github.com/JulianAndrieux/Jarvis/internal/tickets"
+
+templ TicketsPage(list []tickets.Ticket) {
+	@Layout("Jarvis — tickets", "tickets") {
+		<div class="page-wide tickets-page">
+			<div class="page-title">
+				<h2>Tickets</h2>
+				<span class="muted">Décris un changement ; l'agent local l'analyse et propose un plan à valider.</span>
+			</div>
+			<div class="tickets-layout">
+				<form class="card ticket-form" method="post" action="/tickets">
+					<label for="title">Titre</label>
+					<input type="text" id="title" name="title" required placeholder="Ex. Filtrer les documents par date d'import"/>
+					<label for="need">Ce que je veux</label>
+					<textarea id="need" name="need" rows="6" placeholder="Décris le besoin, le contexte, ce qui te gêne aujourd'hui…"></textarea>
+					<label for="acceptance">Critères d'acceptation (un par ligne)</label>
+					<textarea id="acceptance" name="acceptance" rows="4" placeholder="Ex. /documents?since=2026-09-01 ne liste que les documents importés depuis cette date"></textarea>
+					<button type="submit" class="button-primary">Créer le ticket</button>
+				</form>
+				<div class="ticket-list">
+					if len(list) == 0 {
+						<div class="empty-state"><p>Aucun ticket pour l'instant.</p></div>
+					}
+					for _, t := range list {
+						<a class="ticket-row" href={ templ.SafeURL("/tickets/" + t.ID) }>
+							<span class="ticket-title">{ t.Title }</span>
+							<span class={ ticketChipClass(t.Status) }>{ t.Status.Label() }</span>
+							<span class="muted">{ t.CreatedAt.Local().Format("02/01/2006 15:04") }</span>
+						</a>
+					}
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ TicketPage(t tickets.Ticket) {
+	@Layout("Jarvis — " + t.Title, "tickets") {
+		<div class="page-wide ticket-page">
+			<a class="panel-back" href="/tickets">← Tickets</a>
+			<h2 class="ticket-heading">{ t.Title }</h2>
+			<div class="ticket-columns">
+				<div>
+					<div class="section-title">Besoin</div>
+					<div class="card plan-text">{ t.Need }</div>
+					if t.Acceptance != "" {
+						<div class="section-title">Critères d'acceptation</div>
+						<div class="card plan-text">{ t.Acceptance }</div>
+					}
+					<div class="section-title">Commentaire</div>
+					<form hx-post={ "/tickets/" + t.ID + "/comment" } hx-target="#ticket-panel" hx-swap="outerHTML" hx-on::after-request="this.reset()">
+						<textarea name="text" rows="3" placeholder="Une précision pour l'agent (prise en compte à la prochaine révision)…"></textarea>
+						<button type="submit">Ajouter</button>
+					</form>
+					<div class="section-title">Zone dangereuse</div>
+					<button class="button-danger" hx-delete={ "/tickets/" + t.ID } hx-confirm="Supprimer définitivement ce ticket ?">Supprimer le ticket</button>
+				</div>
+				@TicketPanel(t)
+			</div>
+		</div>
+	}
+}
+
+// TicketPanel : statut, actions, plan et fil de l'agent. Se sonde lui-même
+// pendant l'analyse.
+templ TicketPanel(t tickets.Ticket) {
+	if t.Status.Active() {
+		<div id="ticket-panel" class="ticket-panel" hx-get={ "/tickets/" + t.ID + "/panel" } hx-trigger="load delay:2s" hx-swap="outerHTML">
+			@ticketPanelBody(t)
+		</div>
+	} else {
+		<div id="ticket-panel" class="ticket-panel">
+			@ticketPanelBody(t)
+		</div>
+	}
+}
+
+templ ticketPanelBody(t tickets.Ticket) {
+	<div class="ticket-status">
+		<span class={ ticketChipClass(t.Status) }>
+			if t.Status.Active() {
+				<span class="spinner"></span>
+			}
+			{ t.Status.Label() }
+		</span>
+	</div>
+	<div class="ticket-actions">
+		switch t.Status {
+			case tickets.Draft:
+				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/analyze" } hx-target="#ticket-panel" hx-swap="outerHTML">🤖 Lancer l'analyse</button>
+			case tickets.Failed:
+				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/analyze" } hx-target="#ticket-panel" hx-swap="outerHTML">↻ Relancer l'analyse</button>
+			case tickets.Analyzing:
+				<p class="muted">L'agent explore le code et prépare un plan — le fil ci-dessous se met à jour en direct.</p>
+			case tickets.PlanReady:
+				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/approve" } hx-target="#ticket-panel" hx-swap="outerHTML">✓ Valider le plan</button>
+				<form class="revise-form" hx-post={ "/tickets/" + t.ID + "/revise" } hx-target="#ticket-panel" hx-swap="outerHTML">
+					<input type="text" name="feedback" placeholder="Ce qu'il faut changer dans le plan…"/>
+					<button type="submit">Demander une révision</button>
+				</form>
+			case tickets.PlanApproved:
+				<p class="warn-box">Plan validé. Le développement automatique (branche isolée, tests, diff à relire) arrive au jalon 28.</p>
+		}
+		if t.Status == tickets.Draft || t.Status == tickets.PlanReady || t.Status == tickets.Failed || t.Status == tickets.PlanApproved {
+			<button class="button-ghost" hx-post={ "/tickets/" + t.ID + "/cancel" } hx-target="#ticket-panel" hx-swap="outerHTML">Annuler le ticket</button>
+		}
+	</div>
+	if t.Plan != "" {
+		<div class="section-title">Plan de l'agent</div>
+		<div class="card plan">
+			@renderPlan(t.Plan)
+		</div>
+	}
+	<div class="section-title">Fil du ticket</div>
+	<ol class="timeline">
+		for _, e := range t.Events {
+			<li class={ "tl-item", "tl-" + string(e.Kind) }>
+				<span class="tl-icon">{ eventIcon(e) }</span>
+				<div class="tl-body">
+					<div class="tl-head"><span class="tl-author">{ string(e.Author) }</span> <span class="muted">{ e.At.Local().Format("15:04:05") }</span></div>
+					<div class="tl-text">{ e.Text }</div>
+					if e.Detail != "" {
+						<details class="raw">
+							<summary>Voir la sortie</summary>
+							<pre>{ e.Detail }</pre>
+						</details>
+					}
+				</div>
+			</li>
+		}
+	</ol>
+}

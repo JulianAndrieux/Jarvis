@@ -605,7 +605,7 @@ func previewReady(job webapp.Job) bool {
 }
 
 func documentMeta(job webapp.Job, view ResultView) []string {
-	meta := []string{"Importé le " + job.CreatedAt.Format("02/01/2006 à 15:04")}
+	meta := []string{"Importé le " + job.CreatedAt.Local().Format("02/01/2006 à 15:04")}
 	if job.Size > 0 {
 		meta = append(meta, HumanSize(job.Size))
 	}

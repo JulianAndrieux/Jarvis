@@ -24,14 +24,17 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/agent"
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
+	"github.com/JulianAndrieux/Jarvis/internal/gate"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 	"github.com/JulianAndrieux/Jarvis/internal/store"
+	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 	"github.com/JulianAndrieux/Jarvis/internal/triage"
 	"github.com/JulianAndrieux/Jarvis/internal/vlm"
 	"github.com/JulianAndrieux/Jarvis/internal/watch"
@@ -62,6 +65,10 @@ func main() {
 	watchInterval := flag.Duration("watch-interval", watch.DefaultInterval, "Intervalle de sondage de --watch-dir")
 	vlmConcurrency := flag.Int("vlm-concurrency", 1, "Nombre de pages traitées en parallèle pour le VLM, par document ; 1 (défaut) = séquentiel. Le VLM (appels multimodaux) sature vite en parallèle, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
 	llmConcurrency := flag.Int("llm-concurrency", 1, "Nombre de pages traitées en parallèle pour l'extraction LLM, par document ; 1 (défaut) = séquentiel. Un contenu dense (page transcrite par le VLM) peut faire échouer le serveur llama.cpp (\"Context size has been exceeded\") au-delà de 1 en parallèle sur ce type de matériel, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
+	agentURL := flag.String("agent-url", "", "URL du serveur du modèle de l'agent des tickets (compatible OpenAI, appels d'outils) ; vide = --llm-url")
+	agentModel := flag.String("agent-model", "", "Modèle de l'agent des tickets ; vide = --llm-model")
+	agentContext := flag.Int("agent-context-chars", 16000, "Taille maximale (caractères) de la conversation envoyée à l'agent — à adapter au contexte du serveur (8192 jetons aujourd'hui)")
+	ticketsCollection := flag.String("tickets-collection", "tickets", "Collection MongoDB des tickets")
 	flag.Parse()
 
 	if *vlmURL == "" || *vlmModel == "" {
@@ -179,7 +186,43 @@ func main() {
 		log.Fatalf("jarvisapp: pas de go.mod dans %s (--module-dir doit pointer sur la racine du module) : %v", dir, err)
 	}
 
-	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir}
+	// Tickets et agent d'analyse (jalons 26-27). L'agent partage la file
+	// des documents : les modèles locaux ne sont jamais sollicités par
+	// les deux en même temps (cf. jalon 21 bis).
+	modelGate := gate.New(1)
+	jobs.Gate = modelGate
+	ticketsCtx, cancelTickets := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelTickets()
+	ticketStore, err := tickets.NewMongoStore(ticketsCtx, *mongoURI, *mongoDB, *ticketsCollection)
+	if err != nil {
+		log.Fatalf("jarvisapp: tickets : %v", err)
+	}
+	if *agentURL == "" {
+		*agentURL = *llmURL
+	}
+	if *agentModel == "" {
+		*agentModel = *llmModel
+	}
+	claudeMD, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	ticketManager := &tickets.Manager{
+		Store: ticketStore,
+		Gate:  modelGate,
+		Analyst: &agent.Analyzer{
+			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *llmTimeout}},
+			Tools:           agent.Tools{Root: dir},
+			ProjectBrief:    agent.ProjectBrief(string(claudeMD), 4000),
+			ContextChars:    *agentContext,
+			DisableThinking: true,
+		},
+	}
+	if n, err := ticketManager.RecoverOrphaned(context.Background()); err != nil {
+		log.Printf("jarvisapp: tickets orphelins : %v", err)
+	} else if n > 0 {
+		log.Printf("jarvisapp: %d analyse(s) de ticket interrompue(s) par le redémarrage, marquée(s) en échec", n)
+	}
+	log.Printf("jarvisapp: agent des tickets -> %s (%s)", *agentURL, *agentModel)
+
+	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager}
 	log.Printf("jarvisapp: analyse de %s...", dir)
 	if err := srv.Refresh(); err != nil {
 		log.Fatalf("jarvisapp: %v", err)

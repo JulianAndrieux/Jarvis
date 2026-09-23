@@ -353,6 +353,32 @@ templ Layout(title string, active string) {
 					.model-side { border-left: 0; border-top: 1px solid var(--border); }
 				}
 
+				/* Tickets (jalons 26-27) */
+				textarea { font: inherit; font-size: .92rem; padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); width: 100%; resize: vertical; }
+				.tickets-layout { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 1.5rem; align-items: start; }
+				.ticket-form { display: flex; flex-direction: column; gap: .35rem; margin: 0; }
+				.ticket-form button { margin-top: .6rem; align-self: flex-start; }
+				.ticket-list { display: flex; flex-direction: column; gap: .5rem; }
+				.ticket-row { display: grid; grid-template-columns: 1fr auto auto; gap: .8rem; align-items: center; padding: .75rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: inherit; }
+				.ticket-row:hover { box-shadow: var(--shadow-hover); text-decoration: none; }
+				.ticket-title { font-weight: 600; }
+				.ticket-heading { margin: .4rem 0 1rem; }
+				.ticket-columns { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 1.75rem; align-items: start; }
+				.ticket-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .75rem 0; }
+				.revise-form { display: flex; gap: .4rem; flex: 1; min-width: 280px; }
+				.plan h4 { margin: .9rem 0 .3rem; font-size: .95rem; color: var(--accent); }
+				.plan h4:first-child { margin-top: 0; }
+				.plan-text { white-space: pre-wrap; font-size: .9rem; line-height: 1.55; }
+				.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .15rem; }
+				.tl-item { display: grid; grid-template-columns: 1.6rem 1fr; gap: .5rem; padding: .45rem .2rem; border-bottom: 1px solid var(--border); }
+				.tl-icon { text-align: center; }
+				.tl-head { font-size: .75rem; }
+				.tl-author { font-weight: 700; color: var(--text-2); }
+				.tl-text { font-size: .88rem; }
+				.tl-error .tl-text { color: var(--danger); }
+				.tl-plan .tl-text { color: var(--accent); font-weight: 600; }
+				@media (max-width: 1000px) { .tickets-layout, .ticket-columns { grid-template-columns: 1fr; } }
+
 				/* Commun */
 				h2 { margin-top: 0; }
 				h3 { font-size: .95rem; color: var(--text-2); margin-bottom: .3rem; }
@@ -387,6 +413,7 @@ templ Layout(title string, active string) {
 				<nav class="app-nav">
 					<a href="/" class={ templ.KV("active", active == "upload") }>Importer</a>
 					<a href="/documents" class={ templ.KV("active", active == "documents") }>Documents</a>
+					<a href="/tickets" class={ templ.KV("active", active == "tickets") }>Tickets</a>
 					<a href="/classes" class={ templ.KV("active", active == "classes") }>Classes</a>
 					<a href="/model" class={ templ.KV("active", active == "model") }>Modèle</a>
 					<a href="/tests" class={ templ.KV("active", active == "tests") }>Tests</a>

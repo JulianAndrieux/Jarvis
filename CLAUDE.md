@@ -227,8 +227,8 @@ tournant simultanément :
 **Un seul binaire, un seul port** — remplace depuis le jalon 13 les deux
 anciens binaires `cmd/jarvisweb` (upload/suivi) et `cmd/codebrowser`
 (navigateur de code/tests), fusionnés sous une nav commune (Importer ·
-Documents · Classes · Modèle · Tests — renommée au jalon 22, Modèle
-ajouté au jalon 24). Voir "État des jalons" plus bas pour le détail de la
+Documents · Tickets · Classes · Modèle · Tests — renommée au jalon 22,
+Modèle ajouté au jalon 24, Tickets au jalon 26). Voir "État des jalons" plus bas pour le détail de la
 fusion, et "Atelier de code" pour le détail du navigateur de code/tests
 lui-même (moteurs inchangés par la fusion).
 
@@ -1671,6 +1671,103 @@ spécifique à `localhost`.
     ne convertit qu'un fichier à la fois, quand aucun autre traitement ne
     tourne) ; à garder en tête si la file passe à plusieurs documents
     simultanés.
+- **Jalons 26-27 — tickets + agent d'analyse local : faits, validés sur
+  un vrai ticket, en attente de validation utilisateur.** Demandé :
+  "que mon application s'auto-écrive : un outil de ticketing où je crée
+  un ticket [...] et un agent LLM local le prend, l'analyse, le développe,
+  le teste et le déploie." Proposition faite (cycle, garde-fous, choix du
+  modèle, découpage en jalons 26-29) et décisions de l'utilisateur :
+  **deux validations humaines** (le plan, puis le diff avant
+  déploiement ; déploiement automatique éventuellement plus tard pour les
+  petits tickets) ; commencer par les jalons 26-27.
+  - **Faisabilité vérifiée avant de coder** : le Qwen3-8B déjà servi
+    appelle correctement un outil via llama.cpp (API compatible OpenAI,
+    `tools`/`tool_calls`) en ~4 s. Mais le Mac est plein (0,08 Go libre
+    sur 24 Go avec VLM + LLM chargés) : le modèle de code du jalon 28
+    tournera sur la machine dédiée évoquée par l'utilisateur (i9, 64 Go ;
+    piste à mesurer : un modèle de code "à experts" type
+    Qwen3-Coder-30B-A3B, ~3 G paramètres actifs par jeton, envisageable
+    même sur CPU — choix à argumenter et valider, comme les autres).
+  - **`internal/tickets`** (nouveau) : `Ticket` (titre, besoin, critères
+    d'acceptation, statut, plan, fil d'événements), machine à états
+    (`brouillon → analyse → plan_a_valider → plan_valide`, révision et
+    relance possibles, annulé = clos), fil **en ajout seul** (`$push`
+    atomique : un `Update` ne peut pas perdre une étape écrite par
+    l'agent entre-temps), `FakeStore` + `MongoStore` (collection
+    `tickets`). `Manager` : création, analyse en arrière-plan, révision
+    (l'agent reçoit son plan précédent et les commentaires écrits
+    depuis), validation, annulation, reprise au démarrage (analyse
+    interrompue → échec).
+  - **`internal/gate`** (nouveau) : file d'accès aux modèles **partagée**
+    entre documents (`JobManager.Gate`) et tickets — les deux
+    n'appellent jamais le LLM en même temps (cf. jalon 21 bis).
+  - **`internal/agent`** (nouveau) : boucle d'agent écrite en Go (pas de
+    framework — primitives, testable avec un modèle factice). **Aucun
+    terminal** : quatre outils en lecture seule (`list_files`,
+    `read_file`, `search`, `propose_plan`), **confinés au dépôt** (refus
+    de `..`, chemins absolus, `.git`, binaires/données, et d'un lien
+    symbolique vers l'extérieur — testé). Budget de contexte : le
+    serveur a 8192 jetons, les anciennes sorties d'outils sont compactées
+    (la plus récente reste intacte), sorties tronquées, limite d'étapes
+    puis dernière chance où seul `propose_plan` est offert. Contexte du
+    projet = début de CLAUDE.md jusqu'à "État des jalons" (4 000 car.).
+    `HTTPModel` : format d'appels d'outils compatible OpenAI. Flags
+    `--agent-url`/`--agent-model` (défaut : le LLM actuel — il suffira
+    de pointer vers la machine dédiée), `--agent-context-chars`,
+    `--tickets-collection`.
+  - **UI** : onglet **Tickets** (création, liste avec statuts) ; page
+    d'un ticket : besoin, critères, actions selon l'étape (lancer
+    l'analyse, valider, demander une révision, annuler), **plan rendu
+    échappé** (sortie d'un modèle : seuls les titres `##` deviennent des
+    `<h4>`, testé avec un `<script>`), fil en direct (chaque action de
+    l'agent, sa sortie repliée), commentaires.
+  - **Validé sur un vrai ticket** ("Afficher le nombre de pages dans la
+    grille des documents", 3 critères) — et **deux passes** : la
+    première a révélé trois défauts **du harnais, pas du modèle** :
+    l'agent a demandé 8 fois `templates/documents.html` (inexistant, le
+    vrai est `documents.templ`) en recevant une erreur brute, jusqu'à la
+    limite d'étapes (~18 min, plan vague) ; lire un dossier renvoyait un
+    message absurde ; rien n'arrêtait un appel identique répété.
+    Corrigés (TDD) : fichier introuvable → **fichiers au nom proche
+    suggérés**, dossier → son contenu, **appel répété non réexécuté**
+    (le modèle est prévenu, visible dans le fil), et le prompt explique
+    les conventions (identifiants anglais, `.templ`). **Seconde passe sur
+    le même ticket : 2 min 34 s, bon fichier trouvé, plan concret**
+    (`PageCount` sur `DocumentRow`, affichage, cas zip). Il garde une
+    erreur qu'une revue humaine voit aussitôt (propose de *calculer* les
+    pages avec `pdfinfo` alors qu'elles sont connues au traitement) —
+    exactement le rôle de la validation du plan. Leçon : **avec un
+    modèle modeste, la qualité des outils (messages d'erreur qui
+    orientent, garde-fous contre les boucles) pèse autant que le
+    modèle.**
+  - **Bug trouvé au passage, corrigé partout** : les heures étaient
+    affichées en UTC (MongoDB rend les dates en UTC) — fil des tickets,
+    liste, bibliothèque, vue détail, suivi, e-mails : heure locale, testé
+    avec un fuseau fixé.
+  - **Bug ancien trouvé par un test devenu intermittent, corrigé** :
+    `JobManager` réécrivait le job à partir de sa copie prise au
+    démarrage du traitement — des **tags posés pendant le traitement
+    étaient effacés** à la fin, sans signal (plusieurs minutes de fenêtre
+    pour un scan). La file d'attente du jalon 25 avait changé le minutage
+    et rendu le test `TestHandleDocumentTags...` intermittent. Reproduit
+    de façon déterministe (`TestJobManager_TagsSetDuringProcessingSurvive`)
+    puis corrigé : le traitement écrit ses champs sur la version à jour du
+    job (`save`). L'ancien test passe 100 fois sur 100.
+  - Testé : `tickets` (machine à états, Fake, Mongo réel sur Atlas,
+    Manager : étapes et plan, échec, révision, transitions, file
+    partagée, reprise) ; `gate` ; `agent` (outils et confinement,
+    boucle : enquête puis plan, prompt, réponse texte, limite d'étapes,
+    erreur du modèle, compaction, appel répété, format HTTP) ; `webapp`
+    (file partagée) ; `cmd/jarvisapp` (pages, création, analyse, plan
+    échappé, fil, volet qui se sonde, actions, 409 sur transition
+    refusée, heures locales). Suite complète verte (`-race
+    -tags=integration`). Tickets de test supprimés.
+  - **Suite prévue** : jalon 28 (l'agent développe dans une copie
+    isolée — branche `ticket/<id>`, outils d'écriture confinés, tests
+    exécutés sans `MONGO_URI`, diff soumis à revue), jalon 29
+    (déploiement : fusion, reconstruction, redémarrage supervisé,
+    retour arrière si l'application ne répond plus). Modèle de code sur
+    la machine dédiée.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement

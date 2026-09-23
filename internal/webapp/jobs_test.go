@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
+	"github.com/JulianAndrieux/Jarvis/internal/gate"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 )
 
@@ -976,5 +977,50 @@ func TestJobManager_Thumbnail_StoredOnlyFileHasNone(t *testing.T) {
 	waitStatus(t, store, job.ID, StatusDone)
 	if _, _, err := m.Thumbnail(context.Background(), job.ID); !errors.Is(err, ErrNoThumbnail) {
 		t.Errorf("Thumbnail(zip) err = %v, want ErrNoThumbnail", err)
+	}
+}
+
+// Jalon 27 : la file des documents peut être partagée avec l'agent des
+// tickets — tant qu'un autre détenteur tient la porte, un document
+// attend (StatusPending) au lieu d'appeler les modèles en même temps.
+func TestJobManager_SharedGate_WaitsForOtherHolder(t *testing.T) {
+	store := NewFakeStore()
+	g := gate.New(1)
+	release := g.Acquire() // l'agent analyse un ticket
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	m.Gate = g
+
+	job, _ := m.Submit(context.Background(), "a.pdf", []byte("%PDF"))
+	time.Sleep(50 * time.Millisecond)
+	if got, _, _ := store.Get(context.Background(), job.ID); got.Status != StatusPending {
+		t.Errorf("status while the gate is held = %s, want pending", got.Status)
+	}
+	release()
+	waitStatus(t, store, job.ID, StatusDone)
+}
+
+// Bug trouvé par un test devenu intermittent (jalon 27) : process()
+// réécrivait le job à partir de sa copie prise au démarrage — des tags
+// posés pendant le traitement (plusieurs minutes pour un scan) étaient
+// effacés à la fin, sans le moindre signal.
+func TestJobManager_TagsSetDuringProcessingSurvive(t *testing.T) {
+	store := NewFakeStore()
+	runner := &fakeRunner{started: make(chan struct{}), proceed: make(chan struct{}), result: pipeline.Result{DocType: "facture"}}
+	m := NewJobManager(store, runner)
+	m.WorkDir = t.TempDir()
+
+	job, _ := m.Submit(context.Background(), "a.pdf", []byte("%PDF"))
+	<-runner.started
+	if err := m.SetTags(context.Background(), job.ID, []string{"urgent"}); err != nil {
+		t.Fatal(err)
+	}
+	close(runner.proceed)
+	done := waitStatus(t, store, job.ID, StatusDone)
+	if len(done.Tags) != 1 || done.Tags[0] != "urgent" {
+		t.Errorf("tags after processing = %v, want [urgent] (set while running)", done.Tags)
+	}
+	if done.DocType != "facture" {
+		t.Errorf("DocType = %q, the processing result must still be written", done.DocType)
 	}
 }

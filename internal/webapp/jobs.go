@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
+	"github.com/JulianAndrieux/Jarvis/internal/gate"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 )
@@ -134,6 +135,10 @@ type JobManager struct {
 	Concurrency int
 	semOnce     sync.Once
 	sem         chan struct{}
+	// Gate, si non-nil, remplace la file propre au JobManager par une
+	// file partagée avec l'agent des tickets (jalon 27) : documents et
+	// tickets n'appellent jamais les modèles en même temps.
+	Gate *gate.Gate
 
 	// Renderer rend la première page en PNG pour les miniatures (jalon
 	// 22) — le même port que l'étage Parsing (PdftoppmRenderer en
@@ -202,7 +207,7 @@ func (m *JobManager) process(job Job, run runFunc) {
 
 	job.Status = StatusRunning
 	job.StartedAt = time.Now()
-	if err := m.store.Update(ctx, job); err != nil {
+	if err := m.save(ctx, job); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: update job %s to running: %v\n", job.ID, err)
 	}
 
@@ -231,6 +236,9 @@ func (m *JobManager) process(job Job, run runFunc) {
 // acquire réserve une place dans la file globale et retourne la fonction
 // qui la libère.
 func (m *JobManager) acquire() func() {
+	if m.Gate != nil {
+		return m.Gate.Acquire()
+	}
 	m.semOnce.Do(func() {
 		n := m.Concurrency
 		if n <= 0 {
@@ -345,12 +353,23 @@ func (m *JobManager) finishStored(ctx context.Context, job Job) {
 	job.FinishedAt = time.Now()
 	job.Status = StatusDone
 	job.Result = nil
-	if err := m.store.Update(ctx, job); err != nil {
+	if err := m.save(ctx, job); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: update job %s: %v\n", job.ID, err)
 	}
 	if m.OnFinish != nil {
 		m.OnFinish(job)
 	}
+}
+
+// save écrit l'état du traitement (statut, dates, résultat, erreur) sur
+// la version à jour du job : ce que l'utilisateur modifie pendant le
+// traitement (tags) n'est jamais écrasé par la copie prise au démarrage
+// — bug réel, trouvé par un test devenu intermittent au jalon 27.
+func (m *JobManager) save(ctx context.Context, job Job) error {
+	if current, ok, err := m.store.Get(ctx, job.ID); err == nil && ok {
+		job.Tags = current.Tags
+	}
+	return m.store.Update(ctx, job)
 }
 
 // progressRecorder enregistre chaque étape d'avancement du job id. Un
@@ -376,7 +395,7 @@ func (m *JobManager) finish(ctx context.Context, job Job, result pipeline.Result
 		job.SearchText = result.SearchText
 	}
 
-	if err := m.store.Update(ctx, job); err != nil {
+	if err := m.save(ctx, job); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: update job %s: %v\n", job.ID, err)
 	}
 

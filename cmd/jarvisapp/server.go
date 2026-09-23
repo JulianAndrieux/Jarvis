@@ -25,6 +25,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/testmap"
 	"github.com/JulianAndrieux/Jarvis/internal/testrunner"
+	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
@@ -37,6 +38,9 @@ import (
 type Server struct {
 	Jobs     *webapp.JobManager
 	Registry *doctype.Registry
+	// Tickets : outil de tickets et agent d'analyse (jalons 26-27) ; nil
+	// désactive l'onglet.
+	Tickets *tickets.Manager
 
 	ModuleDir string
 
@@ -115,6 +119,7 @@ func (s *Server) Routes() chi.Router {
 	r.Get("/classes", s.handleClasses)
 	r.Get("/classes/detail", s.handleClassDetail)
 	r.Get("/model", s.handleModel)
+	s.ticketRoutes(r)
 	r.Get("/tests", s.handleTests)
 	r.Post("/tests/run", s.handleTestsRun)
 	r.Post("/refresh", s.handleRefresh)
@@ -179,7 +184,7 @@ func (s *Server) handleDocuments(w http.ResponseWriter, r *http.Request) {
 		rows[i] = templates.DocumentRow{
 			ID: j.ID, Filename: j.Filename, DocType: j.DocType,
 			Status: string(j.Status), Tags: j.Tags,
-			CreatedAt:    j.CreatedAt.Format("2006-01-02 15:04"),
+			CreatedAt:    j.CreatedAt.Local().Format("2006-01-02 15:04"),
 			Family:       fam,
 			Ext:          ext,
 			HasThumbnail: fam.Pipeline(),
