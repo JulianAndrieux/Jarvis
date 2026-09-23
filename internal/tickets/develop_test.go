@@ -231,3 +231,45 @@ func TestCanTransition_DevelopmentPhase(t *testing.T) {
 		}
 	}
 }
+
+// Sans aucun fichier modifié, inutile de lancer la vérification complète
+// (une minute) : l'échec est immédiat et dit pourquoi.
+func TestManager_NoChangeSkipsVerification(t *testing.T) {
+	v := &countingVerifier{}
+	m, s, tk := approvedTicket(t, &fakeDeveloper{summaries: []string{"rien"}}, &fakeWorkspace{diff: ""}, v)
+	m.ApprovePlan(context.Background(), tk.ID)
+	failed := waitTicket(t, s, tk.ID, Failed)
+	if v.calls != 0 {
+		t.Errorf("verification ran %d times for an unchanged workspace", v.calls)
+	}
+	if !strings.Contains(failed.Events[len(failed.Events)-1].Text, "aucun fichier") {
+		t.Errorf("last event = %+v", failed.Events[len(failed.Events)-1])
+	}
+}
+
+type countingVerifier struct{ calls int }
+
+func (v *countingVerifier) Checks(ctx context.Context, dir string) (string, bool) {
+	v.calls++
+	return "", true
+}
+func (v *countingVerifier) Tests(ctx context.Context, dir, pkg string) (string, bool) {
+	v.calls++
+	return "", true
+}
+
+// Le numéro de tentative (tout au long de la vie du ticket, relances
+// comprises) est transmis à l'agent.
+func TestManager_AttemptNumberGrowsAcrossRetries(t *testing.T) {
+	dev := &fakeDeveloper{summaries: []string{"a"}}
+	m, s, tk := approvedTicket(t, dev, &fakeWorkspace{diff: "+x"}, &fakeVerifier{results: []bool{false}})
+	m.MaxAttempts = 1
+	m.ApprovePlan(context.Background(), tk.ID)
+	waitTicket(t, s, tk.ID, Failed)
+	m.StartDevelopment(context.Background(), tk.ID, "")
+	waitTicket(t, s, tk.ID, Failed)
+	reqs := dev.Requests()
+	if len(reqs) != 2 || reqs[0].Attempt != 1 || reqs[1].Attempt != 2 {
+		t.Errorf("attempts = %+v", reqs)
+	}
+}

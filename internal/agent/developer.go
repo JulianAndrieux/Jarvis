@@ -50,6 +50,15 @@ Conventions du code : identifiants en anglais, commentaires et textes affichés 
 	return b.String()
 }
 
+// temperatureSetter : un modèle dont on peut régler la température
+// (HTTPModel).
+type temperatureSetter interface {
+	WithTemperature(t float64) Model
+}
+
+// retryTemperature : aléa des tentatives après la première.
+const retryTemperature = 0.5
+
 func devUserPrompt(req tickets.DevRequest) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Ticket : %s\n\nBesoin :\n%s\n", req.Title, req.Need)
@@ -67,8 +76,18 @@ func devUserPrompt(req tickets.DevRequest) string {
 // l'agent.
 func (d *Developer) Develop(ctx context.Context, req tickets.DevRequest, onStep func(tickets.AgentStep)) (string, error) {
 	tools := DevTools{Tools: Tools{Root: req.Dir}, Checker: d.Checker}
+	// Vu en réel : relancer à température 0 rejoue exactement le même
+	// déroulé. À partir de la deuxième tentative, un peu d'aléa.
+	model := d.Model
+	if ts, ok := model.(temperatureSetter); ok {
+		temp := 0.0
+		if req.Attempt > 1 {
+			temp = retryTemperature
+		}
+		model = ts.WithTemperature(temp)
+	}
 	return runLoop(ctx, loopConfig{
-		model:           d.Model,
+		model:           model,
 		specs:           DevSpecs(),
 		exec:            tools.Execute,
 		terminal:        "finish",

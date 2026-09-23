@@ -139,6 +139,7 @@ func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, 
 	seen := map[string]bool{} // appels déjà faits (outil + arguments)
 	truncations := 0
 	specs := cfg.specs
+	sterile := 0 // appels stériles d'affilée (aucun résultat, erreur, répétition)
 
 	for step := 0; step < cfg.maxSteps; step++ {
 		if err := ctx.Err(); err != nil {
@@ -188,6 +189,19 @@ func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, 
 			if cfg.onStep != nil {
 				cfg.onStep(tickets.AgentStep{Summary: summary, Detail: out})
 			}
+			if isSterile(out) {
+				sterile++
+			} else {
+				sterile = 0
+			}
+		}
+		// Vu en réel : des dizaines de recherches d'identifiants inventés,
+		// jusqu'à la limite d'étapes. Recadrage, puis arrêt anticipé.
+		switch {
+		case sterile >= stagnationStop:
+			return "", fmt.Errorf("agent: %s tourne en rond (%d appels d'affilée sans résultat) — le ticket est peut-être trop gros ou le plan à préciser", cfg.what, sterile)
+		case sterile == stagnationSteer:
+			msgs = append(msgs, Message{Role: "user", Content: "Tes dernières recherches n'ont rien donné : les noms que tu cherches n'existent probablement pas. Arrête d'inventer des identifiants : liste les dossiers (list_files) et lis les fichiers qui te semblent concernés (read_file), puis agis."})
 		}
 	}
 
@@ -217,6 +231,18 @@ func withoutTool(specs []ToolSpec, name string) []ToolSpec {
 		}
 	}
 	return out
+}
+
+// stagnationSteer / stagnationStop : appels stériles d'affilée avant de
+// recadrer le modèle, puis d'arrêter la boucle.
+const (
+	stagnationSteer = 6
+	stagnationStop  = 12
+)
+
+// isSterile : un appel qui n'a rien apporté.
+func isSterile(out string) bool {
+	return out == "(aucun résultat)" || strings.HasPrefix(out, "ERREUR") || strings.HasPrefix(out, "Appel déjà fait")
 }
 
 // maxTruncations : réponses coupées tolérées avant d'abandonner.

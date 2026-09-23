@@ -178,6 +178,9 @@ type DevRequest struct {
 	Feedback   string
 	// Dir est la copie de travail isolée du ticket.
 	Dir string
+	// Attempt : numéro de la tentative sur toute la vie du ticket
+	// (relances comprises) — l'agent varie son approche au-delà de 1.
+	Attempt int
 }
 
 // Developer développe un ticket dans sa copie de travail et retourne un

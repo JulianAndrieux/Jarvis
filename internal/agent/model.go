@@ -18,6 +18,15 @@ type HTTPModel struct {
 	BaseURL string // ex. "http://127.0.0.1:8081/v1"
 	Model   string
 	HTTP    *http.Client // nil : http.DefaultClient
+	// Temperature : 0 par défaut (déterministe).
+	Temperature float64
+}
+
+// WithTemperature retourne une copie du client à la température donnée
+// (voir Developer : une relance à température 0 rejoue le même déroulé).
+func (m HTTPModel) WithTemperature(t float64) Model {
+	m.Temperature = t
+	return m
 }
 
 type wireToolCall struct {
@@ -51,7 +60,7 @@ func (m HTTPModel) Chat(ctx context.Context, msgs []Message, tools []ToolSpec) (
 		Messages    []wireMessage `json:"messages"`
 		Tools       []wireTool    `json:"tools,omitempty"`
 		Temperature float64       `json:"temperature"`
-	}{Model: m.Model}
+	}{Model: m.Model, Temperature: m.Temperature}
 	for _, msg := range msgs {
 		w := wireMessage{Role: msg.Role, Content: msg.Content, ToolCallID: msg.ToolCallID}
 		for _, c := range msg.ToolCalls {

@@ -254,15 +254,24 @@ func (m *Manager) develop(t Ticket, feedback string) {
 		attempts = 2
 	}
 	var report string
+	previous := previousAttempts(t.Events)
 	for attempt := 1; attempt <= attempts; attempt++ {
-		m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: fmt.Sprintf("Tentative %d/%d", attempt, attempts)})
+		n := previous + attempt
+		m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: fmt.Sprintf("Tentative %d", n)})
 		summary, err := m.Developer.Develop(ctx, DevRequest{
-			Title: t.Title, Need: t.Need, Acceptance: t.Acceptance, Plan: t.Plan, Feedback: feedback, Dir: dir,
+			Title: t.Title, Need: t.Need, Acceptance: t.Acceptance, Plan: t.Plan, Feedback: feedback, Dir: dir, Attempt: n,
 		}, func(s AgentStep) {
 			m.event(ctx, t.ID, Event{Kind: EventStep, Author: AuthorAgent, Text: s.Summary, Detail: clip(s.Detail, m.detailChars())})
 		})
 		if err != nil {
 			m.fail(ctx, t, "Le développement a échoué : "+err.Error(), "")
+			return
+		}
+
+		// Aucun fichier modifié : inutile de lancer la vérification complète
+		// (vu en réel : une minute perdue avant de le constater).
+		if changes, err := m.Workspace.Diff(ctx, dir); err == nil && strings.TrimSpace(changes) == "" {
+			m.fail(ctx, t, "L'agent n'a modifié aucun fichier : aucune modification à vérifier.", "")
 			return
 		}
 
@@ -301,6 +310,18 @@ func (m *Manager) develop(t Ticket, feedback string) {
 
 // verify : vérifications (templ, gofmt, vet, build) puis toute la suite
 // de tests unitaires.
+// previousAttempts compte les tentatives de développement déjà menées
+// sur ce ticket (relances comprises).
+func previousAttempts(events []Event) int {
+	n := 0
+	for _, e := range events {
+		if e.Kind == EventStatus && strings.HasPrefix(e.Text, "Tentative ") {
+			n++
+		}
+	}
+	return n
+}
+
 func (m *Manager) verify(ctx context.Context, dir string) (string, bool) {
 	checks, ok := m.Verifier.Checks(ctx, dir)
 	if !ok {

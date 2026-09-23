@@ -130,6 +130,9 @@ func (t Tools) ListFiles(dir string) string {
 	if err != nil {
 		return "ERREUR : " + err.Error()
 	}
+	if info, err := os.Stat(abs); err == nil && !info.IsDir() {
+		return fmt.Sprintf("%s est un fichier, pas un dossier : utilise read_file pour le lire.", dir)
+	}
 	entries, err := os.ReadDir(abs)
 	if err != nil {
 		return "ERREUR : " + err.Error()
@@ -304,8 +307,10 @@ func (t Tools) Search(pattern, dir string) string {
 
 // searchable : fichiers texte du projet (code, gabarits, docs, config).
 func searchable(name string) bool {
+	// Pas de Markdown : vu en réel, CLAUDE.md noyait les résultats du code
+	// (le contexte du projet est déjà donné à part).
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".go", ".templ", ".md", ".mod", ".sh", ".py", ".json", ".yaml", ".yml", ".txt", ".css", ".js", ".html", ".plist":
+	case ".go", ".templ", ".mod", ".sh", ".py", ".json", ".yaml", ".yml", ".txt", ".css", ".js", ".html", ".plist":
 		return true
 	}
 	return name == "Makefile"

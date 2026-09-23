@@ -130,3 +130,25 @@ func TestTools_ReadFile_OnADirectoryListsIt(t *testing.T) {
 		t.Errorf("ReadFile(dir) = %q, want it to say it is a directory and list it", out)
 	}
 }
+
+// Vu en réel (ticket "Ajouter commentaire sur document") : la recherche
+// remontait surtout CLAUDE.md, qui noyait le code — le contexte du
+// projet est déjà donné à part. Les fichiers Markdown sont exclus.
+func TestTools_SearchSkipsMarkdownDocs(t *testing.T) {
+	root := writeRepo(t)
+	os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("ListQuery est décrit ici\n"), 0o644)
+	out := Tools{Root: root}.Search("ListQuery", "")
+	if strings.Contains(out, "CLAUDE.md") {
+		t.Errorf("search returned Markdown docs: %q", out)
+	}
+	if !strings.Contains(out, "internal/store/store.go") {
+		t.Errorf("search lost the code hit: %q", out)
+	}
+}
+
+func TestTools_ListFilesOnAFileSaysSo(t *testing.T) {
+	out := Tools{Root: writeRepo(t)}.ListFiles("internal/store/store.go")
+	if !strings.Contains(out, "est un fichier") || !strings.Contains(out, "read_file") {
+		t.Errorf("ListFiles(file) = %q", out)
+	}
+}

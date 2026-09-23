@@ -249,3 +249,33 @@ func TestSummarize_MissingPathIsExplicit(t *testing.T) {
 		t.Errorf("summarize = %q", got)
 	}
 }
+
+// Vu en réel : 20 recherches d'identifiants inventés, sans résultat,
+// jusqu'à la limite d'étapes. Après plusieurs appels stériles d'affilée,
+// le modèle est recadré ; s'il continue, la boucle s'arrête tôt avec une
+// raison claire au lieu d'épuiser les étapes.
+func TestLoop_StagnationIsSteeredThenStopped(t *testing.T) {
+	var replies []Message
+	for i := 0; i < 30; i++ {
+		replies = append(replies, call("c", "search", fmt.Sprintf(`{"pattern": "InventeNom%d"}`, i)))
+	}
+	model := &scriptedModel{replies: replies}
+	a := &Analyzer{Model: model, Tools: Tools{Root: writeRepo(t)}, MaxSteps: 40}
+	var steps []tickets.AgentStep
+	_, err := a.Analyze(context.Background(), request(), func(s tickets.AgentStep) { steps = append(steps, s) })
+	if err == nil || !strings.Contains(err.Error(), "tourne en rond") {
+		t.Fatalf("err = %v, want an early stop for stagnation", err)
+	}
+	if len(model.calls) >= 30 {
+		t.Errorf("model called %d times, want an early stop", len(model.calls))
+	}
+	steered := false
+	for _, msgs := range model.calls {
+		for _, m := range msgs {
+			steered = steered || (m.Role == "user" && strings.Contains(m.Content, "n'ont rien donné"))
+		}
+	}
+	if !steered {
+		t.Error("the model should be steered before being stopped")
+	}
+}

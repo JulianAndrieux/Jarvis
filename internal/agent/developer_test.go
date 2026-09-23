@@ -121,3 +121,32 @@ func TestDevelop_AfterTruncationWriteFileIsWithdrawn(t *testing.T) {
 		t.Errorf("tools after truncation = %v, want edit_file and finish kept", names)
 	}
 }
+
+// Vu en réel : relancer le développement rejoue exactement le même
+// déroulé (température 0). À partir de la deuxième tentative, le modèle
+// est interrogé avec un peu de température pour explorer autrement.
+func TestDevelop_LaterAttemptsUseSomeTemperature(t *testing.T) {
+	base := &temperatureModel{}
+	d := &Developer{Model: base, Checker: &fakeChecker{ok: true}}
+	req := devRequest(writeRepo(t))
+	d.Develop(context.Background(), req, nil)
+	req.Attempt = 2
+	d.Develop(context.Background(), req, nil)
+	if len(base.temps) != 2 || base.temps[0] != 0 || base.temps[1] <= 0 {
+		t.Errorf("temperatures used = %v, want 0 then > 0", base.temps)
+	}
+}
+
+type temperatureModel struct {
+	temp  float64
+	temps []float64
+}
+
+func (m *temperatureModel) Chat(ctx context.Context, msgs []Message, tools []ToolSpec) (Message, error) {
+	return call("f", "finish", `{"summary": "ok"}`), nil
+}
+
+func (m *temperatureModel) WithTemperature(t float64) Model {
+	m.temps = append(m.temps, t)
+	return m
+}
