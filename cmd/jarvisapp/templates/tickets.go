@@ -37,11 +37,11 @@ func renderPlan(plan string) templ.Component {
 
 func ticketChipClass(s tickets.Status) string {
 	switch s {
-	case tickets.Analyzing, tickets.Developing:
+	case tickets.Analyzing, tickets.Developing, tickets.Deploying:
 		return "chip chip-running"
 	case tickets.PlanReady, tickets.Review:
 		return "chip chip-review"
-	case tickets.PlanApproved, tickets.Accepted:
+	case tickets.PlanApproved, tickets.Accepted, tickets.Deployed:
 		return "chip chip-done"
 	case tickets.Failed:
 		return "chip chip-failed"

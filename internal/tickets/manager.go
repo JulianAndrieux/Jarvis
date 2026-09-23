@@ -32,6 +32,16 @@ type Manager struct {
 	// MaxAttempts : tentatives de développement avant l'échec (0 : 2) —
 	// chaque nouvelle tentative reçoit le rapport de vérification.
 	MaxAttempts int
+
+	// Deployer active le déploiement à l'acceptation du diff (jalon 30).
+	Deployer Deployer
+	// Busy dit pourquoi l'application ne peut pas redémarrer maintenant
+	// ("" : elle peut) — documents en traitement, autre ticket actif.
+	Busy func(ctx context.Context) string
+	// DeployPoll : intervalle de ré-examen de Busy (0 : 15 s) ;
+	// DeployMaxWait : attente maximale (0 : 2 h) avant d'abandonner.
+	DeployPoll    time.Duration
+	DeployMaxWait time.Duration
 }
 
 // Create enregistre un nouveau ticket en brouillon.
@@ -137,11 +147,136 @@ func (m *Manager) RequestChanges(ctx context.Context, id, feedback string) error
 	return m.StartDevelopment(ctx, id, "Changements demandés par l'utilisateur :\n"+strings.TrimSpace(feedback))
 }
 
-// AcceptChanges valide le diff (seconde validation humaine). Le
-// déploiement (fusion dans main, redémarrage) vient au jalon 29.
+// AcceptChanges valide le diff (seconde validation humaine) et, si le
+// déploiement est configuré, le lance.
 func (m *Manager) AcceptChanges(ctx context.Context, id string) error {
-	_, err := m.transition(ctx, id, Accepted, "Diff accepté")
-	return err
+	if m.Deployer == nil {
+		_, err := m.transition(ctx, id, Accepted, "Diff accepté")
+		return err
+	}
+	return m.startDeployment(ctx, id, "Diff accepté — déploiement lancé")
+}
+
+// StartDeployment déploie un ticket déjà accepté (sans déploiement à
+// l'époque).
+func (m *Manager) StartDeployment(ctx context.Context, id string) error {
+	if m.Deployer == nil {
+		return fmt.Errorf("tickets: le déploiement n'est pas configuré")
+	}
+	return m.startDeployment(ctx, id, "Déploiement lancé")
+}
+
+func (m *Manager) startDeployment(ctx context.Context, id, label string) error {
+	t, err := m.transition(ctx, id, Deploying, label)
+	if err != nil {
+		return err
+	}
+	go m.deploy(t)
+	return nil
+}
+
+// deploy attend que l'application puisse redémarrer, prend la file des
+// modèles (plus aucun document ni agent ne démarre), puis déploie.
+func (m *Manager) deploy(t Ticket) {
+	ctx := context.Background()
+	poll, maxWait := m.DeployPoll, m.DeployMaxWait
+	if poll <= 0 {
+		poll = 15 * time.Second
+	}
+	if maxWait <= 0 {
+		maxWait = 2 * time.Hour
+	}
+	var release func()
+	deadline := time.Now().Add(maxWait)
+	lastReason := ""
+	for {
+		reason := m.busy(ctx)
+		if reason == "" && m.Gate != nil {
+			release = m.Gate.Acquire()
+			if reason = m.busy(ctx); reason != "" {
+				release()
+				release = nil
+			}
+		}
+		if reason == "" {
+			break
+		}
+		if reason != lastReason {
+			m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: "Déploiement en attente : " + reason})
+			lastReason = reason
+		}
+		if time.Now().After(deadline) {
+			m.backToReview(ctx, t.ID, "Déploiement abandonné : l'application n'a pas été disponible pour redémarrer ("+reason+").", "")
+			return
+		}
+		time.Sleep(poll)
+	}
+	if release != nil {
+		defer release()
+	}
+	err := m.Deployer.Deploy(ctx, t.ID, func(text, detail string) {
+		m.event(ctx, t.ID, Event{Kind: EventStep, Author: AuthorAgent, Text: text, Detail: clip(detail, m.detailChars())})
+	})
+	if err != nil {
+		m.backToReview(ctx, t.ID, "Déploiement impossible — l'application et main restent comme avant.", err.Error())
+	}
+}
+
+func (m *Manager) busy(ctx context.Context) string {
+	if m.Busy == nil {
+		return ""
+	}
+	return m.Busy(ctx)
+}
+
+// backToReview : le déploiement n'a pas eu lieu (ou a été défait) ; le
+// diff reste à la revue — relancer, demander des changements ou abandonner.
+func (m *Manager) backToReview(ctx context.Context, id, msg, detail string) {
+	t, ok, err := m.Store.Get(ctx, id)
+	if err != nil || !ok {
+		fmt.Fprintf(os.Stderr, "tickets: %s introuvable après déploiement : %v\n", id, err)
+		return
+	}
+	t.Status = Review
+	if err := m.Store.Update(ctx, t); err != nil {
+		fmt.Fprintf(os.Stderr, "tickets: update %s: %v\n", id, err)
+	}
+	m.event(ctx, id, Event{Kind: EventError, Author: AuthorAgent, Text: msg, Detail: clip(detail, m.detailChars())})
+}
+
+// ConfirmDeployment : appelé par la nouvelle version une fois en service.
+// La branche est dans main : la copie de travail est supprimée.
+func (m *Manager) ConfirmDeployment(ctx context.Context, id, commit string) error {
+	if len(commit) > 7 {
+		commit = commit[:7]
+	}
+	t, err := m.transition(ctx, id, Deployed, "Déployé : main à "+commit+", application redémarrée sur la nouvelle version (main n'est pas poussé vers GitHub)")
+	if err != nil {
+		return err
+	}
+	if m.Workspace != nil && t.Branch != "" {
+		if err := m.Workspace.Discard(ctx, id); err != nil {
+			m.event(ctx, id, Event{Kind: EventError, Author: AuthorAgent, Text: "Copie de travail non supprimée : " + err.Error()})
+		}
+	}
+	return nil
+}
+
+// DeploymentRolledBack : la nouvelle version s'est arrêtée avant d'être
+// confirmée ; l'ancienne a été rétablie (binaire et code).
+func (m *Manager) DeploymentRolledBack(ctx context.Context, id, reason string) error {
+	t, ok, err := m.Store.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("tickets: %s introuvable", id)
+	}
+	if !CanTransition(t.Status, Review) {
+		return fmt.Errorf("tickets: impossible de passer de « %s » à « %s »", t.Status.Label(), Review.Label())
+	}
+	m.backToReview(ctx, id, "Déploiement annulé : la nouvelle version s'est arrêtée au démarrage — ancienne version rétablie, main ramené à son état d'avant.", reason)
+	return nil
 }
 
 // Cancel clôt le ticket ; sa copie de travail éventuelle est supprimée.
@@ -158,9 +293,18 @@ func (m *Manager) Cancel(ctx context.Context, id string) error {
 	return nil
 }
 
-// RecoverOrphaned marque en échec les analyses interrompues par un
-// redémarrage (la goroutine qui les menait a disparu avec le process).
+// RecoverOrphaned marque en échec les analyses et développements
+// interrompus par un redémarrage (la goroutine qui les menait a disparu
+// avec le process), et renvoie en revue un déploiement interrompu. À
+// appeler après la confirmation d'un déploiement (marqueur).
 func (m *Manager) RecoverOrphaned(ctx context.Context) (int, error) {
+	deploying, err := m.Store.List(ctx, Deploying)
+	if err != nil {
+		return 0, err
+	}
+	for _, t := range deploying {
+		m.backToReview(ctx, t.ID, "Déploiement interrompu par un redémarrage de l'application — vérifie main (git log) avant de relancer.", "")
+	}
 	var list []Ticket
 	for _, st := range []Status{Analyzing, Developing} {
 		l, err := m.Store.List(ctx, st)
@@ -180,7 +324,7 @@ func (m *Manager) RecoverOrphaned(ctx context.Context) (int, error) {
 		}
 		m.event(ctx, t.ID, Event{Kind: EventError, Author: AuthorAgent, Text: "Travail de l'agent interrompu par un redémarrage de l'application — relance-le."})
 	}
-	return len(list), nil
+	return len(deploying) + len(list), nil
 }
 
 func (m *Manager) transition(ctx context.Context, id string, to Status, label string) (Ticket, error) {

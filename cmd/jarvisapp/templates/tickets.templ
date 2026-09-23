@@ -36,7 +36,7 @@ templ TicketsPage(list []tickets.Ticket) {
 	}
 }
 
-templ TicketPage(t tickets.Ticket) {
+templ TicketPage(t tickets.Ticket, deploy bool) {
 	@Layout("Jarvis — " + t.Title, "tickets") {
 		<div class="page-wide ticket-page">
 			<a class="panel-back" href="/tickets">← Tickets</a>
@@ -57,27 +57,28 @@ templ TicketPage(t tickets.Ticket) {
 					<div class="section-title">Zone dangereuse</div>
 					<button class="button-danger" hx-delete={ "/tickets/" + t.ID } hx-confirm="Supprimer définitivement ce ticket ?">Supprimer le ticket</button>
 				</div>
-				@TicketPanel(t)
+				@TicketPanel(t, deploy)
 			</div>
 		</div>
 	}
 }
 
 // TicketPanel : statut, actions, plan et fil de l'agent. Se sonde lui-même
-// pendant l'analyse.
-templ TicketPanel(t tickets.Ticket) {
+// pendant que l'agent travaille ou que le déploiement a lieu. deploy : le
+// déploiement automatique est configuré (jalon 30).
+templ TicketPanel(t tickets.Ticket, deploy bool) {
 	if t.Status.Active() {
 		<div id="ticket-panel" class="ticket-panel" hx-get={ "/tickets/" + t.ID + "/panel" } hx-trigger="load delay:2s" hx-swap="outerHTML">
-			@ticketPanelBody(t)
+			@ticketPanelBody(t, deploy)
 		</div>
 	} else {
 		<div id="ticket-panel" class="ticket-panel">
-			@ticketPanelBody(t)
+			@ticketPanelBody(t, deploy)
 		</div>
 	}
 }
 
-templ ticketPanelBody(t tickets.Ticket) {
+templ ticketPanelBody(t tickets.Ticket, deploy bool) {
 	<div class="ticket-status">
 		<span class={ ticketChipClass(t.Status) }>
 			if t.Status.Active() {
@@ -100,13 +101,24 @@ templ ticketPanelBody(t tickets.Ticket) {
 			case tickets.Developing:
 				<p class="muted">L'agent développe dans une copie isolée (branche { "ticket/" + t.ID }) : tests d'abord, puis Jarvis refait toute la vérification. Le fil se met à jour en direct.</p>
 			case tickets.Review:
-				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/accept" } hx-target="#ticket-panel" hx-swap="outerHTML">✓ Accepter le diff</button>
+				if deploy {
+					<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/accept" } hx-target="#ticket-panel" hx-swap="outerHTML" hx-confirm="Fusionner ce diff dans main et redémarrer l'application sur la nouvelle version ?">🚀 Accepter et déployer</button>
+				} else {
+					<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/accept" } hx-target="#ticket-panel" hx-swap="outerHTML">✓ Accepter le diff</button>
+				}
 				<form class="revise-form" hx-post={ "/tickets/" + t.ID + "/changes" } hx-target="#ticket-panel" hx-swap="outerHTML">
 					<input type="text" name="feedback" placeholder="Ce qu'il faut changer dans le code…"/>
 					<button type="submit">Demander des changements</button>
 				</form>
 			case tickets.Accepted:
-				<p class="warn-box">Diff accepté (branche { t.Branch }). Le déploiement automatique — fusion dans main, reconstruction, redémarrage avec retour arrière — arrive au jalon 29.</p>
+				<p class="warn-box">Diff accepté sans déploiement (branche { t.Branch }) : main n'a pas changé.</p>
+				if deploy && t.Branch != "" {
+					<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/deploy" } hx-target="#ticket-panel" hx-swap="outerHTML" hx-confirm="Fusionner ce diff dans main et redémarrer l'application sur la nouvelle version ?">🚀 Déployer</button>
+				}
+			case tickets.Deploying:
+				<p class="muted">Déploiement : intégration de main dans la branche, vérification complète, compilation, essai à blanc de la nouvelle version — main n'avance qu'ensuite, puis l'application redémarre (quelques secondes d'indisponibilité). Si la nouvelle version ne démarre pas, l'ancienne est rétablie. Le fil se met à jour en direct.</p>
+			case tickets.Deployed:
+				<p class="ok-box">Déployé : le changement est dans main et l'application tourne sur la nouvelle version. main n'est pas poussé vers GitHub — <code>git push</code> quand tu veux.</p>
 			case tickets.PlanReady:
 				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/approve" } hx-target="#ticket-panel" hx-swap="outerHTML">✓ Valider le plan</button>
 				<form class="revise-form" hx-post={ "/tickets/" + t.ID + "/revise" } hx-target="#ticket-panel" hx-swap="outerHTML">

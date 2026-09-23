@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +28,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
+	"github.com/JulianAndrieux/Jarvis/internal/deploy"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/gate"
@@ -73,6 +75,8 @@ func main() {
 	agentTimeout := flag.Duration("agent-timeout", 15*time.Minute, "Délai d'un appel au modèle de l'agent — un tour qui écrit un fichier entier peut prendre plusieurs minutes sur un modèle local lent")
 	agentDev := flag.Bool("agent-dev", true, "Développement automatique des tickets au plan validé (copie de travail git isolée, vérification complète, diff à relire)")
 	worktreesDir := flag.String("worktrees-dir", "", "Dossier des copies de travail des tickets ; vide = ~/.jarvis/worktrees")
+	deployOn := flag.Bool("deploy", true, "Déploiement des tickets au diff accepté : fusion vérifiée dans main, essai à blanc, redémarrage sur la nouvelle version (nécessite --agent-dev)")
+	deployMarker := flag.String("deploy-marker", "", "Marqueur du déploiement en attente de confirmation ; vide = ~/.jarvis/deploy.json (le lanceur lit le même)")
 	flag.Parse()
 
 	if *vlmURL == "" || *vlmModel == "" {
@@ -222,6 +226,7 @@ func main() {
 	// Développement (jalon 28) : copie de travail git isolée par ticket,
 	// vérification finale refaite par Jarvis.
 	var wtRoot string
+	var git workspace.Manager // copies de travail et opérations git des tickets
 	if *agentDev {
 		wtRoot = *worktreesDir
 		if wtRoot == "" {
@@ -229,7 +234,8 @@ func main() {
 			wtRoot = filepath.Join(home, ".jarvis", "worktrees")
 		}
 		checker := workspace.Checker{Timeout: 10 * time.Minute}
-		ticketManager.Workspace = workspace.Manager{Repo: dir, Root: wtRoot}
+		git = workspace.Manager{Repo: dir, Root: wtRoot}
+		ticketManager.Workspace = git
 		ticketManager.Verifier = checker
 		ticketManager.Developer = &agent.Developer{
 			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}},
@@ -240,10 +246,29 @@ func main() {
 		}
 		log.Printf("jarvisapp: développement des tickets activé (copies de travail : %s)", wtRoot)
 	}
-	if n, err := ticketManager.RecoverOrphaned(context.Background()); err != nil {
-		log.Printf("jarvisapp: tickets orphelins : %v", err)
-	} else if n > 0 {
-		log.Printf("jarvisapp: %d analyse(s) de ticket interrompue(s) par le redémarrage, marquée(s) en échec", n)
+	// Déploiement (jalon 30) : au diff accepté, fusion vérifiée dans main,
+	// essai à blanc, puis remplacement du processus par la nouvelle version.
+	home, _ := os.UserHomeDir()
+	if *deployMarker == "" {
+		*deployMarker = filepath.Join(home, ".jarvis", "deploy.json")
+	}
+	if *agentDev && *deployOn {
+		binary, err := os.Executable()
+		if err == nil {
+			binary, err = filepath.EvalSymlinks(binary)
+		}
+		if err != nil {
+			log.Fatalf("jarvisapp: chemin du binaire en service : %v", err)
+		}
+		ticketManager.Deployer = deploy.Deployer{
+			Git:        git,
+			Verifier:   ticketManager.Verifier,
+			Binary:     binary,
+			MarkerPath: *deployMarker,
+			Smoke:      smokeTest(*mongoCollection, *ticketsCollection),
+		}
+		ticketManager.Busy = busyReason(jobs, ticketManager)
+		log.Printf("jarvisapp: déploiement des tickets activé (binaire %s)", binary)
 	}
 	log.Printf("jarvisapp: agent des tickets -> %s (%s)", *agentURL, *agentModel)
 
@@ -275,7 +300,24 @@ func main() {
 	if *outDir != "" {
 		log.Printf("jarvisapp: copie locale des résultats -> %s", *outDir)
 	}
-	if err := http.ListenAndServe(*addr, mux); err != nil {
+	// Écouter d'abord : un déploiement en attente ne se confirme qu'une fois
+	// la nouvelle version capable de répondre. Puis seulement, les tickets
+	// restés en cours (un déploiement réglé ici n'est plus orphelin).
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Fatalf("jarvisapp: %v", err)
+	}
+	if msg, err := settleDeployment(context.Background(), *deployMarker, ticketManager, git); err != nil {
+		log.Printf("jarvisapp: déploiement en attente : %v", err)
+	} else if msg != "" {
+		log.Printf("jarvisapp: %s", msg)
+	}
+	if n, err := ticketManager.RecoverOrphaned(context.Background()); err != nil {
+		log.Printf("jarvisapp: tickets orphelins : %v", err)
+	} else if n > 0 {
+		log.Printf("jarvisapp: %d ticket(s) interrompu(s) par le redémarrage", n)
+	}
+	if err := http.Serve(ln, mux); err != nil {
 		log.Fatalf("jarvisapp: %v", err)
 	}
 }

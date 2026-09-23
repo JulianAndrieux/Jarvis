@@ -279,8 +279,8 @@ func TestTickets_AcceptAndRequestChanges(t *testing.T) {
 	if rec := postForm(t, s, "/tickets/"+tk.ID+"/accept", nil); rec.Code != http.StatusOK {
 		t.Fatalf("accept = %d", rec.Code)
 	}
-	if body := get(t, s, "/tickets/"+tk.ID).Body.String(); !strings.Contains(body, "Accepté") || !strings.Contains(body, "jalon 29") {
-		t.Error("accepted ticket should say so and mention deployment comes next")
+	if body := get(t, s, "/tickets/"+tk.ID).Body.String(); !strings.Contains(body, "Accepté") || !strings.Contains(body, "sans déploiement") {
+		t.Error("accepted ticket (no deployer) should say it was not deployed")
 	}
 }
 
@@ -295,4 +295,57 @@ func TestTickets_FailedDevelopmentOffersRetry(t *testing.T) {
 	if rec := postForm(t, s, "/tickets/"+tk.ID+"/develop", nil); rec.Code != http.StatusOK {
 		t.Errorf("retry develop = %d %s", rec.Code, rec.Body.String())
 	}
+}
+
+// --- Jalon 30 : déploiement ---
+
+type stubDeployer struct{ err error }
+
+func (d stubDeployer) Deploy(ctx context.Context, id string, onStep func(text, detail string)) error {
+	onStep("Essai à blanc réussi", "")
+	return d.err
+}
+
+func TestTickets_ReviewOffersAcceptAndDeploy(t *testing.T) {
+	s, store, tk := newDevTicketServer(t, true)
+	s.Tickets.Deployer = stubDeployer{}
+	postForm(t, s, "/tickets/"+tk.ID+"/approve", nil)
+	waitTicketStatus(t, store, tk.ID, tickets.Review)
+
+	body := get(t, s, "/tickets/"+tk.ID).Body.String()
+	if !strings.Contains(body, "Accepter et déployer") || !strings.Contains(body, "hx-confirm=") {
+		t.Error("review should offer accept-and-deploy, with a confirmation")
+	}
+	postForm(t, s, "/tickets/"+tk.ID+"/accept", nil)
+	waitTicketStatus(t, store, tk.ID, tickets.Deploying)
+	body = get(t, s, "/tickets/"+tk.ID+"/panel").Body.String()
+	for _, want := range []string{"Déploiement en cours", "essai à blanc", `hx-trigger="load delay:2s"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("deploying panel lacks %q", want)
+		}
+	}
+
+	s.Tickets.ConfirmDeployment(context.Background(), tk.ID, "abcdef123")
+	body = get(t, s, "/tickets/"+tk.ID+"/panel").Body.String()
+	if !strings.Contains(body, "Déployé") || !strings.Contains(body, "git push") {
+		t.Error("deployed panel should say so and remind that main is not pushed")
+	}
+}
+
+func TestTickets_AcceptedTicketCanBeDeployedLater(t *testing.T) {
+	s, store, tk := newDevTicketServer(t, true)
+	postForm(t, s, "/tickets/"+tk.ID+"/approve", nil)
+	waitTicketStatus(t, store, tk.ID, tickets.Review)
+	postForm(t, s, "/tickets/"+tk.ID+"/accept", nil) // pas encore de déployeur
+	waitTicketStatus(t, store, tk.ID, tickets.Accepted)
+
+	s.Tickets.Deployer = stubDeployer{}
+	body := get(t, s, "/tickets/"+tk.ID).Body.String()
+	if !strings.Contains(body, `hx-post="/tickets/`+tk.ID+`/deploy"`) {
+		t.Fatal("accepted ticket with a branch should offer to deploy")
+	}
+	if rec := postForm(t, s, "/tickets/"+tk.ID+"/deploy", nil); rec.Code != http.StatusOK {
+		t.Fatalf("deploy = %d %s", rec.Code, rec.Body)
+	}
+	waitTicketStatus(t, store, tk.ID, tickets.Deploying)
 }

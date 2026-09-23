@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/deploy"
 	"github.com/JulianAndrieux/Jarvis/internal/launcher"
 )
 
@@ -148,29 +149,39 @@ func run(jarvisDir, home string) error {
 	}
 	log.Printf("VLM et LLM prêts.")
 
+	appLog := filepath.Join(logDir, "jarvisapp.log")
+	startApp := func() (*exec.Cmd, error) {
+		cmd, err := launcher.StartProcess(jarvisAppPath, launcher.ArgsForJarvisApp(cfg), cfg.RepoDir, appLog)
+		if err != nil {
+			return nil, err
+		}
+		appCtx, cancelApp := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancelApp()
+		if err := launcher.WaitHealthy(appCtx, "http://"+cfg.Addr+"/", 500*time.Millisecond); err != nil {
+			return cmd, err
+		}
+		return cmd, nil
+	}
+	var app *exec.Cmd
 	if launcher.PortOpen(cfg.Addr, 300*time.Millisecond) {
 		log.Printf("jarvisapp : un serveur écoute déjà sur %s, réutilisé tel quel", cfg.Addr)
 	} else {
 		log.Printf("jarvisapp : démarrage...")
-		cmd, err := launcher.StartProcess(jarvisAppPath, launcher.ArgsForJarvisApp(cfg), cfg.RepoDir, filepath.Join(logDir, "jarvisapp.log"))
-		if err != nil {
-			terminateAll(started)
-			return fmt.Errorf("démarrage jarvisapp : %w", err)
+		cmd, err := startApp()
+		if cmd != nil {
+			started = append(started, cmd)
 		}
-		started = append(started, cmd)
-
-		appCtx, cancelApp := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancelApp()
-		if err := launcher.WaitHealthy(appCtx, "http://"+cfg.Addr+"/", 500*time.Millisecond); err != nil {
+		if err != nil {
 			terminateAll(started)
 			return fmt.Errorf("jarvisapp jamais prêt : %w", err)
 		}
+		app = cmd
 	}
 	log.Printf("jarvisapp prêt sur http://%s", cfg.Addr)
 
 	openBrowser(cfg.Addr)
 
-	waitForShutdown(started)
+	waitForShutdown(started, app, startApp, filepath.Join(jarvisDir, "deploy.json"), appLog)
 	return nil
 }
 
@@ -238,27 +249,79 @@ func terminateAll(cmds []*exec.Cmd) {
 // terminal, ou SIGTERM à la fermeture) ou jusqu'à ce qu'un des
 // processus démarrés par ce lanceur se termine de lui-même (crash) —
 // puis arrête proprement les autres.
-func waitForShutdown(started []*exec.Cmd) {
+//
+// Exception (jalon 30) : si jarvisapp s'arrête pendant un déploiement pas
+// encore confirmé (marqueur), l'ancienne version est rétablie et relancée
+// — c'est elle qui ramène main en arrière et renvoie le ticket en revue.
+func waitForShutdown(started []*exec.Cmd, app *exec.Cmd, startApp func() (*exec.Cmd, error), markerPath, appLog string) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	exited := make(chan *exec.Cmd, len(started))
+	type exit struct {
+		cmd *exec.Cmd
+		err error
+	}
+	exited := make(chan exit, len(started)+1)
+	watch := func(cmd *exec.Cmd) {
+		go func() { exited <- exit{cmd, cmd.Wait()} }()
+	}
 	for _, cmd := range started {
-		cmd := cmd
-		go func() {
-			_ = cmd.Wait()
-			exited <- cmd
-		}()
+		watch(cmd)
 	}
 
-	select {
-	case <-sigCh:
-		log.Printf("arrêt demandé, fin des processus démarrés par ce lanceur...")
-	case cmd := <-exited:
-		log.Printf("%s s'est arrêté de façon inattendue, arrêt du reste", cmd.Path)
+	for {
+		select {
+		case <-sigCh:
+			log.Printf("arrêt demandé, fin des processus démarrés par ce lanceur...")
+			terminateAll(started)
+			return
+		case e := <-exited:
+			if app != nil && e.cmd == app {
+				reason := fmt.Sprintf("jarvisapp s'est arrêté (%v)\n%s", e.err, logTail(appLog, 2000))
+				rolled, err := deploy.RollbackBinary(markerPath, reason)
+				if err != nil {
+					log.Printf("retour arrière du déploiement impossible : %v", err)
+				}
+				if rolled {
+					log.Printf("la nouvelle version de jarvisapp s'est arrêtée avant d'être confirmée : ancienne version rétablie, redémarrage...")
+					cmd, err := startApp()
+					if cmd != nil {
+						started = append(started, cmd)
+						app = cmd
+						watch(cmd)
+					}
+					if err == nil {
+						log.Printf("jarvisapp (ancienne version) de nouveau en service")
+						continue
+					}
+					log.Printf("l'ancienne version ne redémarre pas non plus : %v", err)
+				}
+			}
+			log.Printf("%s s'est arrêté de façon inattendue, arrêt du reste", e.cmd.Path)
+			terminateAll(started)
+			return
+		}
 	}
+}
 
-	terminateAll(started)
+// logTail : la fin d'un journal (la raison d'un arrêt s'y trouve).
+func logTail(path string, n int64) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	off := info.Size() - n
+	if off < 0 {
+		off = 0
+	}
+	buf := make([]byte, info.Size()-off)
+	f.ReadAt(buf, off)
+	return string(buf)
 }
 
 // newTeeWriter écrit sur tous les writers donnés (log.SetOutput

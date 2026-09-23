@@ -1,6 +1,6 @@
 // Package tickets est l'outil de tickets de Jarvis (jalon 26) : on y
 // décrit un changement voulu dans l'application, qu'un agent LLM local
-// analyse (jalon 27), puis développe, teste et déploie (jalons 28-29),
+// analyse (jalon 27), puis développe, teste (jalon 28) et déploie (jalon 30),
 // avec deux validations humaines — le plan, puis le diff (décision de
 // l'utilisateur).
 package tickets
@@ -20,7 +20,9 @@ const (
 	PlanApproved Status = "plan_valide"
 	Developing   Status = "developpement"  // jalon 28
 	Review       Status = "diff_a_valider" // jalon 28 : seconde validation
-	Accepted     Status = "accepte"        // prêt à déployer (jalon 29)
+	Accepted     Status = "accepte"        // accepté sans déploiement automatique
+	Deploying    Status = "deploiement"    // jalon 30
+	Deployed     Status = "deploye"
 	Failed       Status = "echec"
 	Cancelled    Status = "annule"
 )
@@ -33,8 +35,12 @@ var transitions = map[Status][]Status{
 	PlanReady:    {PlanApproved, Analyzing, Cancelled},
 	PlanApproved: {Developing, Cancelled},
 	Developing:   {Review, Failed},
-	Review:       {Accepted, Developing, Cancelled},
-	Failed:       {Analyzing, Developing, Cancelled},
+	Review:       {Accepted, Deploying, Developing, Cancelled},
+	Accepted:     {Deploying, Cancelled},
+	// Un déploiement se confirme (nouvelle version en service) ou revient
+	// en revue (échec, retour arrière) — jamais annulé en plein vol.
+	Deploying: {Deployed, Review},
+	Failed:    {Analyzing, Developing, Cancelled},
 }
 
 // CanTransition indique si un ticket peut passer de from à to.
@@ -64,6 +70,10 @@ func (s Status) Label() string {
 		return "Diff à valider"
 	case Accepted:
 		return "Accepté"
+	case Deploying:
+		return "Déploiement en cours"
+	case Deployed:
+		return "Déployé"
 	case Failed:
 		return "Échec"
 	case Cancelled:
@@ -75,7 +85,7 @@ func (s Status) Label() string {
 
 // Active : l'agent travaille sur le ticket (l'interface se met à jour
 // d'elle-même).
-func (s Status) Active() bool { return s == Analyzing || s == Developing }
+func (s Status) Active() bool { return s == Analyzing || s == Developing || s == Deploying }
 
 // EventKind est la nature d'une entrée du fil d'un ticket.
 type EventKind string
@@ -196,6 +206,15 @@ type Workspace interface {
 	Diff(ctx context.Context, dir string) (string, error)
 	Commit(ctx context.Context, dir, message string) error
 	Discard(ctx context.Context, id string) error
+}
+
+// Deployer déploie la branche d'un ticket accepté (jalon 30) —
+// deploy.Deployer en production. En cas de succès, le processus est
+// remplacé par la nouvelle version : c'est elle qui confirme
+// (ConfirmDeployment). Une erreur signifie que main et l'application sont
+// restés (ou revenus) comme avant.
+type Deployer interface {
+	Deploy(ctx context.Context, id string, onStep func(text, detail string)) error
 }
 
 // Verifier refait la vérification finale, indépendamment de ce que

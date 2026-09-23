@@ -1922,6 +1922,86 @@ spécifique à `localhost`.
     trouvés ainsi et corrigés (liens entre rangées qui s'entassaient sur le
     flanc d'un nœud ; gras contenant du code non rendu).
 
+- **Jalon 30 — déploiement des tickets (fusion vérifiée, redémarrage,
+  retour arrière) : fait, validé en conditions réelles, en attente de
+  validation utilisateur.** Dernière étape du cycle "l'application
+  s'auto-écrit" : accepter le diff (seconde validation humaine) déploie.
+  - **main ne bouge qu'une fois tout vérifié** (`internal/deploy`,
+    `Deployer.Deploy`) : dépôt principal sans travail suivi non commité
+    (sinon refus explicite, fichiers nommés) → la branche du ticket intègre
+    le main actuel (conflit : fusion annulée, fichiers nommés) →
+    vérification complète (templ, gofmt, vet, build, tous les tests) →
+    compilation d'un nouveau binaire à côté de l'ancien → **essai à blanc**
+    (la nouvelle version démarre sur un port libre, collections jetables
+    `*_deploycheck`, sans dossier surveillé, copie locale ni marqueur ; `/`,
+    `/documents`, `/tickets`, `/architecture` doivent répondre 200 ; un
+    arrêt au démarrage est vu aussitôt, sortie jointe) → **main avance par
+    avance rapide seulement** → ancien binaire gardé en `.prev`, marqueur
+    `~/.jarvis/deploy.json` écrit → le processus **se remplace** par la
+    nouvelle version (`syscall.Exec` : même PID, le lanceur continue de le
+    surveiller). Tout échec avant l'avance de main laisse main, binaire et
+    marqueur intacts ; un échec après (échange de binaire, redémarrage) est
+    défait sur place.
+  - **Attendre le calme** : un redémarrage couperait un document en
+    traitement ou un autre ticket — le déploiement attend (et le dit dans
+    le fil), puis prend la file des modèles. Limite connue : un document
+    importé dans la seconde qui précède le redémarrage est marqué
+    interrompu (à relancer), comme après tout redémarrage.
+  - **Confirmation et retour arrière** : la nouvelle version, une fois à
+    l'écoute, lit le marqueur et **confirme** (ticket "Déployé", copie de
+    travail et branche supprimées) — avant la reprise des tickets
+    orphelins. Si elle s'arrête avant, **le lanceur** (qui surveille le
+    PID) rétablit l'ancien binaire (la version fautive gardée en
+    `.failed`), note la raison (code de sortie + fin du journal) et le
+    relance ; l'ancienne version, au démarrage, **ramène main à l'état
+    d'avant par un commit de retour arrière** (`git commit-tree` de
+    l'arbre précédent : pas de réécriture d'historique ; main laissé tel
+    quel, avec un avertissement, si quelqu'un l'a bougé entre-temps) et
+    renvoie le ticket en revue avec la raison. Une seule fois par
+    déploiement. Sans lanceur (application lancée à la main), pas de
+    retour arrière automatique : l'essai à blanc reste le filet principal.
+  - **Rien n'est poussé vers GitHub** (action externe laissée à
+    l'utilisateur, rappelée sur le ticket déployé).
+  - `internal/workspace` : `SyncWithBase`, `BaseClean`, `BaseHead`,
+    `Promote` (avance rapide, dépôt principal forcément sur main),
+    `RestoreBase`. Piège trouvé par les tests : `TrimSpace` sur la sortie
+    de `git status --porcelain` mange la première colonne (" M a.go").
+  - `internal/tickets` : étapes `deploiement` et `deploye` (un déploiement
+    n'est jamais annulé en plein vol : il se confirme ou revient en revue),
+    `StartDeployment` (un ticket accepté avant ce jalon), `Busy`,
+    `ConfirmDeployment`, `DeploymentRolledBack`, reprise d'un déploiement
+    interrompu. UI : "🚀 Accepter et déployer" (avec confirmation), suivi en
+    direct, rappel `git push`. Flags `--deploy` (défaut vrai, avec
+    `--agent-dev`), `--deploy-marker`.
+  - **Validé en conditions réelles, isolé de l'application et du dépôt de
+    l'utilisateur** : clone du dépôt, HOME factice (config du lanceur et
+    marqueur à part), le vrai lanceur, les vrais modèles, collections de
+    test, port 8091. (1) Ticket changeant le titre de la page Architecture,
+    main ayant avancé pendant la revue : intégration de main, vérification,
+    essai à blanc, avance de main, redémarrage **sous le même PID**, nouveau
+    titre en ligne, ticket "Déployé" — **27 s**. (2) Ticket qui passe tests
+    et essai à blanc mais s'arrête sur le vrai port : le lanceur rétablit
+    l'ancienne version en 2 s, main revient à l'arbre d'avant par un commit
+    de retour arrière, le ticket repart en revue avec le message d'arrêt.
+  - **Bug trouvé par ce déploiement réel, corrigé** : le premier essai du
+    ticket (2) a été **refusé à juste titre** — un test intermittent,
+    `TestJobManager_Submit_MaterializesContentForRunner`, échouait sous
+    charge : `JobManager` enregistrait le job terminé *avant* de supprimer
+    son fichier temporaire (`defer`). Fichier désormais supprimé avant la
+    fin enregistrée ; test passé 30 fois sur 30.
+  - Testé : `deploy` (marqueur atomique, retour arrière du binaire une
+    seule fois, réécriture des options, essai à blanc contre un vrai
+    processus — pages, page en erreur, arrêt immédiat —, déployeur : ordre
+    des étapes, six échecs sans rien toucher, rapport de test dans
+    l'erreur, redémarrage raté entièrement défait), `workspace` (vrai git :
+    intégration puis avance, conflit annulé, refus, retour arrière),
+    `tickets` (déploiement, échec, attente du calme, confirmation, retour
+    arrière, reprise, transitions, déploiement d'un ticket accepté — ce
+    dernier test écrit en même temps que son code, pas vu rouge d'abord),
+    `cmd/jarvisapp` (règlement du marqueur au démarrage : confirmation,
+    retour arrière, main bougé, erreur ; volet et routes). Suite complète
+    verte (`-race`).
+
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 
 **Fusionné dans `cmd/jarvisapp` au jalon 13** — cette section décrit les

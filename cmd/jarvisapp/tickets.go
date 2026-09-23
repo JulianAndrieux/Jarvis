@@ -36,6 +36,9 @@ func (s *Server) ticketRoutes(r chi.Router) {
 	r.Post("/tickets/{id}/changes", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.RequestChanges(ctx, id, r.FormValue("feedback"))
 	}))
+	r.Post("/tickets/{id}/deploy", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
+		return s.Tickets.StartDeployment(ctx, id)
+	}))
 	r.Post("/tickets/{id}/accept", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.AcceptChanges(ctx, id)
 	}))
@@ -109,7 +112,7 @@ func (s *Server) handleTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.TicketPage(t).Render(r.Context(), w); err != nil {
+	if err := templates.TicketPage(t, s.Tickets.Deployer != nil).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render ticket: %v\n", err)
 	}
 }
@@ -120,7 +123,7 @@ func (s *Server) handleTicketPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.TicketPanel(t).Render(r.Context(), w); err != nil {
+	if err := templates.TicketPanel(t, s.Tickets.Deployer != nil).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render ticket panel: %v\n", err)
 	}
 }
