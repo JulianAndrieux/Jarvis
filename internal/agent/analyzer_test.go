@@ -199,3 +199,53 @@ func TestAnalyze_SystemPromptExplainsCodeConventions(t *testing.T) {
 		}
 	}
 }
+
+// Vu en réel : une réponse coupée (appel d'outil au JSON invalide) fait
+// renvoyer une erreur 500 par llama.cpp. Ce n'est pas fatal : le modèle
+// est prévenu et réessaie, dans la limite de quelques fois.
+type flakyModel struct {
+	scriptedModel
+	failures int
+}
+
+func (m *flakyModel) Chat(ctx context.Context, msgs []Message, tools []ToolSpec) (Message, error) {
+	if m.failures > 0 {
+		m.failures--
+		m.mu.Lock()
+		m.calls = append(m.calls, append([]Message(nil), msgs...))
+		m.mu.Unlock()
+		return Message{}, errors.New(`agent: server returned 500: {"error":{"code":500,"message":"Failed to parse tool call arguments as JSON: parse error"}}`)
+	}
+	return m.scriptedModel.Chat(ctx, msgs, tools)
+}
+
+func TestLoop_TruncatedToolCallIsRecoverable(t *testing.T) {
+	model := &flakyModel{failures: 1, scriptedModel: scriptedModel{replies: []Message{call("c", "propose_plan", `{"plan": "plan après coupure"}`)}}}
+	a := &Analyzer{Model: model, Tools: Tools{Root: writeRepo(t)}}
+	var steps []tickets.AgentStep
+	plan, err := a.Analyze(context.Background(), request(), func(s tickets.AgentStep) { steps = append(steps, s) })
+	if err != nil || plan != "plan après coupure" {
+		t.Fatalf("plan = %q err = %v, want recovery after a truncated call", plan, err)
+	}
+	retry := model.calls[1]
+	if !strings.Contains(retry[len(retry)-1].Content, "coupée") {
+		t.Errorf("the model should be told its answer was cut: %+v", retry[len(retry)-1])
+	}
+	if len(steps) != 1 || !strings.Contains(steps[0].Summary, "coupée") {
+		t.Errorf("steps = %+v, want the truncation visible in the thread", steps)
+	}
+}
+
+func TestLoop_RepeatedTruncationsEventuallyFail(t *testing.T) {
+	model := &flakyModel{failures: 10}
+	a := &Analyzer{Model: model, Tools: Tools{Root: writeRepo(t)}}
+	if _, err := a.Analyze(context.Background(), request(), nil); err == nil || !strings.Contains(err.Error(), "Failed to parse") {
+		t.Errorf("err = %v, want the parse error after too many truncations", err)
+	}
+}
+
+func TestSummarize_MissingPathIsExplicit(t *testing.T) {
+	if got := summarize(ToolCall{Name: "write_file", Arguments: `{"content": "x"}`}); got != "Écrit (chemin manquant)" {
+		t.Errorf("summarize = %q", got)
+	}
+}

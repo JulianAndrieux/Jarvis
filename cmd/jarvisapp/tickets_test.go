@@ -194,3 +194,105 @@ func TestTimesAreShownInLocalTime(t *testing.T) {
 		t.Error("document detail date not shown in local time")
 	}
 }
+
+// --- Jalon 28 : développement et revue du diff ---
+
+type stubDeveloper struct{}
+
+func (stubDeveloper) Develop(ctx context.Context, req tickets.DevRequest, onStep func(tickets.AgentStep)) (string, error) {
+	onStep(tickets.AgentStep{Summary: "Modifie internal/webapp/store.go", Detail: "Modifié"})
+	return "Ajout de ListQuery.Since", nil
+}
+
+type stubWorkspace struct{ diff string }
+
+func (w stubWorkspace) Prepare(ctx context.Context, id string) (string, error) { return "/ws", nil }
+func (w stubWorkspace) Diff(ctx context.Context, dir string) (string, error)   { return w.diff, nil }
+func (stubWorkspace) Commit(ctx context.Context, dir, msg string) error        { return nil }
+func (stubWorkspace) Discard(ctx context.Context, id string) error             { return nil }
+
+type stubVerifier struct{ ok bool }
+
+func (v stubVerifier) Checks(ctx context.Context, dir string) (string, bool) {
+	return "gofmt : ok", v.ok
+}
+func (v stubVerifier) Tests(ctx context.Context, dir, pkg string) (string, bool) {
+	return "ok  	github.com/x/internal/webapp	0.5s", v.ok
+}
+
+const sampleDiff = `diff --git a/internal/webapp/store.go b/internal/webapp/store.go
+index 1111111..2222222 100644
+--- a/internal/webapp/store.go
++++ b/internal/webapp/store.go
+@@ -10,6 +10,7 @@ type ListQuery struct {
+ 	Search string
+-	Limit  int
++	Limit  int
++	Since  string // <script>alert(1)</script>
+ }
+`
+
+func newDevTicketServer(t *testing.T, verifyOK bool) (*Server, *tickets.FakeStore, tickets.Ticket) {
+	t.Helper()
+	s, store := newTicketServer(t, "## Étapes\n1. x")
+	s.Tickets.Developer, s.Tickets.Workspace, s.Tickets.Verifier = stubDeveloper{}, stubWorkspace{diff: sampleDiff}, stubVerifier{ok: verifyOK}
+	tk, _ := s.Tickets.Create(context.Background(), "Filtre par date", "b", "")
+	s.Tickets.StartAnalysis(context.Background(), tk.ID)
+	waitTicketStatus(t, store, tk.ID, tickets.PlanReady)
+	return s, store, tk
+}
+
+func TestTickets_ApproveDevelopsThenShowsDiffForReview(t *testing.T) {
+	s, store, tk := newDevTicketServer(t, true)
+	postForm(t, s, "/tickets/"+tk.ID+"/approve", nil)
+	waitTicketStatus(t, store, tk.ID, tickets.Review)
+
+	body := get(t, s, "/tickets/"+tk.ID).Body.String()
+	for _, want := range []string{
+		"Diff à valider",
+		`class="diff-file"`, "internal/webapp/store.go",
+		`class="diff-line diff-add"`, `class="diff-line diff-del"`, `class="diff-line diff-hunk"`,
+		"&lt;script&gt;",                     // diff d'un modèle : échappé
+		"ok  \tgithub.com/x/internal/webapp", // rapport de vérification
+		`hx-post="/tickets/` + tk.ID + `/accept"`,
+		`hx-post="/tickets/` + tk.ID + `/changes"`,
+		"ticket/" + tk.ID, // branche
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("review page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "<script>alert") {
+		t.Error("diff rendered unescaped")
+	}
+}
+
+func TestTickets_AcceptAndRequestChanges(t *testing.T) {
+	s, store, tk := newDevTicketServer(t, true)
+	postForm(t, s, "/tickets/"+tk.ID+"/approve", nil)
+	waitTicketStatus(t, store, tk.ID, tickets.Review)
+
+	if rec := postForm(t, s, "/tickets/"+tk.ID+"/changes", url.Values{"feedback": {"renomme Since en From"}}); rec.Code != http.StatusOK {
+		t.Fatalf("changes = %d %s", rec.Code, rec.Body.String())
+	}
+	waitTicketStatus(t, store, tk.ID, tickets.Review)
+	if rec := postForm(t, s, "/tickets/"+tk.ID+"/accept", nil); rec.Code != http.StatusOK {
+		t.Fatalf("accept = %d", rec.Code)
+	}
+	if body := get(t, s, "/tickets/"+tk.ID).Body.String(); !strings.Contains(body, "Accepté") || !strings.Contains(body, "jalon 29") {
+		t.Error("accepted ticket should say so and mention deployment comes next")
+	}
+}
+
+func TestTickets_FailedDevelopmentOffersRetry(t *testing.T) {
+	s, store, tk := newDevTicketServer(t, false)
+	postForm(t, s, "/tickets/"+tk.ID+"/approve", nil)
+	waitTicketStatus(t, store, tk.ID, tickets.Failed)
+	body := get(t, s, "/tickets/"+tk.ID).Body.String()
+	if !strings.Contains(body, `hx-post="/tickets/`+tk.ID+`/develop"`) {
+		t.Errorf("failed development should offer to retry the development")
+	}
+	if rec := postForm(t, s, "/tickets/"+tk.ID+"/develop", nil); rec.Code != http.StatusOK {
+		t.Errorf("retry develop = %d %s", rec.Code, rec.Body.String())
+	}
+}

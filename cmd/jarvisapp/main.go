@@ -39,6 +39,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/vlm"
 	"github.com/JulianAndrieux/Jarvis/internal/watch"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
+	"github.com/JulianAndrieux/Jarvis/internal/workspace"
 )
 
 //go:embed static
@@ -69,6 +70,9 @@ func main() {
 	agentModel := flag.String("agent-model", "", "Modèle de l'agent des tickets ; vide = --llm-model")
 	agentContext := flag.Int("agent-context-chars", 16000, "Taille maximale (caractères) de la conversation envoyée à l'agent — à adapter au contexte du serveur (8192 jetons aujourd'hui)")
 	ticketsCollection := flag.String("tickets-collection", "tickets", "Collection MongoDB des tickets")
+	agentTimeout := flag.Duration("agent-timeout", 15*time.Minute, "Délai d'un appel au modèle de l'agent — un tour qui écrit un fichier entier peut prendre plusieurs minutes sur un modèle local lent")
+	agentDev := flag.Bool("agent-dev", true, "Développement automatique des tickets au plan validé (copie de travail git isolée, vérification complète, diff à relire)")
+	worktreesDir := flag.String("worktrees-dir", "", "Dossier des copies de travail des tickets ; vide = ~/.jarvis/worktrees")
 	flag.Parse()
 
 	if *vlmURL == "" || *vlmModel == "" {
@@ -208,12 +212,32 @@ func main() {
 		Store: ticketStore,
 		Gate:  modelGate,
 		Analyst: &agent.Analyzer{
-			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *llmTimeout}},
+			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}},
 			Tools:           agent.Tools{Root: dir},
 			ProjectBrief:    agent.ProjectBrief(string(claudeMD), 4000),
 			ContextChars:    *agentContext,
 			DisableThinking: true,
 		},
+	}
+	// Développement (jalon 28) : copie de travail git isolée par ticket,
+	// vérification finale refaite par Jarvis.
+	if *agentDev {
+		wtRoot := *worktreesDir
+		if wtRoot == "" {
+			home, _ := os.UserHomeDir()
+			wtRoot = filepath.Join(home, ".jarvis", "worktrees")
+		}
+		checker := workspace.Checker{Timeout: 10 * time.Minute}
+		ticketManager.Workspace = workspace.Manager{Repo: dir, Root: wtRoot}
+		ticketManager.Verifier = checker
+		ticketManager.Developer = &agent.Developer{
+			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}},
+			Checker:         checker,
+			ProjectBrief:    agent.ProjectBrief(string(claudeMD), 4000),
+			ContextChars:    *agentContext,
+			DisableThinking: true,
+		}
+		log.Printf("jarvisapp: développement des tickets activé (copies de travail : %s)", wtRoot)
 	}
 	if n, err := ticketManager.RecoverOrphaned(context.Background()); err != nil {
 		log.Printf("jarvisapp: tickets orphelins : %v", err)

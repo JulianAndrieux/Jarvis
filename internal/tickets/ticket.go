@@ -18,6 +18,9 @@ const (
 	Analyzing    Status = "analyse"
 	PlanReady    Status = "plan_a_valider"
 	PlanApproved Status = "plan_valide"
+	Developing   Status = "developpement"  // jalon 28
+	Review       Status = "diff_a_valider" // jalon 28 : seconde validation
+	Accepted     Status = "accepte"        // prêt à déployer (jalon 29)
 	Failed       Status = "echec"
 	Cancelled    Status = "annule"
 )
@@ -28,8 +31,10 @@ var transitions = map[Status][]Status{
 	Draft:        {Analyzing, Cancelled},
 	Analyzing:    {PlanReady, Failed},
 	PlanReady:    {PlanApproved, Analyzing, Cancelled},
-	Failed:       {Analyzing, Cancelled},
-	PlanApproved: {Cancelled},
+	PlanApproved: {Developing, Cancelled},
+	Developing:   {Review, Failed},
+	Review:       {Accepted, Developing, Cancelled},
+	Failed:       {Analyzing, Developing, Cancelled},
 }
 
 // CanTransition indique si un ticket peut passer de from à to.
@@ -53,6 +58,12 @@ func (s Status) Label() string {
 		return "Plan à valider"
 	case PlanApproved:
 		return "Plan validé"
+	case Developing:
+		return "Développement en cours"
+	case Review:
+		return "Diff à valider"
+	case Accepted:
+		return "Accepté"
 	case Failed:
 		return "Échec"
 	case Cancelled:
@@ -64,7 +75,7 @@ func (s Status) Label() string {
 
 // Active : l'agent travaille sur le ticket (l'interface se met à jour
 // d'elle-même).
-func (s Status) Active() bool { return s == Analyzing }
+func (s Status) Active() bool { return s == Analyzing || s == Developing }
 
 // EventKind est la nature d'une entrée du fil d'un ticket.
 type EventKind string
@@ -104,12 +115,18 @@ type Ticket struct {
 	Need string `bson:"need"`
 	// Acceptance : critères d'acceptation, un par ligne — ce qui dira que
 	// c'est fait (et que les tests de l'agent devront vérifier).
-	Acceptance string    `bson:"acceptance"`
-	Status     Status    `bson:"status"`
-	Plan       string    `bson:"plan,omitempty"`
-	CreatedAt  time.Time `bson:"created_at"`
-	UpdatedAt  time.Time `bson:"updated_at"`
-	Events     []Event   `bson:"events,omitempty"`
+	Acceptance string `bson:"acceptance"`
+	Status     Status `bson:"status"`
+	Plan       string `bson:"plan,omitempty"`
+	// Branch, Diff et Report : la branche git du développement (jalon
+	// 28), le diff par rapport à main soumis à la revue, et le dernier
+	// rapport de vérification (gofmt, vet, tests).
+	Branch    string    `bson:"branch,omitempty"`
+	Diff      string    `bson:"diff,omitempty"`
+	Report    string    `bson:"report,omitempty"`
+	CreatedAt time.Time `bson:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at"`
+	Events    []Event   `bson:"events,omitempty"`
 }
 
 // Store est le port de persistance des tickets.
@@ -148,4 +165,39 @@ type AgentStep struct {
 // agent.Analyzer en production, une fake dans les tests.
 type Analyst interface {
 	Analyze(ctx context.Context, req AnalysisRequest, onStep func(AgentStep)) (plan string, err error)
+}
+
+// DevRequest est ce que l'agent reçoit pour développer un ticket (jalon
+// 28) : le besoin, le plan validé, et — pour une nouvelle tentative — le
+// retour (rapport de vérification en échec, demande de changements).
+type DevRequest struct {
+	Title      string
+	Need       string
+	Acceptance string
+	Plan       string
+	Feedback   string
+	// Dir est la copie de travail isolée du ticket.
+	Dir string
+}
+
+// Developer développe un ticket dans sa copie de travail et retourne un
+// résumé — agent.Developer en production.
+type Developer interface {
+	Develop(ctx context.Context, req DevRequest, onStep func(AgentStep)) (summary string, err error)
+}
+
+// Workspace gère la copie de travail isolée d'un ticket —
+// workspace.Manager en production (branche git ticket/<id>).
+type Workspace interface {
+	Prepare(ctx context.Context, id string) (dir string, err error)
+	Diff(ctx context.Context, dir string) (string, error)
+	Commit(ctx context.Context, dir, message string) error
+	Discard(ctx context.Context, id string) error
+}
+
+// Verifier refait la vérification finale, indépendamment de ce que
+// l'agent affirme — workspace.Checker en production.
+type Verifier interface {
+	Checks(ctx context.Context, dir string) (string, bool)
+	Tests(ctx context.Context, dir, pkg string) (string, bool)
 }

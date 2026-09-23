@@ -91,9 +91,22 @@ templ ticketPanelBody(t tickets.Ticket) {
 			case tickets.Draft:
 				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/analyze" } hx-target="#ticket-panel" hx-swap="outerHTML">🤖 Lancer l'analyse</button>
 			case tickets.Failed:
-				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/analyze" } hx-target="#ticket-panel" hx-swap="outerHTML">↻ Relancer l'analyse</button>
+				if t.Branch != "" {
+					<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/develop" } hx-target="#ticket-panel" hx-swap="outerHTML">↻ Relancer le développement</button>
+				}
+				<button hx-post={ "/tickets/" + t.ID + "/analyze" } hx-target="#ticket-panel" hx-swap="outerHTML">↻ Relancer l'analyse</button>
 			case tickets.Analyzing:
 				<p class="muted">L'agent explore le code et prépare un plan — le fil ci-dessous se met à jour en direct.</p>
+			case tickets.Developing:
+				<p class="muted">L'agent développe dans une copie isolée (branche { "ticket/" + t.ID }) : tests d'abord, puis Jarvis refait toute la vérification. Le fil se met à jour en direct.</p>
+			case tickets.Review:
+				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/accept" } hx-target="#ticket-panel" hx-swap="outerHTML">✓ Accepter le diff</button>
+				<form class="revise-form" hx-post={ "/tickets/" + t.ID + "/changes" } hx-target="#ticket-panel" hx-swap="outerHTML">
+					<input type="text" name="feedback" placeholder="Ce qu'il faut changer dans le code…"/>
+					<button type="submit">Demander des changements</button>
+				</form>
+			case tickets.Accepted:
+				<p class="warn-box">Diff accepté (branche { t.Branch }). Le déploiement automatique — fusion dans main, reconstruction, redémarrage avec retour arrière — arrive au jalon 29.</p>
 			case tickets.PlanReady:
 				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/approve" } hx-target="#ticket-panel" hx-swap="outerHTML">✓ Valider le plan</button>
 				<form class="revise-form" hx-post={ "/tickets/" + t.ID + "/revise" } hx-target="#ticket-panel" hx-swap="outerHTML">
@@ -101,12 +114,22 @@ templ ticketPanelBody(t tickets.Ticket) {
 					<button type="submit">Demander une révision</button>
 				</form>
 			case tickets.PlanApproved:
-				<p class="warn-box">Plan validé. Le développement automatique (branche isolée, tests, diff à relire) arrive au jalon 28.</p>
+				<p class="warn-box">Plan validé. Le développement automatique n'est pas configuré sur cette instance.</p>
 		}
-		if t.Status == tickets.Draft || t.Status == tickets.PlanReady || t.Status == tickets.Failed || t.Status == tickets.PlanApproved {
+		if t.Status == tickets.Draft || t.Status == tickets.PlanReady || t.Status == tickets.Failed || t.Status == tickets.PlanApproved || t.Status == tickets.Review {
 			<button class="button-ghost" hx-post={ "/tickets/" + t.ID + "/cancel" } hx-target="#ticket-panel" hx-swap="outerHTML">Annuler le ticket</button>
 		}
 	</div>
+	if t.Diff != "" {
+		<div class="section-title">Diff (branche { t.Branch })</div>
+		@renderDiff(t.Diff)
+	}
+	if t.Report != "" {
+		<details class="raw report">
+			<summary>Rapport de vérification (gofmt, vet, build, tests)</summary>
+			<pre>{ t.Report }</pre>
+		</details>
+	}
 	if t.Plan != "" {
 		<div class="section-title">Plan de l'agent</div>
 		<div class="card plan">

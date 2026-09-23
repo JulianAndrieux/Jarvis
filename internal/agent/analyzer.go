@@ -94,77 +94,152 @@ func userPrompt(req tickets.AnalysisRequest) string {
 // un plan, dans la limite de MaxSteps. onStep (nil accepté) reçoit chaque
 // action, pour le fil du ticket.
 func (a *Analyzer) Analyze(ctx context.Context, req tickets.AnalysisRequest, onStep func(tickets.AgentStep)) (string, error) {
-	maxSteps := a.MaxSteps
-	if maxSteps <= 0 {
-		maxSteps = 16
-	}
-	msgs := []Message{
-		{Role: "system", Content: a.systemPrompt()},
-		{Role: "user", Content: userPrompt(req)},
-	}
-	specs := ReadOnlySpecs()
-	seen := map[string]bool{} // appels déjà faits (outil + arguments)
+	return runLoop(ctx, loopConfig{
+		model:           a.Model,
+		specs:           ReadOnlySpecs(),
+		exec:            func(ctx context.Context, c ToolCall) string { return a.Tools.Execute(c) },
+		terminal:        "propose_plan",
+		terminalArg:     "plan",
+		what:            "l'analyse",
+		maxSteps:        orDefault(a.MaxSteps, 16),
+		contextChars:    orDefault(a.ContextChars, 18000),
+		toolOutputChars: orDefault(a.ToolOutputChars, 3000),
+		onStep:          onStep,
+	}, a.systemPrompt(), userPrompt(req))
+}
 
-	for step := 0; step < maxSteps; step++ {
+// loopConfig paramètre la boucle d'agent commune à l'analyse et au
+// développement.
+type loopConfig struct {
+	model Model
+	specs []ToolSpec
+	exec  func(ctx context.Context, c ToolCall) string
+	// terminal est l'outil qui termine la boucle ; terminalArg l'argument
+	// qui porte le résultat (plan, résumé).
+	terminal, terminalArg string
+	what                  string // "l'analyse", "le développement" (messages d'erreur)
+	maxSteps              int
+	contextChars          int
+	toolOutputChars       int
+	onStep                func(tickets.AgentStep)
+}
+
+func orDefault(v, def int) int {
+	if v > 0 {
+		return v
+	}
+	return def
+}
+
+// runLoop : le modèle appelle des outils jusqu'à appeler cfg.terminal (ou
+// répondre par un texte substantiel), dans la limite de cfg.maxSteps,
+// avec compaction du contexte et refus des appels répétés.
+func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, error) {
+	msgs := []Message{{Role: "system", Content: system}, {Role: "user", Content: user}}
+	seen := map[string]bool{} // appels déjà faits (outil + arguments)
+	truncations := 0
+	specs := cfg.specs
+
+	for step := 0; step < cfg.maxSteps; step++ {
 		if err := ctx.Err(); err != nil {
-			return "", fmt.Errorf("agent: analyse interrompue : %w", err)
+			return "", fmt.Errorf("agent: %s interrompu(e) : %w", cfg.what, err)
 		}
-		reply, err := a.Model.Chat(ctx, a.compact(msgs), specs)
+		reply, err := cfg.model.Chat(ctx, compact(msgs, cfg.contextChars), specs)
 		if err != nil {
+			// Vu en réel : une réponse trop longue, coupée par le contexte,
+			// laisse un appel d'outil au JSON invalide que llama.cpp refuse
+			// (erreur 500). Le modèle est prévenu et réessaie, quelques fois.
+			if isTruncatedCall(err) && truncations < maxTruncations {
+				truncations++
+				// À température 0, la même consigne reproduit la même réponse
+				// coupée (vu en réel) : on retire l'outil des longues sorties.
+				specs = withoutTool(specs, "write_file")
+				msgs = append(msgs, Message{Role: "user", Content: "Ta dernière réponse a été coupée (trop longue) : son appel d'outil est illisible. write_file n'est plus disponible : modifie les fichiers avec edit_file, un petit changement à la fois."})
+				if cfg.onStep != nil {
+					cfg.onStep(tickets.AgentStep{Summary: "Réponse coupée (trop longue) — le modèle est relancé", Detail: err.Error()})
+				}
+				continue
+			}
 			return "", fmt.Errorf("agent: modèle : %w", err)
 		}
-		if plan, ok := planFrom(reply); ok {
-			return plan, nil
+		if result, ok := resultFrom(reply, cfg.terminal, cfg.terminalArg); ok {
+			return result, nil
 		}
 		msgs = append(msgs, reply)
 		if len(reply.ToolCalls) == 0 {
-			msgs = append(msgs, Message{Role: "user", Content: "Continue avec les outils, ou appelle propose_plan si tu as assez d'éléments."})
+			msgs = append(msgs, Message{Role: "user", Content: fmt.Sprintf("Continue avec les outils, ou appelle %s quand tu as terminé.", cfg.terminal)})
 			continue
 		}
 		for _, call := range reply.ToolCalls {
 			key := call.Name + " " + call.Arguments
 			summary := summarize(call)
 			var out string
-			if seen[key] {
+			if seen[key] && call.Name != "run_tests" && call.Name != "run_checks" {
 				// Vu en réel : le même appel en échec répété jusqu'à la
-				// limite d'étapes. Le relancer ne changerait rien.
-				out = "Appel déjà fait (même outil, mêmes arguments) : son résultat ne changera pas. Change d'approche — list_files pour voir les noms réels, search pour trouver un identifiant — ou propose ton plan."
+				// limite d'étapes. Le relancer ne changerait rien (sauf
+				// tests et vérifications : le code a pu changer entre-temps).
+				out = "Appel déjà fait (même outil, mêmes arguments) : son résultat ne changera pas. Change d'approche — list_files pour voir les noms réels, search pour trouver un identifiant — ou termine."
 				summary += " (répété, non réexécuté)"
 			} else {
 				seen[key] = true
-				out = truncate(a.Tools.Execute(call), a.toolOutputChars())
+				out = truncate(cfg.exec(ctx, call), cfg.toolOutputChars)
 			}
 			msgs = append(msgs, Message{Role: "tool", ToolCallID: call.ID, Content: out})
-			if onStep != nil {
-				onStep(tickets.AgentStep{Summary: summary, Detail: out})
+			if cfg.onStep != nil {
+				cfg.onStep(tickets.AgentStep{Summary: summary, Detail: out})
 			}
 		}
 	}
 
-	// Limite atteinte : une dernière chance, seul propose_plan est offert.
-	msgs = append(msgs, Message{Role: "user", Content: fmt.Sprintf("Tu as atteint la limite de %d étapes. Propose maintenant ton plan avec propose_plan, avec ce que tu sais.", maxSteps)})
-	reply, err := a.Model.Chat(ctx, a.compact(msgs), specs[len(specs)-1:])
+	// Limite atteinte : une dernière chance, seul l'outil de fin est offert.
+	var terminalSpec []ToolSpec
+	for _, s := range cfg.specs {
+		if s.Name == cfg.terminal {
+			terminalSpec = append(terminalSpec, s)
+		}
+	}
+	msgs = append(msgs, Message{Role: "user", Content: fmt.Sprintf("Tu as atteint la limite de %d étapes. Appelle maintenant %s, avec ce que tu as.", cfg.maxSteps, cfg.terminal)})
+	reply, err := cfg.model.Chat(ctx, compact(msgs, cfg.contextChars), terminalSpec)
 	if err != nil {
 		return "", fmt.Errorf("agent: modèle : %w", err)
 	}
-	if plan, ok := planFrom(reply); ok {
-		return plan, nil
+	if result, ok := resultFrom(reply, cfg.terminal, cfg.terminalArg); ok {
+		return result, nil
 	}
-	return "", fmt.Errorf("agent: l'analyse n'a pas abouti en %d étapes (aucun plan proposé)", maxSteps)
+	return "", fmt.Errorf("agent: %s n'a pas abouti en %d étapes (aucun %s)", cfg.what, cfg.maxSteps, cfg.terminal)
 }
 
-// planFrom extrait un plan d'une réponse : appel à propose_plan, ou texte
-// libre substantiel sans appel d'outil.
-func planFrom(reply Message) (string, bool) {
+func withoutTool(specs []ToolSpec, name string) []ToolSpec {
+	out := make([]ToolSpec, 0, len(specs))
+	for _, s := range specs {
+		if s.Name != name {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// maxTruncations : réponses coupées tolérées avant d'abandonner.
+const maxTruncations = 3
+
+// isTruncatedCall reconnaît le refus par llama.cpp d'un appel d'outil au
+// JSON invalide (réponse coupée).
+func isTruncatedCall(err error) bool {
+	return strings.Contains(err.Error(), "Failed to parse tool call arguments")
+}
+
+// resultFrom extrait le résultat d'une réponse : appel à l'outil de fin,
+// ou texte libre substantiel sans appel d'outil.
+func resultFrom(reply Message, terminal, arg string) (string, bool) {
 	for _, call := range reply.ToolCalls {
-		if call.Name != "propose_plan" {
+		if call.Name != terminal {
 			continue
 		}
-		var args struct {
-			Plan string `json:"plan"`
-		}
-		if err := json.Unmarshal([]byte(call.Arguments), &args); err == nil && strings.TrimSpace(args.Plan) != "" {
-			return strings.TrimSpace(args.Plan), true
+		var args map[string]any
+		if err := json.Unmarshal([]byte(call.Arguments), &args); err == nil {
+			if v, _ := args[arg].(string); strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v), true
+			}
 		}
 	}
 	if len(reply.ToolCalls) == 0 && len(strings.TrimSpace(reply.Content)) >= minPlanChars {
@@ -173,21 +248,10 @@ func planFrom(reply Message) (string, bool) {
 	return "", false
 }
 
-func (a *Analyzer) toolOutputChars() int {
-	if a.ToolOutputChars > 0 {
-		return a.ToolOutputChars
-	}
-	return 3000
-}
-
-// compact retourne une copie de msgs sous le budget ContextChars : les
+// compact retourne une copie de msgs sous le budget (en caractères) : les
 // sorties d'outils les plus anciennes sont remplacées par une note, la
 // plus récente reste intacte.
-func (a *Analyzer) compact(msgs []Message) []Message {
-	budget := a.ContextChars
-	if budget <= 0 {
-		budget = 18000
-	}
+func compact(msgs []Message, budget int) []Message {
 	out := append([]Message(nil), msgs...)
 	lastTool := -1
 	for i := len(out) - 1; i >= 0; i-- {
@@ -252,9 +316,30 @@ func summarize(call ToolCall) string {
 			d = "la racine"
 		}
 		return "Liste " + d
+	case "write_file":
+		return "Écrit " + pathArg(args)
+	case "edit_file":
+		return "Modifie " + pathArg(args)
+	case "run_checks":
+		return "Lance les vérifications (templ, gofmt, vet, build)"
+	case "run_tests":
+		p, _ := args["package"].(string)
+		if p == "" {
+			p = "./..."
+		}
+		return "Lance les tests " + p
 	default:
 		return fmt.Sprintf("%s %s", call.Name, call.Arguments)
 	}
+}
+
+// pathArg : le chemin d'un appel, ou une mention explicite s'il manque
+// (vu en réel : "Écrit <nil>").
+func pathArg(args map[string]any) string {
+	if p, _ := args["path"].(string); p != "" {
+		return p
+	}
+	return "(chemin manquant)"
 }
 
 func orDash(v any) any {

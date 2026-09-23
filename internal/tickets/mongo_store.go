@@ -50,6 +50,7 @@ func (s *MongoStore) Update(ctx context.Context, t Ticket) error {
 	res, err := s.Collection.UpdateByID(ctx, t.ID, bson.M{"$set": bson.M{
 		"title": t.Title, "need": t.Need, "acceptance": t.Acceptance,
 		"status": t.Status, "plan": t.Plan, "updated_at": time.Now(),
+		"branch": t.Branch, "diff": t.Diff, "report": t.Report,
 	}})
 	if err != nil {
 		return fmt.Errorf("tickets: update %s: %w", t.ID, err)
@@ -66,7 +67,7 @@ func (s *MongoStore) List(ctx context.Context, status Status) ([]Ticket, error) 
 		filter["status"] = status
 	}
 	// Le fil peut être long : pas chargé pour une liste.
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetProjection(bson.M{"events": 0}).SetLimit(500)
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetProjection(bson.M{"events": 0, "diff": 0, "report": 0}).SetLimit(500)
 	cur, err := s.Collection.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, fmt.Errorf("tickets: list: %w", err)

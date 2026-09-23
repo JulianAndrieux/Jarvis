@@ -378,6 +378,16 @@ templ Layout(title string, active string) {
 				.tl-error .tl-text { color: var(--danger); }
 				.tl-plan .tl-text { color: var(--accent); font-weight: 600; }
 				@media (max-width: 1000px) { .tickets-layout, .ticket-columns { grid-template-columns: 1fr; } }
+				/* Diff du développement (jalon 28) : couleurs de VS Code */
+				.diff-file { border: 1px solid #2b2b2b; border-radius: 8px; overflow: hidden; margin-bottom: .9rem; }
+				.diff-name { background: #252526; color: #cccccc; font: 600 12px Menlo, Monaco, monospace; padding: .4rem .8rem; }
+				pre.diff { margin: 0; background: #1e1e1e; color: #d4d4d4; font: 12.5px/1.5 Menlo, Monaco, "SF Mono", monospace; overflow-x: auto; padding: .4rem 0; }
+				.diff-line { display: inline-block; min-width: 100%; padding: 0 .8rem; }
+				.diff-add { background: rgba(35, 134, 54, .28); color: #aff5b4; }
+				.diff-del { background: rgba(218, 54, 51, .28); color: #ffdcd7; }
+				.diff-hunk { color: #79c0ff; background: rgba(56, 139, 253, .12); }
+				.diff-meta { color: #8b949e; }
+				details.report { margin: .5rem 0 1rem; }
 
 				/* Commun */
 				h2 { margin-top: 0; }

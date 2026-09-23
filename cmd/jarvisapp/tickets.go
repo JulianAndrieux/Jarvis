@@ -30,6 +30,15 @@ func (s *Server) ticketRoutes(r chi.Router) {
 	r.Post("/tickets/{id}/approve", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.ApprovePlan(ctx, id)
 	}))
+	r.Post("/tickets/{id}/develop", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
+		return s.Tickets.StartDevelopment(ctx, id, "")
+	}))
+	r.Post("/tickets/{id}/changes", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
+		return s.Tickets.RequestChanges(ctx, id, r.FormValue("feedback"))
+	}))
+	r.Post("/tickets/{id}/accept", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
+		return s.Tickets.AcceptChanges(ctx, id)
+	}))
 	r.Post("/tickets/{id}/cancel", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.Cancel(ctx, id)
 	}))

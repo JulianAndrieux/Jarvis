@@ -1768,6 +1768,84 @@ spécifique à `localhost`.
     (déploiement : fusion, reconstruction, redémarrage supervisé,
     retour arrière si l'application ne répond plus). Modèle de code sur
     la machine dédiée.
+- **Jalon 28 — l'agent développe (POC) : mécanique faite et éprouvée sur le
+  vrai système ; le développement réel échoue avec Qwen3-8B, comme
+  anticipé.** Cadre posé par l'utilisateur : "on est sur le POC", modèle
+  lent accepté, une vraie machine sera préparée — donc POC avec le
+  Qwen3-8B déjà servi, aucun nouveau modèle téléchargé sans choix
+  argumenté.
+  - **`internal/workspace`** (nouveau) : copie de travail git par ticket
+    (branche `ticket/<id>`, worktree hors du dépôt, `~/.jarvis/worktrees`),
+    diff par rapport à main (fichiers nouveaux compris), commit sur la
+    branche (auteur "Agent Jarvis"), suppression ; identifiants filtrés
+    (ni `../`, ni option git). Toutes les commandes git sont lancées par
+    Jarvis, jamais par l'agent ; main n'est jamais modifié ici. Testé sur
+    un vrai dépôt git temporaire. **`Checker`** : vérifications (templ,
+    gofmt, vet, build) et tests **dans un environnement vidé** (aucun
+    secret — `MONGO_URI` compris —, `GOPROXY=off`), délai borné, **tout le
+    groupe de processus tué au délai** (sinon le binaire de test lancé
+    par `go test` survit) — testé, y compris un test qui dort une minute.
+    Limite assumée et documentée : pas de vrai bac à sable (même
+    utilisateur, réseau local possible) — le code écrit par l'agent
+    s'exécute avant la revue humaine ; isolation réelle (conteneur/VM)
+    prévue sur la machine dédiée. Vérification complète sur une copie
+    neuve de main : 2 s de vérifications, 9 s de tests.
+  - **`internal/agent`** : `DevTools` (lecture + `write_file`,
+    `edit_file` à extrait exact et unique avec **lignes réelles proches
+    montrées** si l'extrait est introuvable, `run_checks`, `run_tests` à
+    motif de paquet relatif validé, `finish`) ; interdits : `go.mod`/
+    `go.sum` (pas de dépendance nouvelle), `*_templ.go` (générés),
+    CLAUDE.md, tout ce qui sort de la copie. **Boucle d'agent factorisée**
+    (analyse et développement partagent compaction, refus des appels
+    répétés — sauf tests/vérifications —, limite d'étapes, dernière
+    chance). `Developer` : prompt TDD imposé (test, le voir échouer,
+    implémenter, vert, vérifications, `finish`).
+  - **`internal/tickets`** : étapes `developpement → diff_a_valider →
+    accepte` (seconde validation humaine), relance depuis l'échec.
+    Valider le plan lance le développement ; **Jarvis refait lui-même la
+    vérification finale** (le modèle ne se juge pas) ; en échec, seconde
+    tentative avec le rapport ; en succès, commit sur la branche et diff
+    soumis à la revue ; un diff vide est un échec ; demander des
+    changements relance l'agent avec le retour ; abandonner supprime copie
+    et branche. `Branch`, `Diff`, `Report` persistés (Mongo réel testé).
+  - **UI** : développement suivi en direct ; revue avec **diff coloré par
+    fichier** (couleurs VS Code, **échappé** : c'est du code écrit par un
+    modèle — testé avec un `<script>`), rapport de vérification, accepter /
+    demander des changements / abandonner ; relancer le développement.
+  - Flags : `--agent-dev` (défaut vrai), `--worktrees-dir`,
+    **`--agent-timeout` (15 min par tour)** — le délai de l'extraction
+    (180 s) a fait échouer le premier essai réel (tour de plus de 3 min).
+  - **Essai réel** (ticket : reconnaître l'extension `.jpe` comme JPEG —
+    une ligne dans `detect.go` plus un test) : **analyse réussie** (1 min
+    47 s, bon fichier, bon plan) ; **développement en échec à chaque
+    tentative** — alors que la recherche lui avait montré exactement les
+    lignes à modifier, Qwen3-8B **réécrit le fichier entier**
+    (`write_file`, 12 800 caractères), réponse coupée par le contexte de
+    8192 jetons, appel d'outil au JSON invalide, erreur 500 de llama.cpp.
+    Trois garde-fous ajoutés (TDD) : réécriture complète d'un fichier
+    existant de plus de 60 lignes refusée ; réponse coupée non fatale
+    (modèle prévenu, 3 fois) ; après une coupure, `write_file` retiré des
+    outils. **Aucun n'a suffi** : à température 0 le modèle reproduit la
+    même réponse coupée au caractère près. Conclusion assumée, sans
+    empiler davantage de consignes : **la mécanique est prête, le
+    développement autonome demande un modèle de code et un grand
+    contexte** — la machine dédiée (cf. jalons 26-27). Ticket de test
+    annulé : copie de travail et branche effectivement supprimées.
+  - Testé : `workspace` (vrai git : branche isolée, idempotence, diff,
+    commit hors de main, suppression, identifiants refusés ; `Checker` :
+    succès/échec, environnement vidé, gofmt/vet/build, délai), `agent`
+    (outils d'écriture et interdits, `edit_file` exact/introuvable/ambigu,
+    motifs de paquet, développeur : écrit/teste/termine, prompt, copie de
+    travail, limite, réécriture refusée, coupure récupérée/retrait de
+    `write_file`), `tickets` (développement, vérification refaite,
+    seconde tentative, diff vide, erreur de l'agent, revue, transitions,
+    sans développeur), `cmd/jarvisapp` (diff échappé et coloré, rapport,
+    accepter/changements, relance). Suite complète verte (`-race
+    -tags=integration`).
+  - **Aussi corrigé pendant ce jalon** : le lanceur ne démarrait plus
+    depuis le Finder/Dock (PATH minimal sans Homebrew ni Go : ni
+    `llama-server`, ni `go`, ni `soffice` trouvés) — `WithToolPaths`,
+    testé, commit séparé.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de
 développement
