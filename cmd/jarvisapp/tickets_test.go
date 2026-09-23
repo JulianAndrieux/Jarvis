@@ -230,6 +230,11 @@ index 1111111..2222222 100644
 +	Limit  int
 +	Since  string // <script>alert(1)</script>
  }
+diff --git a/internal/webapp/store_test.go b/internal/webapp/store_test.go
+--- a/internal/webapp/store_test.go
++++ b/internal/webapp/store_test.go
+@@ -1,1 +1,2 @@
++func TestSince(t *testing.T) {}
 `
 
 func newDevTicketServer(t *testing.T, verifyOK bool) (*Server, *tickets.FakeStore, tickets.Ticket) {

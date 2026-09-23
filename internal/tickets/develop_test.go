@@ -273,3 +273,48 @@ func TestManager_AttemptNumberGrowsAcrossRetries(t *testing.T) {
 		t.Errorf("attempts = %+v", reqs)
 	}
 }
+
+// TDD strict (CLAUDE.md) : vu en réel, l'agent a annoncé « tests écrits
+// et validés » sans avoir touché un seul fichier de test. Un diff qui
+// modifie du code Go sans aucun _test.go est renvoyé à l'agent, puis le
+// ticket échoue s'il persiste.
+func TestManager_GoChangeWithoutTestIsSentBack(t *testing.T) {
+	dev := &fakeDeveloper{summaries: []string{"tests écrits et validés"}}
+	diff := "diff --git a/internal/webapp/store.go b/internal/webapp/store.go\n--- a/internal/webapp/store.go\n+++ b/internal/webapp/store.go\n@@ -1 +1 @@\n+\tComment string\n"
+	m, s, tk := approvedTicket(t, dev, &fakeWorkspace{diff: diff}, &fakeVerifier{results: []bool{true}})
+	m.ApprovePlan(context.Background(), tk.ID)
+	failed := waitTicket(t, s, tk.ID, Failed)
+
+	reqs := dev.Requests()
+	if len(reqs) != 2 || !strings.Contains(reqs[1].Feedback, "_test.go") {
+		t.Errorf("requests = %+v, want a second attempt asking for tests", reqs)
+	}
+	if last := failed.Events[len(failed.Events)-1]; !strings.Contains(last.Text, "test") {
+		t.Errorf("last event = %+v, want the missing tests named", last)
+	}
+}
+
+func TestManager_GoChangeWithTestGoesToReview(t *testing.T) {
+	diff := "+++ b/internal/webapp/store.go\n+\tComment string\n+++ b/internal/webapp/store_test.go\n+func TestComment(t *testing.T) {}\n"
+	m, s, tk := approvedTicket(t, &fakeDeveloper{summaries: []string{"ok"}}, &fakeWorkspace{diff: diff}, &fakeVerifier{results: []bool{true}})
+	m.ApprovePlan(context.Background(), tk.ID)
+	waitTicket(t, s, tk.ID, Review)
+}
+
+func TestUntestedGoChange(t *testing.T) {
+	cases := map[string]bool{
+		"+++ b/a.go\n":                            true,
+		"+++ b/a.go\n+++ b/a_test.go\n":           false,
+		"+++ b/page.templ\n":                      false, // gabarit : pas de code Go testable seul
+		"+++ b/page.templ\n+++ b/page_templ.go\n": false, // généré par templ
+		"+++ b/CLAUDE.md\n":                       false,
+		"--- a/old.go\n+++ /dev/null\n":           false, // suppression seule
+		"+x":                                      false,
+		"+++ b/cmd/x/main.go\n+++ b/x_test.go\n":  false,
+	}
+	for diff, want := range cases {
+		if got := untestedGoChange(diff); got != want {
+			t.Errorf("untestedGoChange(%q) = %v, want %v", diff, got, want)
+		}
+	}
+}

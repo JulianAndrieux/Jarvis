@@ -433,6 +433,7 @@ func (m *Manager) develop(t Ticket, feedback string) {
 		attempts = 2
 	}
 	var report string
+	failure := fmt.Sprintf("La vérification finale échoue encore après %d tentatives.", attempts)
 	previous := previousAttempts(t.Events)
 	for attempt := 1; attempt <= attempts; attempt++ {
 		n := previous + attempt
@@ -459,6 +460,7 @@ func (m *Manager) develop(t Ticket, feedback string) {
 		if !ok {
 			m.event(ctx, t.ID, Event{Kind: EventError, Author: AuthorAgent, Text: "Vérification finale en échec", Detail: clip(report, m.detailChars())})
 			feedback = "La vérification finale (gofmt, go vet, go build, go test ./...) a échoué :\n" + report
+			failure = fmt.Sprintf("La vérification finale échoue encore après %d tentatives.", attempts)
 			continue
 		}
 		m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: "Vérification finale réussie", Detail: clip(report, m.detailChars())})
@@ -472,6 +474,12 @@ func (m *Manager) develop(t Ticket, feedback string) {
 			m.fail(ctx, t, "L'agent n'a apporté aucune modification.", report)
 			return
 		}
+		if untestedGoChange(diff) {
+			failure = fmt.Sprintf("Le code Go modifié n'a toujours aucun test après %d tentatives (TDD strict).", attempts)
+			m.event(ctx, t.ID, Event{Kind: EventError, Author: AuthorAgent, Text: "Code Go modifié sans aucun test"})
+			feedback = "Tu as modifié du code Go sans ajouter ni modifier aucun fichier _test.go. Le projet est en TDD strict : écris les tests qui couvrent ta modification."
+			continue
+		}
 		if err := m.Workspace.Commit(ctx, dir, fmt.Sprintf("Ticket %s : %s\n\n%s", t.ID, t.Title, summary)); err != nil {
 			m.fail(ctx, t, "Commit impossible : "+err.Error(), report)
 			return
@@ -484,7 +492,26 @@ func (m *Manager) develop(t Ticket, feedback string) {
 		m.event(ctx, t.ID, Event{Kind: EventPlan, Author: AuthorAgent, Text: "Diff prêt à relire — " + summary})
 		return
 	}
-	m.fail(ctx, t, fmt.Sprintf("La vérification finale échoue encore après %d tentatives.", attempts), report)
+	m.fail(ctx, t, failure, report)
+}
+
+// untestedGoChange : le diff ajoute ou modifie du code Go sans toucher
+// aucun fichier de test. Vu en réel : l'agent a annoncé des tests qu'il
+// n'avait pas écrits.
+func untestedGoChange(diff string) bool {
+	code := false
+	for _, line := range strings.Split(diff, "\n") {
+		path, ok := strings.CutPrefix(line, "+++ b/")
+		if !ok {
+			continue
+		}
+		if strings.HasSuffix(path, "_test.go") {
+			return false
+		}
+		// Les _templ.go sont régénérés depuis les .templ : pas du code écrit.
+		code = code || (strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_templ.go"))
+	}
+	return code
 }
 
 // verify : vérifications (templ, gofmt, vet, build) puis toute la suite

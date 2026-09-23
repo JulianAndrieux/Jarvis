@@ -12,6 +12,7 @@ import (
 type fakeGit struct {
 	calls                  []string
 	dirty, conflict, noFF  error
+	unchanged              bool // la branche n'apporte rien par rapport à main
 	head                   string
 	restoredTo, restoreMsg string
 }
@@ -27,6 +28,12 @@ func (g *fakeGit) BaseClean(ctx context.Context) error {
 func (g *fakeGit) SyncWithBase(ctx context.Context, dir string) error {
 	g.calls = append(g.calls, "sync")
 	return g.conflict
+}
+func (g *fakeGit) Diff(ctx context.Context, dir string) (string, error) {
+	if g.unchanged {
+		return "", nil
+	}
+	return "+x", nil
 }
 func (g *fakeGit) BaseHead(ctx context.Context) (string, error) { return g.head, nil }
 func (g *fakeGit) Promote(ctx context.Context, id string) (string, error) {
@@ -138,7 +145,8 @@ func TestDeploy_FailuresBeforePromotionTouchNothing(t *testing.T) {
 				return "panic", errors.New("/documents répond 500")
 			}
 		},
-		"main a avancé": func(h *harness) { h.git.noFF = errors.New("pas d'avance rapide") },
+		"main a avancé":   func(h *harness) { h.git.noFF = errors.New("pas d'avance rapide") },
+		"rien à déployer": func(h *harness) { h.git.unchanged = true },
 	}
 	for name, setup := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -187,5 +195,21 @@ func TestDeploy_RestartFailureRollsEverythingBack(t *testing.T) {
 	}
 	if _, ok, _ := ReadMarker(h.marker); ok {
 		t.Error("marker left behind")
+	}
+}
+
+// Vu en réel (ticket "Ajouter commentaire sur document") : la branche,
+// une fois main intégré, était identique à main. Le déploiement a fait
+// "avancer" main de 2f6a18f à 2f6a18f et affiché « Déployé » alors que
+// rien n'avait été livré. Il doit s'arrêter avant toute vérification.
+func TestDeploy_NothingToDeployIsRefusedEarly(t *testing.T) {
+	h := newHarness(t)
+	h.git.unchanged = true
+	err := h.deploy()
+	if err == nil || !strings.Contains(err.Error(), "rien à déployer") {
+		t.Fatalf("Deploy() = %v, want a refusal naming the cause", err)
+	}
+	if got := strings.Join(h.git.calls, ","); got != "clean,prepare,sync" {
+		t.Errorf("calls = %s, want a stop right after syncing with main", got)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -14,6 +15,8 @@ type Git interface {
 	Prepare(ctx context.Context, id string) (dir string, err error)
 	BaseClean(ctx context.Context) error
 	SyncWithBase(ctx context.Context, dir string) error
+	// Diff : ce que la branche apporte depuis sa base commune avec main.
+	Diff(ctx context.Context, dir string) (string, error)
 	BaseHead(ctx context.Context) (string, error)
 	Promote(ctx context.Context, id string) (string, error)
 	RestoreBase(ctx context.Context, prev, message string) (string, error)
@@ -63,6 +66,17 @@ func (d Deployer) Deploy(ctx context.Context, id string, onStep func(text, detai
 		return err
 	}
 	step("Branche à jour avec main", "")
+
+	// Vu en réel : une branche identique à main une fois main intégré
+	// "avançait" main sur place et le ticket passait à « Déployé » sans
+	// rien livrer.
+	changes, err := d.Git.Diff(ctx, dir)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(changes) == "" {
+		return fmt.Errorf("rien à déployer : une fois main intégré, la branche du ticket n'apporte aucune modification")
+	}
 
 	checks, ok := d.Verifier.Checks(ctx, dir)
 	if !ok {
