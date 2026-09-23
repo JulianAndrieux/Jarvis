@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -309,5 +310,33 @@ func TestExtractor_OnPage_Parallel_NeverConcurrent(t *testing.T) {
 		if seen[page] != 1 {
 			t.Errorf("OnPage called %d time(s) for page %d, want 1", seen[page], page)
 		}
+	}
+}
+
+// Prompt modifiable depuis l'interface (onglet Agents) : le repère
+// {{type_document}} est remplacé par la description du type, et le
+// prompt réellement envoyé est conservé dans le résultat (reproductibilité).
+func TestExtractor_ExtractPages_UsesPromptTemplateWithPlaceholder(t *testing.T) {
+	llmClient := &llm.FakeClient{Results: map[int]llm.ExtractResult{
+		1: {JSON: json.RawMessage(`{}`), Prompt: "p"},
+	}}
+	e := Extractor{LLM: llmClient, PromptTemplate: "Extrait (100 %) : {{type_document}}."}
+	reg := factureRegistration(t)
+	got, err := e.ExtractPages(context.Background(), reg, []triage.PageText{{Page: 1, Text: "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Extrait (100 %) : " + reg.Description + "."
+	if llmClient.Calls[0].Prompt != want {
+		t.Errorf("prompt sent = %q, want %q", llmClient.Calls[0].Prompt, want)
+	}
+	if got[0].Prompt != "p" {
+		t.Errorf("result prompt = %q, want the one reported by the LLM client", got[0].Prompt)
+	}
+}
+
+func TestDefaultPromptTemplate_HasTypePlaceholder(t *testing.T) {
+	if !strings.Contains(DefaultPromptTemplate, "{{type_document}}") || strings.Contains(DefaultPromptTemplate, "%s") {
+		t.Errorf("DefaultPromptTemplate = %q", DefaultPromptTemplate)
 	}
 }

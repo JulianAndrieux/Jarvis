@@ -184,3 +184,24 @@ func TestLLMClassifier_Classify_InvalidJSON_ReturnsError(t *testing.T) {
 		t.Fatal("Classify() error = nil, want an error for malformed JSON")
 	}
 }
+
+// Prompt modifiable depuis l'interface (onglet Agents) : relu à chaque
+// appel, le repère {{types}} remplacé par la liste des candidats.
+func TestLLMClassifier_Classify_UsesCurrentPromptWithTypesPlaceholder(t *testing.T) {
+	fake := &llm.FakeClient{Results: map[int]llm.ExtractResult{
+		0: {JSON: json.RawMessage(`{"doc_type":"facture","confidence":0.9}`)},
+	}}
+	current := "V1 à 100 % :\n{{types}}\nfin"
+	c := LLMClassifier{Client: fake, Prompt: func() string { return current }}
+	c.Classify(context.Background(), "texte", candidates())
+	current = "V2 {{types}}"
+	c.Classify(context.Background(), "texte", candidates())
+
+	first, second := fake.Calls[0].Prompt, fake.Calls[1].Prompt
+	if !strings.HasPrefix(first, "V1 à 100 % :\n") || !strings.Contains(first, "Facture commerciale") || strings.Contains(first, "{{types}}") {
+		t.Errorf("first prompt = %q, want the placeholder replaced by the candidates", first)
+	}
+	if !strings.HasPrefix(second, "V2 ") {
+		t.Errorf("second prompt = %q, want the prompt read again at each call", second)
+	}
+}

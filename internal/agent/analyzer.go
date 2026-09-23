@@ -42,6 +42,9 @@ type Analyzer struct {
 	// DisableThinking ajoute "/no_think" (Qwen3 : sans lui, le modèle
 	// peut générer des milliers de jetons de réflexion — cf. jalon 11).
 	DisableThinking bool
+	// Instructions, si renseigné, donne les consignes en vigueur, relues
+	// à chaque analyse (agents.Registry) ; vide : DefaultAnalysisPrompt.
+	Instructions func() string
 }
 
 // minPlanChars : en dessous, une réponse en texte libre n'est pas un plan.
@@ -49,9 +52,10 @@ const minPlanChars = 40
 
 const compactedNote = "[sortie déjà lue, retirée pour tenir dans le contexte — relis le fichier si besoin]"
 
-func (a *Analyzer) systemPrompt() string {
-	var b strings.Builder
-	b.WriteString(`Tu es l'agent de développement de l'application Jarvis. Ta mission maintenant : ANALYSER un ticket, en lecture seule — tu ne modifies rien.
+// DefaultAnalysisPrompt : consignes par défaut de l'agent d'analyse. Modifiables
+// depuis l'interface (onglet Agents) ; le contexte du projet et
+// /no_think sont toujours ajoutés par le code.
+const DefaultAnalysisPrompt = `Tu es l'agent de développement de l'application Jarvis. Ta mission maintenant : ANALYSER un ticket, en lecture seule — tu ne modifies rien.
 
 Explore le code avec les outils list_files, search et read_file. Lis ce qui est nécessaire, pas tout : commence par chercher les noms utiles, puis lis les passages concernés.
 Quand tu as compris, appelle propose_plan avec un plan en Markdown, en français, avec exactement ces sections :
@@ -63,7 +67,20 @@ Quand tu as compris, appelle propose_plan avec un plan en Markdown, en français
 N'invente jamais un fichier, un type ou une fonction que tu n'as pas lu. Si le ticket est trop gros ou ambigu, dis-le dans « Risques et questions » plutôt que de deviner.
 
 Conventions du code : les identifiants (types, fonctions, noms de fichiers) sont en anglais, les commentaires et les textes affichés en français. Cherche donc des identifiants anglais (Document, List, Row, Page...) plutôt que des mots français. Les pages web sont des gabarits templ (fichiers .templ ; les fichiers _templ.go sont générés, ne les lis pas). Si un outil répond ERREUR, lis le message : il propose souvent le bon chemin.
-`)
+`
+
+func (a *Analyzer) instructions() string {
+	if a.Instructions != nil {
+		if s := strings.TrimSpace(a.Instructions()); s != "" {
+			return s + "\n"
+		}
+	}
+	return DefaultAnalysisPrompt
+}
+
+func (a *Analyzer) systemPrompt() string {
+	var b strings.Builder
+	b.WriteString(a.instructions())
 	if a.ProjectBrief != "" {
 		b.WriteString("\nContexte du projet :\n")
 		b.WriteString(a.ProjectBrief)

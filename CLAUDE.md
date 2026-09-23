@@ -2040,6 +2040,37 @@ spécifique à `localhost`.
   - Validé en réel sur une instance séparée (:8091, `jobs_test`) :
     migration d'un document sans champ, enregistrement, recherche,
     rechargement. Tests Mongo d'intégration verts.
+- **Jalon 31 — onglet Agents : les agents du système et leurs prompts,
+  modifiables depuis l'interface.**
+  - `internal/agents` : `Definition` (nom, famille, rôle, modèle, outils,
+    prompt par défaut, repères obligatoires, ce que le code ajoute),
+    `Defaults` pour les quatre agents — classification, extraction
+    (famille Documents), analyse de ticket, développement (Tickets) ; les
+    prompts par défaut restent dans leurs paquets, testés avec leur code,
+    et les outils sont lus dans `agent.ReadOnlySpecs`/`DevSpecs`.
+  - `Registry` : prompt en vigueur en mémoire (lu à chaque appel, pas
+    d'aller-retour MongoDB par page extraite), écrit dans le `Store` avant
+    d'être appliqué (rien ne change si l'écriture échoue), historique des
+    versions remplacées (20 au plus), rétablissement du défaut.
+    Validation : non vide, repères obligatoires présents, aucun repère
+    inconnu. `MongoStore` : collection `agents` (`--agents-collection`),
+    un document par agent.
+  - **Repères nommés au lieu de `%s`** : `{{types}}` (classification),
+    `{{type_document}}` (extraction). Avec `fmt`, un « 100 % » écrit dans
+    un prompt modifié produisait `%!)(string=...` — vu rouge dans le test.
+  - Branchement : `classify.LLMClassifier.Prompt`,
+    `pipeline.Pipeline.ExtractionPrompt` (relu par document),
+    `agent.Analyzer/Developer.Instructions` (le contexte du projet et
+    `/no_think` restent ajoutés par le code). Consignes par défaut
+    exportées : `agent.DefaultAnalysisPrompt`, `DefaultDevelopmentPrompt`.
+  - Interface : onglet Agents (cartes groupées : rôle, modèle, outils, état
+    du prompt), fiche d'un agent (éditeur, repères, refus expliqué sans
+    perdre la saisie, rétablir, historique).
+  - Validé en réel sur une instance séparée (:8091, collections de test,
+    vrais modèles) : prompt d'extraction modifié dans l'interface, facture
+    classée puis extraite, le prompt conservé dans le résultat est bien le
+    nouveau. `agents.MongoStore` testé contre Atlas (test écrit en même
+    temps que son code, pas vu rouge d'abord).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

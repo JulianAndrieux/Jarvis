@@ -29,6 +29,10 @@ type Pipeline struct {
 
 	LLM                 llm.Client
 	ConfidenceThreshold float64 // valeur zéro -> extraction.DefaultConfidenceThreshold
+	// ExtractionPrompt, s'il est renseigné, donne le prompt d'extraction
+	// en vigueur, relu pour chaque document (agents.Registry : modifiable
+	// depuis l'interface) ; nil : extraction.DefaultPromptTemplate.
+	ExtractionPrompt func() string
 
 	// BBox est optionnel : nil désactive l'enrichissement bbox (pas
 	// d'erreur, le JSON d'extraction reste tel quel). Ne s'applique qu'aux
@@ -271,6 +275,9 @@ func (p Pipeline) prepare(ctx context.Context, path string, progress *progressTr
 func (p Pipeline) extractPages(ctx context.Context, reg doctype.Registration, pageTexts []triage.PageText, progress *progressTracker) ([]extraction.Result, error) {
 	progress.extracting(len(pageTexts))
 	extractor := extraction.Extractor{LLM: p.LLM, ConfidenceThreshold: p.ConfidenceThreshold, Concurrency: p.LLMConcurrency, OnPage: progress.pageExtracted}
+	if p.ExtractionPrompt != nil {
+		extractor.PromptTemplate = p.ExtractionPrompt()
+	}
 	results, err := extractor.ExtractPages(ctx, reg, pageTexts)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: extraction %s: %w", reg.Name, err)

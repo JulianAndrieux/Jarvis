@@ -279,3 +279,37 @@ func TestLoop_StagnationIsSteeredThenStopped(t *testing.T) {
 		t.Error("the model should be steered before being stopped")
 	}
 }
+
+// Consignes modifiables depuis l'interface (onglet Agents) : relues à
+// chaque analyse ; le contexte du projet et /no_think restent ajoutés
+// par le code.
+func TestAnalyze_UsesCurrentInstructions(t *testing.T) {
+	model := &scriptedModel{replies: []Message{call("p", "propose_plan", `{"plan": "## Compréhension\nun plan assez long pour être accepté comme plan"}`)}}
+	a := &Analyzer{Model: model, Tools: Tools{Root: writeRepo(t)}, ProjectBrief: "BRIEF", DisableThinking: true,
+		Instructions: func() string { return "CONSIGNES PERSO" }}
+	if _, err := a.Analyze(context.Background(), request(), nil); err != nil {
+		t.Fatal(err)
+	}
+	sys := model.calls[0][0]
+	if sys.Role != "system" || !strings.HasPrefix(sys.Content, "CONSIGNES PERSO") || !strings.Contains(sys.Content, "BRIEF") || !strings.Contains(sys.Content, "/no_think") {
+		t.Errorf("system prompt = %q", sys.Content)
+	}
+	if strings.Contains(sys.Content, "ANALYSER un ticket") {
+		t.Error("default instructions still sent")
+	}
+}
+
+func TestDevelop_UsesCurrentInstructions(t *testing.T) {
+	model := &scriptedModel{replies: []Message{call("f", "finish", `{"summary": "ok"}`)}}
+	d := &Developer{Model: model, Checker: &fakeChecker{ok: true}, Instructions: func() string { return "DEV PERSO" }}
+	d.Develop(context.Background(), devRequest(writeRepo(t)), nil)
+	if sys := model.calls[0][0]; !strings.HasPrefix(sys.Content, "DEV PERSO") {
+		t.Errorf("system prompt = %q", sys.Content)
+	}
+}
+
+func TestDefaultInstructionsAreExported(t *testing.T) {
+	if !strings.Contains(DefaultAnalysisPrompt, "propose_plan") || !strings.Contains(DefaultDevelopmentPrompt, "finish") {
+		t.Error("default instructions must describe each agent's terminal tool")
+	}
+}

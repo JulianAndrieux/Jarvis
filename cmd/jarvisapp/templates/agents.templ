@@ -1,0 +1,120 @@
+package templates
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/JulianAndrieux/Jarvis/internal/agents"
+)
+
+// AgentsPage : les agents du système, groupés (documents, tickets).
+templ AgentsPage(list []agents.Agent) {
+	@Layout("Jarvis — agents", "agents") {
+		<div class="page-wide agents-page">
+			<div class="page-title">
+				<h2>Agents</h2>
+				<span class="muted">Les modèles pilotés par un prompt. Un prompt modifié s'applique au prochain appel de l'agent.</span>
+			</div>
+			for _, group := range agentGroups(list) {
+				<div class="section-title">{ group.Name }</div>
+				<div class="agent-grid">
+					for _, a := range group.Agents {
+						<a class="card agent-card" href={ templ.SafeURL("/agents/" + a.ID) }>
+							<div class="agent-card-head">
+								<span class="agent-name">{ a.Name }</span>
+								@agentPromptChip(a)
+							</div>
+							<p class="agent-role">{ a.Role }</p>
+							<dl class="agent-facts">
+								<dt>Modèle</dt>
+								<dd class="mono">{ a.Model }</dd>
+								<dt>Outils</dt>
+								<dd>
+									if len(a.Tools) == 0 {
+										<span class="muted">aucun — une seule réponse contrainte par un schéma JSON</span>
+									} else {
+										<span class="mono">{ strings.Join(a.Tools, ", ") }</span>
+									}
+								</dd>
+							</dl>
+						</a>
+					}
+				</div>
+			}
+		</div>
+	}
+}
+
+templ agentPromptChip(a agents.Agent) {
+	if a.Custom {
+		<span class="chip chip-type">Personnalisé le { a.UpdatedAt.Local().Format("02/01/2006 15:04") }</span>
+	} else {
+		<span class="chip">Prompt par défaut</span>
+	}
+}
+
+// AgentPage : fiche d'un agent et éditeur de son prompt. prompt est le
+// texte affiché dans l'éditeur (celui saisi, s'il vient d'être refusé :
+// errMsg en donne la raison).
+templ AgentPage(a agents.Agent, prompt, errMsg string) {
+	@Layout("Jarvis — "+a.Name, "agents") {
+		<div class="page-wide agents-page">
+			<a class="panel-back" href="/agents">← Agents</a>
+			<div class="page-title">
+				<h2>{ a.Name }</h2>
+				@agentPromptChip(a)
+			</div>
+			<p class="agent-role">{ a.Role }</p>
+			<dl class="info-grid">
+				<dt>Famille</dt>
+				<dd>{ a.Group }</dd>
+				<dt>Modèle</dt>
+				<dd class="mono">{ a.Model }</dd>
+				<dt>Outils</dt>
+				<dd>
+					if len(a.Tools) == 0 {
+						aucun
+					} else {
+						<span class="mono">{ strings.Join(a.Tools, ", ") }</span>
+					}
+				</dd>
+				<dt>Ajouté par le code</dt>
+				<dd>{ a.Appended }</dd>
+			</dl>
+			<div class="section-title">Prompt</div>
+			<form class="card agent-editor" method="post" action={ templ.SafeURL("/agents/" + a.ID) }>
+				if len(a.Placeholders) > 0 {
+					<p class="muted">Repères obligatoires, remplacés à chaque appel :</p>
+					<ul class="placeholder-list">
+						for _, p := range a.Placeholders {
+							<li><code>{ "{{" + p.Name + "}}" }</code> — { p.Meaning }</li>
+						}
+					</ul>
+				}
+				if errMsg != "" {
+					<p class="form-error" role="alert">Prompt refusé : { errMsg }. L'ancien prompt reste en vigueur.</p>
+				}
+				<textarea name="prompt" id="prompt" rows={ fmt.Sprint(promptRows(prompt)) } class="mono">{ prompt }</textarea>
+				<div class="field-row agent-actions">
+					<button type="submit" class="button-primary">Enregistrer</button>
+					<span class="muted">S'applique au prochain appel de l'agent, sans redémarrage.</span>
+				</div>
+			</form>
+			if a.Custom {
+				<form method="post" action={ templ.SafeURL("/agents/" + a.ID + "/reset") }>
+					<button type="submit" class="button-ghost">Rétablir le prompt par défaut</button>
+				</form>
+			}
+			if len(a.History) > 0 {
+				<div class="section-title">Historique</div>
+				<p class="muted">Les versions remplacées, la plus récente d'abord ({ fmt.Sprint(agents.MaxHistory) } au plus).</p>
+				for _, v := range a.History {
+					<details class="raw">
+						<summary>En vigueur jusqu'au { v.At.Local().Format("02/01/2006 15:04:05") }</summary>
+						<pre>{ v.Prompt }</pre>
+					</details>
+				}
+			}
+		</div>
+	}
+}

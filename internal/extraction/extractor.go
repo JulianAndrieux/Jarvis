@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
@@ -26,9 +27,13 @@ func ResolveConfidenceThreshold(t float64) float64 {
 }
 
 // DefaultPromptTemplate est le prompt envoyé au LLM quand
-// Extractor.PromptTemplate n'est pas renseigné. %s est remplacé par
-// doctype.Registration.Description.
-const DefaultPromptTemplate = "Extrait les informations suivantes du texte, au format JSON strictement conforme au schéma fourni. Pour chaque champ, indique un score de confiance entre 0 et 1 et l'extrait exact du texte source qui justifie la valeur. Type de document : %s"
+// Extractor.PromptTemplate n'est pas renseigné. Le repère
+// TypePlaceholder est remplacé par doctype.Registration.Description
+// (repère nommé plutôt que %s : voir classify.DefaultPromptTemplate).
+const DefaultPromptTemplate = "Extrait les informations suivantes du texte, au format JSON strictement conforme au schéma fourni. Pour chaque champ, indique un score de confiance entre 0 et 1 et l'extrait exact du texte source qui justifie la valeur. Type de document : " + TypePlaceholder
+
+// TypePlaceholder : repère de la description du type de document.
+const TypePlaceholder = "{{type_document}}"
 
 // Result est le résultat de l'étage Extraction pour une page.
 //
@@ -82,7 +87,7 @@ func (e Extractor) ExtractPages(ctx context.Context, reg doctype.Registration, p
 	if promptTemplate == "" {
 		promptTemplate = DefaultPromptTemplate
 	}
-	prompt := fmt.Sprintf(promptTemplate, reg.Description)
+	prompt := strings.ReplaceAll(promptTemplate, TypePlaceholder, reg.Description)
 
 	docSchema, err := reg.Schema()
 	if err != nil {

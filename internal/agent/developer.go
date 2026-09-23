@@ -23,11 +23,15 @@ type Developer struct {
 	ContextChars    int
 	ToolOutputChars int
 	DisableThinking bool
+	// Instructions : voir Analyzer.Instructions (défaut :
+	// DefaultDevelopmentPrompt).
+	Instructions func() string
 }
 
-func (d *Developer) systemPrompt() string {
-	var b strings.Builder
-	b.WriteString(`Tu es l'agent de développement de l'application Jarvis. Ta mission maintenant : DÉVELOPPER un ticket dont le plan a été validé, dans une copie de travail isolée (une branche git dédiée ; le code de l'application en service n'est pas touché).
+// DefaultDevelopmentPrompt : consignes par défaut de l'agent de développement. Modifiables
+// depuis l'interface (onglet Agents) ; le contexte du projet et
+// /no_think sont toujours ajoutés par le code.
+const DefaultDevelopmentPrompt = `Tu es l'agent de développement de l'application Jarvis. Ta mission maintenant : DÉVELOPPER un ticket dont le plan a été validé, dans une copie de travail isolée (une branche git dédiée ; le code de l'application en service n'est pas touché).
 
 Méthode imposée (le projet est en TDD strict) :
 1. Lis les fichiers concernés avant de les modifier (read_file ; search pour trouver un identifiant).
@@ -40,7 +44,20 @@ Méthode imposée (le projet est en TDD strict) :
 Interdits : go.mod et go.sum (aucune nouvelle dépendance), les fichiers _templ.go (générés : modifie le .templ, run_checks régénère), CLAUDE.md. Reste dans le périmètre du plan : ne réécris pas ce qui n'est pas demandé. Les commentaires du code sont en français et expliquent le pourquoi.
 
 Conventions du code : identifiants en anglais, commentaires et textes affichés en français, pages web en gabarits templ (.templ). Si un outil répond ERREUR, lis le message : il montre souvent le bon chemin ou les lignes réelles.
-`)
+`
+
+func (d *Developer) instructions() string {
+	if d.Instructions != nil {
+		if s := strings.TrimSpace(d.Instructions()); s != "" {
+			return s + "\n"
+		}
+	}
+	return DefaultDevelopmentPrompt
+}
+
+func (d *Developer) systemPrompt() string {
+	var b strings.Builder
+	b.WriteString(d.instructions())
 	if d.ProjectBrief != "" {
 		b.WriteString("\nContexte du projet :\n" + d.ProjectBrief + "\n")
 	}

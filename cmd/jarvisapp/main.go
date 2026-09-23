@@ -23,9 +23,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
+	"github.com/JulianAndrieux/Jarvis/internal/agents"
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
 	"github.com/JulianAndrieux/Jarvis/internal/deploy"
@@ -72,6 +74,7 @@ func main() {
 	agentModel := flag.String("agent-model", "", "Modèle de l'agent des tickets ; vide = --llm-model")
 	agentContext := flag.Int("agent-context-chars", 16000, "Taille maximale (caractères) de la conversation envoyée à l'agent — à adapter au contexte du serveur (8192 jetons aujourd'hui)")
 	ticketsCollection := flag.String("tickets-collection", "tickets", "Collection MongoDB des tickets")
+	agentsCollection := flag.String("agents-collection", "agents", "Collection MongoDB des prompts des agents (onglet Agents)")
 	agentTimeout := flag.Duration("agent-timeout", 15*time.Minute, "Délai d'un appel au modèle de l'agent — un tour qui écrit un fichier entier peut prendre plusieurs minutes sur un modèle local lent")
 	agentDev := flag.Bool("agent-dev", true, "Développement automatique des tickets au plan validé (copie de travail git isolée, vérification complète, diff à relire)")
 	worktreesDir := flag.String("worktrees-dir", "", "Dossier des copies de travail des tickets ; vide = ~/.jarvis/worktrees")
@@ -88,6 +91,29 @@ func main() {
 	mongoConn := mongoURI(*mongoURIFlag, os.Getenv)
 	if mongoConn == "" {
 		log.Fatal("jarvisapp: MONGO_URI (ou --mongo-uri) est requis (les jobs sont persistés dans MongoDB)")
+	}
+
+	if *agentURL == "" {
+		*agentURL = *llmURL
+	}
+	if *agentModel == "" {
+		*agentModel = *llmModel
+	}
+
+	// Onglet Agents : le prompt en vigueur de chaque agent, modifiable
+	// depuis l'interface et relu à chaque appel.
+	agentsCtx, cancelAgents := context.WithTimeout(context.Background(), 10*time.Second)
+	agentStore, err := agents.NewMongoStore(agentsCtx, mongoConn, *mongoDB, *agentsCollection)
+	if err != nil {
+		log.Fatalf("jarvisapp: agents : %v", err)
+	}
+	agentRegistry, err := agents.NewRegistry(agentsCtx, agentStore, agents.Defaults(agents.Models{
+		Documents: strings.TrimSpace(*llmModel + " " + *llmVersion),
+		Tickets:   *agentModel,
+	}))
+	cancelAgents()
+	if err != nil {
+		log.Fatalf("jarvisapp: agents : %v", err)
 	}
 
 	registry := doctype.NewDefaultRegistry()
@@ -119,8 +145,9 @@ func main() {
 		// modèle choisi) pour déterminer automatiquement le type de
 		// document à l'upload — voir CLAUDE.md, "Upload : classification
 		// automatique".
-		Classifier: classify.LLMClassifier{Client: llmClient},
-		Registry:   registry,
+		Classifier:       classify.LLMClassifier{Client: llmClient, Prompt: agentRegistry.PromptFunc(agents.Classification)},
+		ExtractionPrompt: agentRegistry.PromptFunc(agents.Extraction),
+		Registry:         registry,
 		// Jalon 21 puis correction (voir CLAUDE.md) : VLM et extraction LLM
 		// ont chacun leur propre borne de parallélisme — le VLM (appels
 		// multimodaux) sature vite en parallèle sur ce matériel, l'extraction
@@ -215,12 +242,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("jarvisapp: tickets : %v", err)
 	}
-	if *agentURL == "" {
-		*agentURL = *llmURL
-	}
-	if *agentModel == "" {
-		*agentModel = *llmModel
-	}
 	claudeMD, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
 	ticketManager := &tickets.Manager{
 		Store: ticketStore,
@@ -231,6 +252,7 @@ func main() {
 			ProjectBrief:    agent.ProjectBrief(string(claudeMD), 4000),
 			ContextChars:    *agentContext,
 			DisableThinking: true,
+			Instructions:    agentRegistry.PromptFunc(agents.Analysis),
 		},
 	}
 	// Développement (jalon 28) : copie de travail git isolée par ticket,
@@ -253,6 +275,7 @@ func main() {
 			ProjectBrief:    agent.ProjectBrief(string(claudeMD), 4000),
 			ContextChars:    *agentContext,
 			DisableThinking: true,
+			Instructions:    agentRegistry.PromptFunc(agents.Development),
 		}
 		log.Printf("jarvisapp: développement des tickets activé (copies de travail : %s)", wtRoot)
 	}
@@ -283,7 +306,7 @@ func main() {
 	}
 	log.Printf("jarvisapp: agent des tickets -> %s (%s)", *agentURL, *agentModel)
 
-	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager}
+	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry}
 	if *agentDev {
 		srv.Unpushed = git.Unpushed
 	}

@@ -90,6 +90,20 @@ templ Layout(title string, active string) {
 				label { display: block; margin-bottom: .35rem; font-weight: 600; font-size: .85rem; color: var(--text-2); }
 				input[type=text], select, textarea { font: inherit; font-size: .92rem; padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); width: 100%; }
 				textarea { resize: vertical; line-height: 1.45; }
+				/* Onglet Agents */
+				.agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 1rem; }
+				.agent-card { display: block; margin: 0; color: var(--text); }
+				.agent-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
+				.agent-card-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; }
+				.agent-name { font-weight: 700; }
+				.agent-role { color: var(--text-2); margin: .5rem 0 .75rem; max-width: 70ch; }
+				.agent-facts { display: grid; grid-template-columns: auto 1fr; gap: .25rem .75rem; margin: 0; font-size: .85rem; }
+				.agent-facts dt { color: var(--muted); }
+				.agent-facts dd { margin: 0; overflow-wrap: anywhere; }
+				.agent-editor textarea { font-size: .85rem; }
+				.agent-actions { margin-top: .6rem; }
+				.placeholder-list { margin: .25rem 0 .75rem; padding-left: 1.2rem; }
+				.form-error { color: var(--danger); background: var(--danger-soft); padding: .5rem .75rem; border-radius: 8px; }
 				.comment-actions { margin-top: .5rem; }
 				input[type=text]:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 				.field-row { display: flex; gap: .5rem; align-items: center; }
@@ -484,6 +498,7 @@ templ Layout(title string, active string) {
 					<a href="/" class={ templ.KV("active", active == "upload") }>Importer</a>
 					<a href="/documents" class={ templ.KV("active", active == "documents") }>Documents</a>
 					<a href="/tickets" class={ templ.KV("active", active == "tickets") }>Tickets</a>
+					<a href="/agents" class={ templ.KV("active", active == "agents") }>Agents</a>
 					<a href="/classes" class={ templ.KV("active", active == "classes") }>Classes</a>
 					<a href="/model" class={ templ.KV("active", active == "model") }>Modèle</a>
 					<a href="/tests" class={ templ.KV("active", active == "tests") }>Tests</a>

@@ -9,10 +9,15 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
 )
 
-// DefaultPromptTemplate est le prompt envoyé au LLM quand
-// LLMClassifier.PromptTemplate n'est pas renseigné. %s est remplacé par
-// la liste des candidats (nom + description, un par ligne).
-const DefaultPromptTemplate = "Identifie le type de ce document parmi la liste suivante, en te basant uniquement sur le texte fourni :\n%s\nRéponds avec le nom exact d'un type de la liste ci-dessus, ou \"unknown\" si aucun ne correspond clairement."
+// DefaultPromptTemplate est le prompt envoyé au LLM quand ni
+// LLMClassifier.Prompt ni PromptTemplate ne sont renseignés. Le repère
+// TypesPlaceholder est remplacé par la liste des candidats (nom +
+// description, un par ligne) — un repère nommé plutôt que %s : le prompt
+// est modifiable depuis l'interface, et un « 50 % » y casserait fmt.
+const DefaultPromptTemplate = "Identifie le type de ce document parmi la liste suivante, en te basant uniquement sur le texte fourni :\n" + TypesPlaceholder + "\nRéponds avec le nom exact d'un type de la liste ci-dessus, ou \"unknown\" si aucun ne correspond clairement."
+
+// TypesPlaceholder : repère des types candidats dans le prompt.
+const TypesPlaceholder = "{{types}}"
 
 // DefaultMaxTextLength borne le texte envoyé au LLM pour la
 // classification — elle n'a besoin que d'un signal, pas du document
@@ -33,6 +38,9 @@ const unknownDocType = "unknown"
 // nom de candidat connu ou "unknown", jamais un texte libre.
 type LLMClassifier struct {
 	Client llm.Client
+	// Prompt, s'il est renseigné, donne le prompt en vigueur, relu à
+	// chaque appel (agents.Registry : modifiable depuis l'interface).
+	Prompt func() string
 	// PromptTemplate : "" retombe sur DefaultPromptTemplate.
 	PromptTemplate string
 	// MaxTextLength : 0 retombe sur DefaultMaxTextLength.
@@ -54,10 +62,13 @@ func (c LLMClassifier) Classify(ctx context.Context, text string, candidates []C
 	}
 
 	promptTemplate := c.PromptTemplate
+	if c.Prompt != nil {
+		promptTemplate = c.Prompt()
+	}
 	if promptTemplate == "" {
 		promptTemplate = DefaultPromptTemplate
 	}
-	prompt := fmt.Sprintf(promptTemplate, formatCandidates(candidates))
+	prompt := strings.ReplaceAll(promptTemplate, TypesPlaceholder, formatCandidates(candidates))
 
 	schemaJSON, err := json.Marshal(schemaFor(candidates))
 	if err != nil {
