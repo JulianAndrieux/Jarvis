@@ -231,7 +231,9 @@ tournant simultanément :
 anciens binaires `cmd/jarvisweb` (upload/suivi) et `cmd/codebrowser`
 (navigateur de code/tests), fusionnés sous une nav commune (Importer ·
 Documents · Tickets · Classes · Modèle · Tests · Architecture — renommée au jalon 22,
-Modèle ajouté au jalon 24, Tickets au jalon 26, Architecture au jalon 29). Voir "État des jalons" plus bas pour le détail de la
+Modèle ajouté au jalon 24, Tickets au jalon 26, Architecture au jalon 29 ; depuis
+le jalon 33, deux espaces : l'application — Importer, Documents, Notes, Tâches,
+Tickets — et l'Admin sous /admin — Agents, Architecture, Classes, Modèle, Tests). Voir "État des jalons" plus bas pour le détail de la
 fusion, et "Atelier de code" pour le détail du navigateur de code/tests
 lui-même (moteurs inchangés par la fusion).
 
@@ -2192,6 +2194,30 @@ spécifique à `localhost`.
     corrigés (étiquette qui renvoyait à la note/au document où l'on est
     déjà ; bloc repoussant les onglets du document). `MongoStore` écrit en
     même temps que son test (pas vu rouge d'abord).
+- **Jalon 33 — deux espaces : l'application (claire) et l'Admin (sombre) :
+  fait, en attente de validation utilisateur.** Demandé : "une partie avec
+  un layout light et très user friendly avec Importer, Documents, Notes,
+  Tâches et Tickets et une partie Admin en mode dark avec le reste".
+  - **Adresses** : l'Admin vit sous `/admin` (`/admin/agents`,
+    `/admin/architecture`, `/admin/classes`, `/admin/model`,
+    `/admin/tests`, `POST /admin/tests/run`, `POST /admin/refresh`) ;
+    `/admin` mène à l'Architecture. Les anciennes adresses (favoris)
+    **redirigent en 301, paramètres compris**. Un préfixe unique permettra
+    de protéger l'Admin plus tard. L'essai à blanc du déploiement visite
+    désormais `/admin/architecture`.
+  - **Thèmes** : `Layout` déduit l'espace de l'onglet actif (aucune
+    signature changée) et pose `theme-user` ou `theme-admin` sur `<html>`.
+    L'application est **toujours claire**, l'Admin **toujours sombre** —
+    le thème ne suit plus le réglage du système (le bloc
+    `prefers-color-scheme` devient `html.theme-admin`). Application : fond
+    plus doux, rayons plus grands, onglets en pastille avec icônes,
+    boutons plus grands ; lien discret « ⚙ Admin ». Admin : badge ADMIN,
+    lien « ← Application ».
+  - Testé : chaque page de chaque espace (thème, navigation propre, lien
+    vers l'autre espace), accueil `/admin`, redirections des anciennes
+    adresses ; captures des deux espaces sur une instance séparée — un
+    défaut vu ainsi et corrigé (la case à cocher des tâches héritait du
+    rembourrage des boutons de l'espace utilisateur).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

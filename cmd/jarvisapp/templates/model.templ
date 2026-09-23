@@ -112,7 +112,7 @@ func viewBox(d diagram.Diagram) string {
 templ ModelPage(v ModelPageView) {
 	@Layout("Jarvis — modèle de données", "model") {
 		<main class="model-page">
-			<form class="model-toolbar" method="get" action="/model">
+			<form class="model-toolbar" method="get" action="/admin/model">
 				<label class="inline">
 					Type
 					<select name="t" onchange="this.form.submit()">

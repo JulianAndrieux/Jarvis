@@ -19,7 +19,7 @@ templ AgentsPage(list []agents.Agent) {
 				<div class="section-title">{ group.Name }</div>
 				<div class="agent-grid">
 					for _, a := range group.Agents {
-						<a class="card agent-card" href={ templ.SafeURL("/agents/" + a.ID) }>
+						<a class="card agent-card" href={ templ.SafeURL("/admin/agents/" + a.ID) }>
 							<div class="agent-card-head">
 								<span class="agent-name">{ a.Name }</span>
 								@agentPromptChip(a)
@@ -59,7 +59,7 @@ templ agentPromptChip(a agents.Agent) {
 templ AgentPage(a agents.Agent, prompt, errMsg string) {
 	@Layout("Jarvis — "+a.Name, "agents") {
 		<div class="page-wide agents-page">
-			<a class="panel-back" href="/agents">← Agents</a>
+			<a class="panel-back" href="/admin/agents">← Agents</a>
 			<div class="page-title">
 				<h2>{ a.Name }</h2>
 				@agentPromptChip(a)
@@ -82,7 +82,7 @@ templ AgentPage(a agents.Agent, prompt, errMsg string) {
 				<dd>{ a.Appended }</dd>
 			</dl>
 			<div class="section-title">Prompt</div>
-			<form class="card agent-editor" method="post" action={ templ.SafeURL("/agents/" + a.ID) }>
+			<form class="card agent-editor" method="post" action={ templ.SafeURL("/admin/agents/" + a.ID) }>
 				if len(a.Placeholders) > 0 {
 					<p class="muted">Repères obligatoires, remplacés à chaque appel :</p>
 					<ul class="placeholder-list">
@@ -101,7 +101,7 @@ templ AgentPage(a agents.Agent, prompt, errMsg string) {
 				</div>
 			</form>
 			if a.Custom {
-				<form method="post" action={ templ.SafeURL("/agents/" + a.ID + "/reset") }>
+				<form method="post" action={ templ.SafeURL("/admin/agents/" + a.ID + "/reset") }>
 					<button type="submit" class="button-ghost">Rétablir le prompt par défaut</button>
 				</form>
 			}

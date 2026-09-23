@@ -26,10 +26,10 @@ const (
 )
 
 func (s *Server) architectureRoutes(r chi.Router) {
-	r.Get("/architecture", s.handleArchitecture)
-	r.Get("/architecture/version", s.handleArchitectureVersion)
-	r.Get("/architecture/infra", s.handleArchitectureInfra)
-	r.Get("/architecture/commits/{hash}", s.handleArchitectureCommit)
+	r.Get("/admin/architecture", s.handleArchitecture)
+	r.Get("/admin/architecture/version", s.handleArchitectureVersion)
+	r.Get("/admin/architecture/infra", s.handleArchitectureInfra)
+	r.Get("/admin/architecture/commits/{hash}", s.handleArchitectureCommit)
 }
 
 func (s *Server) handleArchitecture(w http.ResponseWriter, r *http.Request) {

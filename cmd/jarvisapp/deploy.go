@@ -75,7 +75,7 @@ func smokeTest(jobsCollection, ticketsCollection string) func(ctx context.Contex
 			"out-dir":            "",
 			"deploy-marker":      filepath.Join(os.TempDir(), "jarvis-deploycheck.json"),
 		})
-		s := deploy.Smoke{Args: args, Env: os.Environ(), Addr: addr, Paths: []string{"/", "/documents", "/tickets", "/architecture"}}
+		s := deploy.Smoke{Args: args, Env: os.Environ(), Addr: addr, Paths: []string{"/", "/documents", "/tickets", "/admin/architecture"}}
 		return s.Run(ctx, binary)
 	}
 }

@@ -67,16 +67,16 @@ type TypeDetailView struct {
 
 // classURL : page Classes complète (lien normal, marche sans HTMX).
 func classURL(pkg, name string) string {
-	return fmt.Sprintf("/classes?pkg=%s&name=%s", pkg, name)
+	return fmt.Sprintf("/admin/classes?pkg=%s&name=%s", pkg, name)
 }
 
 // typeLink : fragment de détail, chargé par HTMX dans la page Classes.
 func typeLink(pkg, name string) string {
-	return fmt.Sprintf("/classes/detail?pkg=%s&name=%s", pkg, name)
+	return fmt.Sprintf("/admin/classes/detail?pkg=%s&name=%s", pkg, name)
 }
 
 func modelURL(pkg, name string) string {
-	return fmt.Sprintf("/model?pkg=%s&name=%s", pkg, name)
+	return fmt.Sprintf("/admin/model?pkg=%s&name=%s", pkg, name)
 }
 
 func visibility(exported bool) string {
@@ -278,7 +278,7 @@ func ClassesPage(packages []PackageSummary, selected *TypeDetailView) templ.Comp
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div class=\"empty-state\"><p>Choisis un type dans la liste à gauche,</p><a class=\"button\" href=\"/model\">ou explore le modèle de données →</a></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div class=\"empty-state\"><p>Choisis un type dans la liste à gauche,</p><a class=\"button\" href=\"/admin/model\">ou explore le modèle de données →</a></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

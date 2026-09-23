@@ -130,18 +130,38 @@ func (s *Server) Routes() chi.Router {
 	r.Delete("/documents/{id}", s.handleDocumentDelete)
 
 	// Navigateur de classes + tests (ex-cmd/codebrowser).
-	r.Get("/classes", s.handleClasses)
-	r.Get("/classes/detail", s.handleClassDetail)
-	r.Get("/model", s.handleModel)
+	r.Get("/admin/classes", s.handleClasses)
+	r.Get("/admin/classes/detail", s.handleClassDetail)
+	r.Get("/admin/model", s.handleModel)
 	s.ticketRoutes(r)
 	s.agentRoutes(r)
 	s.notesRoutes(r)
-	r.Get("/tests", s.handleTests)
-	r.Post("/tests/run", s.handleTestsRun)
-	r.Post("/refresh", s.handleRefresh)
+	r.Get("/admin/tests", s.handleTests)
+	r.Post("/admin/tests/run", s.handleTestsRun)
+	r.Post("/admin/refresh", s.handleRefresh)
 	s.architectureRoutes(r)
 
+	// Jalon 33 : l'Admin vit sous /admin. Accueil de l'Admin, et les
+	// anciennes adresses (favoris) redirigées, paramètres compris.
+	r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/architecture", http.StatusSeeOther)
+	})
+	for _, old := range []string{"/agents", "/architecture", "/classes", "/model", "/tests"} {
+		r.Get(old, redirectToAdmin)
+		r.Get(old+"/*", redirectToAdmin)
+	}
+
 	return r
+}
+
+// redirectToAdmin : une ancienne adresse de page d'administration mène à
+// la même page sous /admin.
+func redirectToAdmin(w http.ResponseWriter, r *http.Request) {
+	target := "/admin" + r.URL.Path
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	http.Redirect(w, r, target, http.StatusMovedPermanently)
 }
 
 // --- Upload / suivi de documents ---
@@ -402,7 +422,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/classes", http.StatusFound)
+	http.Redirect(w, r, "/admin/classes", http.StatusFound)
 }
 
 // --- Classes ---

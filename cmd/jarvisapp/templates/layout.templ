@@ -2,7 +2,7 @@ package templates
 
 templ Layout(title string, active string) {
 	<!DOCTYPE html>
-	<html lang="fr">
+	<html lang="fr" class={ themeClass(active) }>
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -39,29 +39,49 @@ templ Layout(title string, active string) {
 					--radius: 10px;
 					--header-h: 56px;
 				}
-				@media (prefers-color-scheme: dark) {
-					:root {
-						color-scheme: dark;
-						--bg: #121419;
-						--surface: #1a1d24;
-						--surface-2: #22262f;
-						--border: #2d323d;
-						--text: #eceef3;
-						--text-2: #b4b9c6;
-						--muted: #8a90a0;
-						--accent: #8b95ff;
-						--accent-soft: #262b4a;
-						--ok: #4cc27f;
-						--ok-soft: #173325;
-						--warn: #f0b04a;
-						--warn-soft: #3a2c12;
-						--danger: #f07272;
-						--danger-soft: #3b1c1c;
-						--code-bg: #0e1015;
-						--shadow: 0 1px 2px rgba(0, 0, 0, .3);
-						--shadow-hover: 0 4px 16px rgba(0, 0, 0, .45);
-					}
+				/* Jalon 33 : deux espaces. L'application (Importer, Documents,
+				   Notes, Tâches, Tickets) est toujours claire ; l'Admin (/admin)
+				   toujours sombre — quel que soit le réglage du système. */
+				html.theme-admin {
+					color-scheme: dark;
+					--bg: #121419;
+					--surface: #1a1d24;
+					--surface-2: #22262f;
+					--border: #2d323d;
+					--text: #eceef3;
+					--text-2: #b4b9c6;
+					--muted: #8a90a0;
+					--accent: #8b95ff;
+					--accent-soft: #262b4a;
+					--ok: #4cc27f;
+					--ok-soft: #173325;
+					--warn: #f0b04a;
+					--warn-soft: #3a2c12;
+					--danger: #f07272;
+					--danger-soft: #3b1c1c;
+					--code-bg: #0e1015;
+					--shadow: 0 1px 2px rgba(0, 0, 0, .3);
+					--shadow-hover: 0 4px 16px rgba(0, 0, 0, .45);
 				}
+				/* Application : plus aérée et plus douce. */
+				html.theme-user {
+					--bg: #f7f8fb;
+					--border: #e6e8ef;
+					--accent: #4a5bdc;
+					--accent-soft: #eef0ff;
+					--radius: 14px;
+					--header-h: 64px;
+					--shadow: 0 1px 3px rgba(20, 30, 60, .06), 0 4px 14px rgba(20, 30, 60, .05);
+				}
+				html.theme-user body { font-size: 15.5px; }
+				html.theme-user .app-nav a { padding: .5rem .95rem; border-radius: 999px; font-size: .95rem; }
+				html.theme-user .app-nav .nav-icon { margin-right: .35rem; }
+				html.theme-user button, html.theme-user .button { border-radius: 10px; padding: .55rem 1rem; }
+				html.theme-user .task-check { padding: 0 .2rem; }
+				.space-link { margin-left: auto; font-size: .85rem; color: var(--muted); padding: .35rem .7rem; border-radius: 8px; border: 1px solid var(--border); }
+				.space-link:hover { color: var(--text); text-decoration: none; background: var(--surface-2); }
+				.admin-badge { font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); border-radius: 6px; padding: .05rem .4rem; }
+				.app-header .space-link + form, .app-header form + .space-link { margin-left: .6rem; }
 
 				* { box-sizing: border-box; }
 				body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); line-height: 1.5; -webkit-font-smoothing: antialiased; }
@@ -525,23 +545,31 @@ templ Layout(title string, active string) {
 		</head>
 		<body>
 			<header class="app-header">
-				<a href="/" class="brand"><span class="brand-mark">J</span>Jarvis</a>
-				<nav class="app-nav">
-					<a href="/" class={ templ.KV("active", active == "upload") }>Importer</a>
-					<a href="/documents" class={ templ.KV("active", active == "documents") }>Documents</a>
-					<a href="/notes" class={ templ.KV("active", active == "notes") }>Notes</a>
-					<a href="/tasks" class={ templ.KV("active", active == "tasks") }>Tâches</a>
-					<a href="/tickets" class={ templ.KV("active", active == "tickets") }>Tickets</a>
-					<a href="/agents" class={ templ.KV("active", active == "agents") }>Agents</a>
-					<a href="/classes" class={ templ.KV("active", active == "classes") }>Classes</a>
-					<a href="/model" class={ templ.KV("active", active == "model") }>Modèle</a>
-					<a href="/tests" class={ templ.KV("active", active == "tests") }>Tests</a>
-					<a href="/architecture" class={ templ.KV("active", active == "architecture") }>Architecture</a>
-				</nav>
-				if active == "classes" || active == "tests" || active == "model" {
-					<form hx-post="/refresh" hx-target="body" hx-swap="outerHTML">
-						<button type="submit" class="button-ghost">↻ Rescanner le code</button>
-					</form>
+				if isAdmin(active) {
+					<a href="/admin" class="brand"><span class="brand-mark">J</span>Jarvis <span class="admin-badge">Admin</span></a>
+					<nav class="app-nav">
+						<a href="/admin/agents" class={ templ.KV("active", active == "agents") }>Agents</a>
+						<a href="/admin/architecture" class={ templ.KV("active", active == "architecture") }>Architecture</a>
+						<a href="/admin/classes" class={ templ.KV("active", active == "classes") }>Classes</a>
+						<a href="/admin/model" class={ templ.KV("active", active == "model") }>Modèle</a>
+						<a href="/admin/tests" class={ templ.KV("active", active == "tests") }>Tests</a>
+					</nav>
+					if active == "classes" || active == "tests" || active == "model" {
+						<form class="refresh-form" hx-post="/admin/refresh" hx-target="body" hx-swap="outerHTML">
+							<button type="submit" class="button-ghost">↻ Rescanner le code</button>
+						</form>
+					}
+					<a href="/" class="space-link">← Application</a>
+				} else {
+					<a href="/" class="brand"><span class="brand-mark">J</span>Jarvis</a>
+					<nav class="app-nav">
+						<a href="/" class={ templ.KV("active", active == "upload") }><span class="nav-icon">⬆️</span>Importer</a>
+						<a href="/documents" class={ templ.KV("active", active == "documents") }><span class="nav-icon">📄</span>Documents</a>
+						<a href="/notes" class={ templ.KV("active", active == "notes") }><span class="nav-icon">📝</span>Notes</a>
+						<a href="/tasks" class={ templ.KV("active", active == "tasks") }><span class="nav-icon">✅</span>Tâches</a>
+						<a href="/tickets" class={ templ.KV("active", active == "tickets") }><span class="nav-icon">🎫</span>Tickets</a>
+					</nav>
+					<a href="/admin" class="space-link" title="Agents, architecture, code et tests">⚙ Admin</a>
 				}
 			</header>
 			{ children... }

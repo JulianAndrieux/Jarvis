@@ -19,7 +19,7 @@ templ ArchitecturePage(v ArchitectureView) {
 				</span>
 			</div>
 			<!-- Empreinte du dépôt : la page se recharge quand elle change. -->
-			<div hx-get={ "/architecture/version?v=" + v.Fingerprint } hx-trigger="every 4s" hx-swap="none"></div>
+			<div hx-get={ "/admin/architecture/version?v=" + v.Fingerprint } hx-trigger="every 4s" hx-swap="none"></div>
 			for _, e := range v.Errors {
 				<div class="card arch-error">{ e }</div>
 			}
@@ -30,7 +30,7 @@ templ ArchitecturePage(v ArchitectureView) {
 				<button class="tab" role="tab" data-tab="commits" aria-selected="false">Commits <span class="count">{ fmt.Sprint(len(v.Commits)) }</span></button>
 			</nav>
 			<div class="tab-panel" data-tab-panel="infra">
-				<div hx-get="/architecture/infra" hx-trigger="load, every 5s" hx-swap="innerHTML">
+				<div hx-get="/admin/architecture/infra" hx-trigger="load, every 5s" hx-swap="innerHTML">
 					<div class="muted">Sondage des composants…</div>
 				</div>
 			</div>
@@ -132,7 +132,7 @@ templ milestonesTab(v ArchitectureView) {
 templ commitsTab(v ArchitectureView) {
 	<div class="commit-list">
 		for _, c := range v.Commits {
-			<details class="commit" hx-get={ "/architecture/commits/" + c.Hash } hx-trigger="toggle once" hx-target="find .commit-diff" hx-swap="innerHTML">
+			<details class="commit" hx-get={ "/admin/architecture/commits/" + c.Hash } hx-trigger="toggle once" hx-target="find .commit-diff" hx-swap="innerHTML">
 				<summary>
 					<code class="commit-hash">{ c.Short }</code>
 					<span class="commit-subject">{ c.Subject }</span>

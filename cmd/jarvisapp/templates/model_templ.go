@@ -150,7 +150,7 @@ func ModelPage(v ModelPageView) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main class=\"model-page\"><form class=\"model-toolbar\" method=\"get\" action=\"/model\"><label class=\"inline\">Type <select name=\"t\" onchange=\"this.form.submit()\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main class=\"model-page\"><form class=\"model-toolbar\" method=\"get\" action=\"/admin/model\"><label class=\"inline\">Type <select name=\"t\" onchange=\"this.form.submit()\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

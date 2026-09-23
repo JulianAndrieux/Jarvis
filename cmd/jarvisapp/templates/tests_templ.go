@@ -93,7 +93,7 @@ func TestsPage(categories []TestCategoryView) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main class=\"two-pane\"><div class=\"detail\"><div class=\"summary-line\"><button hx-post=\"/tests/run\" hx-target=\"#test-categories\" hx-swap=\"innerHTML\" hx-indicator=\"#run-spinner\">▶ Tout lancer</button> <button hx-post=\"/tests/run?integration=1\" hx-target=\"#test-categories\" hx-swap=\"innerHTML\" hx-indicator=\"#run-spinner\">▶ Tout lancer (avec integration)</button> <span id=\"run-spinner\" class=\"htmx-indicator muted\">en cours…</span></div><div id=\"test-categories\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main class=\"two-pane\"><div class=\"detail\"><div class=\"summary-line\"><button hx-post=\"/admin/tests/run\" hx-target=\"#test-categories\" hx-swap=\"innerHTML\" hx-indicator=\"#run-spinner\">▶ Tout lancer</button> <button hx-post=\"/admin/tests/run?integration=1\" hx-target=\"#test-categories\" hx-swap=\"innerHTML\" hx-indicator=\"#run-spinner\">▶ Tout lancer (avec integration)</button> <span id=\"run-spinner\" class=\"htmx-indicator muted\">en cours…</span></div><div id=\"test-categories\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -211,9 +211,9 @@ func TestCategoryCard(cat TestCategoryView) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/tests/run?pkg=%s", cat.Package))
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/admin/tests/run?pkg=%s", cat.Package))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/tests.templ`, Line: 98, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/tests.templ`, Line: 98, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 		if templ_7745c5c3_Err != nil {
@@ -416,9 +416,9 @@ func TestRow(pkg string, tr TestRowView) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var20 string
-		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/tests/run?pkg=%s&name=%s", pkg, tr.Name))
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/admin/tests/run?pkg=%s&name=%s", pkg, tr.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/tests.templ`, Line: 135, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/tests.templ`, Line: 135, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 		if templ_7745c5c3_Err != nil {

@@ -300,7 +300,7 @@ func newClassesTestServer() *Server {
 
 func TestHandleClasses_ListsPackagesAndTypes(t *testing.T) {
 	s := newClassesTestServer()
-	req := httptest.NewRequest(http.MethodGet, "/classes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/classes", nil)
 	rec := httptest.NewRecorder()
 
 	s.Routes().ServeHTTP(rec, req)
@@ -315,7 +315,7 @@ func TestHandleClasses_ListsPackagesAndTypes(t *testing.T) {
 
 func TestHandleClasses_SelectedType_ShowsEmbedRelation(t *testing.T) {
 	s := newClassesTestServer()
-	req := httptest.NewRequest(http.MethodGet, "/classes?pkg=example.com/fixture/widget&name=Gadget", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/classes?pkg=example.com/fixture/widget&name=Gadget", nil)
 	rec := httptest.NewRecorder()
 
 	s.Routes().ServeHTTP(rec, req)
@@ -330,7 +330,7 @@ func TestHandleClasses_SelectedType_ShowsEmbedRelation(t *testing.T) {
 
 func TestHandleClassDetail_UnknownType_ReturnsNotFound(t *testing.T) {
 	s := newClassesTestServer()
-	req := httptest.NewRequest(http.MethodGet, "/classes/detail?pkg=example.com/fixture/widget&name=DoesNotExist", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/classes/detail?pkg=example.com/fixture/widget&name=DoesNotExist", nil)
 	rec := httptest.NewRecorder()
 
 	s.Routes().ServeHTTP(rec, req)
@@ -342,7 +342,7 @@ func TestHandleClassDetail_UnknownType_ReturnsNotFound(t *testing.T) {
 
 func TestHandleTests_ListsCategoriesAndTests(t *testing.T) {
 	s := newClassesTestServer()
-	req := httptest.NewRequest(http.MethodGet, "/tests", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/tests", nil)
 	rec := httptest.NewRecorder()
 
 	s.Routes().ServeHTTP(rec, req)
@@ -379,7 +379,7 @@ func TestOK(t *testing.T) {}
 		results: map[string]testrunner.TestResult{},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/tests/run?pkg=example.com/fixture/pkg", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/tests/run?pkg=example.com/fixture/pkg", nil)
 	rec := httptest.NewRecorder()
 	s.Routes().ServeHTTP(rec, req)
 
@@ -391,7 +391,7 @@ func TestOK(t *testing.T) {}
 	}
 
 	// Le cache doit maintenant refléter ce résultat sur /tests aussi.
-	req2 := httptest.NewRequest(http.MethodGet, "/tests", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/admin/tests", nil)
 	rec2 := httptest.NewRecorder()
 	s.Routes().ServeHTTP(rec2, req2)
 	if !strings.Contains(rec2.Body.String(), "status-pass") {
@@ -941,7 +941,7 @@ func newCodeTestServer() *Server {
 }
 
 func TestClasses_SidebarShowsPathsRelativeToModule(t *testing.T) {
-	body := get(t, newCodeTestServer(), "/classes").Body.String()
+	body := get(t, newCodeTestServer(), "/admin/classes").Body.String()
 	if !strings.Contains(body, ">widget<") {
 		t.Errorf("sidebar does not show the short package path 'widget': %s", body)
 	}
@@ -951,22 +951,22 @@ func TestClasses_SidebarShowsPathsRelativeToModule(t *testing.T) {
 }
 
 func TestClassDetail_UMLCardWithLinkedFieldTypes(t *testing.T) {
-	body := get(t, newCodeTestServer(), "/classes/detail?pkg="+widgetPkg+"&name=Gadget").Body.String()
+	body := get(t, newCodeTestServer(), "/admin/classes/detail?pkg="+widgetPkg+"&name=Gadget").Body.String()
 	for _, want := range []string{`class="uml`, "Label", "Parent", "*Base", "String"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("UML card does not contain %q", want)
 		}
 	}
-	if !strings.Contains(body, `href="/classes?pkg=example.com/fixture/widget&amp;name=Base"`) {
+	if !strings.Contains(body, `href="/admin/classes?pkg=example.com/fixture/widget&amp;name=Base"`) {
 		t.Errorf("field type *Base is not a link to Base: %s", body)
 	}
-	if !strings.Contains(body, `href="/model?pkg=example.com/fixture/widget&amp;name=Gadget"`) {
+	if !strings.Contains(body, `href="/admin/model?pkg=example.com/fixture/widget&amp;name=Gadget"`) {
 		t.Errorf("no link to view Gadget in the data model diagram")
 	}
 }
 
 func TestClassDetail_SourceCodeHighlightedWithLocation(t *testing.T) {
-	body := get(t, newCodeTestServer(), "/classes/detail?pkg="+widgetPkg+"&name=Gadget").Body.String()
+	body := get(t, newCodeTestServer(), "/admin/classes/detail?pkg="+widgetPkg+"&name=Gadget").Body.String()
 	for _, want := range []string{
 		`<span class="tok-kw">type</span>`,
 		`<span class="tok-type">Gadget</span>`,
@@ -983,7 +983,7 @@ func TestClassDetail_SourceCodeHighlightedWithLocation(t *testing.T) {
 }
 
 func TestModel_FocusedDiagramWithNavigableNodes(t *testing.T) {
-	rec := get(t, newCodeTestServer(), "/model?pkg="+widgetPkg+"&name=Gadget")
+	rec := get(t, newCodeTestServer(), "/admin/model?pkg="+widgetPkg+"&name=Gadget")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -991,7 +991,7 @@ func TestModel_FocusedDiagramWithNavigableNodes(t *testing.T) {
 	for _, want := range []string{
 		"<svg",
 		`class="dnode focus"`, // Gadget, centre du diagramme
-		`href="/model?pkg=example.com/fixture/widget&amp;name=Base"`, // clic = recentrer
+		`href="/admin/model?pkg=example.com/fixture/widget&amp;name=Base"`, // clic = recentrer
 		"0..1", // cardinalité de Parent *Base
 		`class="active">Modèle`,
 	} {
@@ -1011,16 +1011,16 @@ func TestModel_FocusedDiagramWithNavigableNodes(t *testing.T) {
 
 func TestModel_DefaultsToAConnectedTypeAndRejectsUnknown(t *testing.T) {
 	s := newCodeTestServer()
-	if body := get(t, s, "/model").Body.String(); !strings.Contains(body, `class="dnode focus"`) {
+	if body := get(t, s, "/admin/model").Body.String(); !strings.Contains(body, `class="dnode focus"`) {
 		t.Errorf("/model without a type should focus a default type: %s", body)
 	}
-	if rec := get(t, s, "/model?pkg="+widgetPkg+"&name=Nope"); rec.Code != http.StatusNotFound {
+	if rec := get(t, s, "/admin/model?pkg="+widgetPkg+"&name=Nope"); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown type: status = %d, want 404", rec.Code)
 	}
 }
 
 func TestTests_ShortPathsAndHighlightedTestSource(t *testing.T) {
-	body := get(t, newCodeTestServer(), "/tests").Body.String()
+	body := get(t, newCodeTestServer(), "/admin/tests").Body.String()
 	if !strings.Contains(body, ">widget<") {
 		t.Errorf("tests page does not show the short package path: %s", body)
 	}
@@ -1050,7 +1050,7 @@ func TestModel_DefaultFocusIsTheBiggestContainer(t *testing.T) {
 		}},
 	}}}}}
 
-	body := get(t, s, "/model").Body.String()
+	body := get(t, s, "/admin/model").Body.String()
 	if !strings.Contains(body, `value="example.com/fixture/widget#Root" selected`) {
 		t.Errorf("default focus should be Root (contains the most types), not Leaf (most referenced)")
 	}
@@ -1074,7 +1074,7 @@ func TestModel_DefaultFocusCountsOnlyDataTypes(t *testing.T) {
 		{Name: "Result", Package: widgetPkg, Kind: codemap.KindStruct, Fields: []codemap.FieldInfo{f("D1"), f("D2")}},
 	}}}}}
 
-	if body := get(t, s, "/model").Body.String(); !strings.Contains(body, `value="example.com/fixture/widget#Result" selected`) {
+	if body := get(t, s, "/admin/model").Body.String(); !strings.Contains(body, `value="example.com/fixture/widget#Result" selected`) {
 		t.Errorf("default focus should be Result (2 data types) rather than Orchestrator (3 interfaces)")
 	}
 }

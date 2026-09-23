@@ -39,14 +39,14 @@ func serve(s *Server, method, target string, form url.Values) *httptest.Response
 // leur modèle et l'état de leur prompt.
 func TestAgentsPage_ListsTheFourAgents(t *testing.T) {
 	s := newAgentsServer(t)
-	rec := serve(s, http.MethodGet, "/agents", nil)
+	rec := serve(s, http.MethodGet, "/admin/agents", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`href="/agents"`, "Classification de document", "Extraction de document", "Analyse de ticket", "Développement",
-		`href="/agents/extraction"`, "qwen3-8b", "Prompt par défaut", "propose_plan",
+		`href="/admin/agents"`, "Classification de document", "Extraction de document", "Analyse de ticket", "Développement",
+		`href="/admin/agents/extraction"`, "qwen3-8b", "Prompt par défaut", "propose_plan",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
@@ -56,24 +56,24 @@ func TestAgentsPage_ListsTheFourAgents(t *testing.T) {
 
 func TestAgentPage_EditSaveAndReset(t *testing.T) {
 	s := newAgentsServer(t)
-	page := serve(s, http.MethodGet, "/agents/extraction", nil).Body.String()
+	page := serve(s, http.MethodGet, "/admin/agents/extraction", nil).Body.String()
 	if !strings.Contains(page, `name="prompt"`) || !strings.Contains(page, "{{type_document}}") {
 		t.Fatalf("edit page lacks the prompt editor or its placeholder")
 	}
 
-	rec := serve(s, http.MethodPost, "/agents/extraction", url.Values{"prompt": {"Extrait tout : {{type_document}}"}})
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/agents/extraction" {
+	rec := serve(s, http.MethodPost, "/admin/agents/extraction", url.Values{"prompt": {"Extrait tout : {{type_document}}"}})
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/admin/agents/extraction" {
 		t.Fatalf("save: status %d location %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if got := s.Agents.Prompt(agents.Extraction); got != "Extrait tout : {{type_document}}" {
 		t.Errorf("prompt in force = %q", got)
 	}
-	page = serve(s, http.MethodGet, "/agents/extraction", nil).Body.String()
+	page = serve(s, http.MethodGet, "/admin/agents/extraction", nil).Body.String()
 	if !strings.Contains(page, "Personnalisé") || !strings.Contains(page, "Historique") {
 		t.Errorf("page after save lacks the customised state or history")
 	}
 
-	if rec := serve(s, http.MethodPost, "/agents/extraction/reset", url.Values{}); rec.Code != http.StatusSeeOther {
+	if rec := serve(s, http.MethodPost, "/admin/agents/extraction/reset", url.Values{}); rec.Code != http.StatusSeeOther {
 		t.Fatalf("reset: status %d", rec.Code)
 	}
 	if a, _ := s.Agents.Get(agents.Extraction); a.Custom {
@@ -85,7 +85,7 @@ func TestAgentPage_EditSaveAndReset(t *testing.T) {
 // perdu ; l'ancien prompt reste en vigueur.
 func TestAgentPage_InvalidPromptShowsReasonAndKeepsInput(t *testing.T) {
 	s := newAgentsServer(t)
-	rec := serve(s, http.MethodPost, "/agents/classification", url.Values{"prompt": {"Choisis un type <b>vite</b>"}})
+	rec := serve(s, http.MethodPost, "/admin/agents/classification", url.Values{"prompt": {"Choisis un type <b>vite</b>"}})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422", rec.Code)
 	}
@@ -100,7 +100,7 @@ func TestAgentPage_InvalidPromptShowsReasonAndKeepsInput(t *testing.T) {
 
 func TestAgentPage_UnknownAgentIs404(t *testing.T) {
 	s := newAgentsServer(t)
-	if rec := serve(s, http.MethodGet, "/agents/inconnu", nil); rec.Code != http.StatusNotFound {
+	if rec := serve(s, http.MethodGet, "/admin/agents/inconnu", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
 }

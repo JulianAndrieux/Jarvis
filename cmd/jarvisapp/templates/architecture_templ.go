@@ -86,9 +86,9 @@ func ArchitecturePage(v ArchitectureView) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var5 string
-			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue("/architecture/version?v=" + v.Fingerprint)
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue("/admin/architecture/version?v=" + v.Fingerprint)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/architecture.templ`, Line: 22, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/architecture.templ`, Line: 22, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
@@ -143,7 +143,7 @@ func ArchitecturePage(v ArchitectureView) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</span></button></nav><div class=\"tab-panel\" data-tab-panel=\"infra\"><div hx-get=\"/architecture/infra\" hx-trigger=\"load, every 5s\" hx-swap=\"innerHTML\"><div class=\"muted\">Sondage des composants…</div></div></div><div class=\"tab-panel\" data-tab-panel=\"decisions\" hidden>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</span></button></nav><div class=\"tab-panel\" data-tab-panel=\"infra\"><div hx-get=\"/admin/architecture/infra\" hx-trigger=\"load, every 5s\" hx-swap=\"innerHTML\"><div class=\"muted\">Sondage des composants…</div></div></div><div class=\"tab-panel\" data-tab-panel=\"decisions\" hidden>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -641,9 +641,9 @@ func commitsTab(v ArchitectureView) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var32 string
-			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue("/architecture/commits/" + c.Hash)
+			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue("/admin/architecture/commits/" + c.Hash)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/architecture.templ`, Line: 135, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/architecture.templ`, Line: 135, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 			if templ_7745c5c3_Err != nil {

@@ -54,7 +54,7 @@ func TestTickets_ListPageWithCreationForm(t *testing.T) {
 	s, store := newTicketServer(t, "p")
 	store.Create(context.Background(), tickets.Ticket{ID: "t1", Title: "Filtre par date", Status: tickets.PlanReady, CreatedAt: time.Now()})
 	body := get(t, s, "/tickets").Body.String()
-	for _, want := range []string{`class="active">Tickets`, `action="/tickets"`, `name="title"`, `name="need"`, `name="acceptance"`, "Filtre par date", "Plan à valider"} {
+	for _, want := range []string{`href="/tickets" class="active"`, `action="/tickets"`, `name="title"`, `name="need"`, `name="acceptance"`, "Filtre par date", "Plan à valider"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("tickets page lacks %q", want)
 		}

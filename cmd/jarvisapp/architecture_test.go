@@ -52,7 +52,7 @@ func newArchServer(t *testing.T) (*Server, string) {
 
 func TestArchitecturePage_DecisionsMilestonesAndCommits(t *testing.T) {
 	s, _ := newArchServer(t)
-	rec := get(t, s, "/architecture")
+	rec := get(t, s, "/admin/architecture")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}
@@ -63,7 +63,7 @@ func TestArchitecturePage_DecisionsMilestonesAndCommits(t *testing.T) {
 		"squelette CLI", "ports modèles", "fait côté code.", // jalons
 		"détail &lt;b&gt;du&lt;/b&gt; jalon 1",             // échappé
 		"Jalon 1: squelette CLI", "Jalon 2: ports modèles", // commits
-		`hx-get="/architecture/infra"`, `hx-get="/architecture/version?v=`,
+		`hx-get="/admin/architecture/infra"`, `hx-get="/admin/architecture/version?v=`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
@@ -84,11 +84,11 @@ func TestArchitectureVersion_UnchangedThenChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := get(t, s, "/architecture/version?v="+v); rec.Code != http.StatusNoContent || rec.Header().Get("HX-Refresh") != "" {
+	if rec := get(t, s, "/admin/architecture/version?v="+v); rec.Code != http.StatusNoContent || rec.Header().Get("HX-Refresh") != "" {
 		t.Errorf("unchanged: %d %v", rec.Code, rec.Header())
 	}
 	os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(archClaudeMD+"\n- nouvelle décision\n"), 0o644)
-	if rec := get(t, s, "/architecture/version?v="+v); rec.Header().Get("HX-Refresh") != "true" {
+	if rec := get(t, s, "/admin/architecture/version?v="+v); rec.Header().Get("HX-Refresh") != "true" {
 		t.Errorf("changed: %d %v", rec.Code, rec.Header())
 	}
 }
@@ -96,11 +96,11 @@ func TestArchitectureVersion_UnchangedThenChanged(t *testing.T) {
 func TestArchitectureCommitDiff(t *testing.T) {
 	s, dir := newArchServer(t)
 	commits, _ := projectinfo.Commits(context.Background(), dir, 0)
-	rec := get(t, s, "/architecture/commits/"+commits[0].Hash)
+	rec := get(t, s, "/admin/architecture/commits/"+commits[0].Hash)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "A() {}") || !strings.Contains(rec.Body.String(), "a.go") {
 		t.Errorf("diff: %d %s", rec.Code, rec.Body)
 	}
-	if rec := get(t, s, "/architecture/commits/HEAD"); rec.Code != http.StatusBadRequest {
+	if rec := get(t, s, "/admin/architecture/commits/HEAD"); rec.Code != http.StatusBadRequest {
 		t.Errorf("non-hash revision: status %d, want 400", rec.Code)
 	}
 }
@@ -118,7 +118,7 @@ func TestArchitectureInfra_ProbesAndDraws(t *testing.T) {
 		},
 		Edges: []projectinfo.Edge{{From: "app", To: "vlm", Label: "pages"}},
 	}
-	rec := get(t, s, "/architecture/infra")
+	rec := get(t, s, "/admin/architecture/infra")
 	body := rec.Body.String()
 	for _, want := range []string{"<svg", "2 en attente", "injoignable", `class="node down"`, "1 composant en panne"} {
 		if !strings.Contains(body, want) {
@@ -129,7 +129,7 @@ func TestArchitectureInfra_ProbesAndDraws(t *testing.T) {
 
 func TestLayout_NavHasArchitecture(t *testing.T) {
 	s, _ := newArchServer(t)
-	if body := get(t, s, "/architecture").Body.String(); !strings.Contains(body, `href="/architecture" class="active"`) {
+	if body := get(t, s, "/admin/architecture").Body.String(); !strings.Contains(body, `href="/admin/architecture" class="active"`) {
 		t.Error("nav lacks an active Architecture tab")
 	}
 }

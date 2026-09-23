@@ -15,10 +15,10 @@ import (
 // modification s'applique au prochain appel de l'agent (agents.Registry).
 
 func (s *Server) agentRoutes(r chi.Router) {
-	r.Get("/agents", s.handleAgents)
-	r.Get("/agents/{id}", s.handleAgent)
-	r.Post("/agents/{id}", s.handleAgentSave)
-	r.Post("/agents/{id}/reset", s.handleAgentReset)
+	r.Get("/admin/agents", s.handleAgents)
+	r.Get("/admin/agents/{id}", s.handleAgent)
+	r.Post("/admin/agents/{id}", s.handleAgentSave)
+	r.Post("/admin/agents/{id}/reset", s.handleAgentReset)
 }
 
 func (s *Server) agentsEnabled(w http.ResponseWriter) bool {
@@ -64,7 +64,7 @@ func (s *Server) handleAgentSave(w http.ResponseWriter, r *http.Request) {
 		renderAgentPage(w, r, http.StatusUnprocessableEntity, templates.AgentPage(a, prompt, err.Error()), "agent "+id)
 		return
 	}
-	http.Redirect(w, r, "/agents/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/agents/"+id, http.StatusSeeOther)
 }
 
 func (s *Server) handleAgentReset(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,7 @@ func (s *Server) handleAgentReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/agents/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/agents/"+id, http.StatusSeeOther)
 }
 
 // renderAgentPage écrit une page de l'onglet Agents ; what la nomme
