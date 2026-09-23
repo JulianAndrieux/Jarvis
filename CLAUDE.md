@@ -2071,6 +2071,39 @@ spécifique à `localhost`.
     classée puis extraite, le prompt conservé dans le résultat est bien le
     nouveau. `agents.MongoStore` testé contre Atlas (test écrit en même
     temps que son code, pas vu rouge d'abord).
+- **Ticket "Ajouter un filtre sur les documents" : échec analysé, trois
+  défauts du harnais corrigés, filtre livré à la main.**
+  - **Ce qui s'était passé** : l'analyse a cherché
+    `Document|Filter|date|...` ; 1019 correspondances, dont l'agent n'a vu
+    que 8 lignes (60 résultats, puis sortie coupée à 3000 caractères,
+    ordre alphabétique : `Makefile`, `cmd/jarvis/...`). Plan bâti sur
+    `internal/store` (le stockage sur disque de la CLI) au lieu de
+    `cmd/jarvisapp` + `internal/webapp`. Développement : tentative 1 sans
+    modification (bien détecté) ; tentative 2, Qwen3-8B boucle dans un
+    `write_file` (la même ligne de commentaire répétée) jusqu'à des
+    arguments JSON coupés — **renvoyés tels quels dans l'historique**,
+    llama.cpp les relit et répond 500 à chaque requête suivante : les
+    trois « relances » ont échoué dans la même seconde.
+  - **Correctifs (TDD)** : historique assaini (arguments invalides → `{}`,
+    l'erreur de l'outil reste visible du modèle) ; recherche : au-delà de
+    ce qui tient dans la sortie, **résumé par fichier trié par nombre de
+    correspondances**, fichiers générés (`_templ.go`) et minifiés ignorés ;
+    **carte du code** (`agent.PackageMap` : chaque paquet et la première
+    phrase de son commentaire, tous les paquets gardés en raccourcissant
+    les descriptions, mentions de jalon retirées) donnée aux agents
+    d'analyse et de développement — extrait de CLAUDE.md ramené de 4000 à
+    2500 caractères pour laisser la place à la conversation.
+  - **Fonctionnalité** : filtre par **date d'import** (la seule date que
+    tous les documents ont ; les dates métier sont des champs extraits,
+    propres à chaque type). `ListQuery.CreatedFrom/CreatedBefore`
+    (intervalle semi-ouvert, Fake et Mongo `created_at`), champs « Importé
+    du / au » (bornes incluses, heure locale) combinés à la recherche et au
+    type, bouton Effacer, date invalide ou inversée expliquée. Au passage :
+    les liens de filtre par type n'échappaient pas la recherche (un « & »
+    la coupait) — reconstruits avec `url.Values`, et gardent les dates.
+  - Validé : Mongo réel (Atlas), capture de la page sur une instance
+    séparée (:8091). Constat hors périmètre : en largeur étroite, la barre
+    de navigation (qui ne passe pas à la ligne) élargit toute la page.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

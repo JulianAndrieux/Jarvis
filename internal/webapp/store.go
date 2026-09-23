@@ -2,6 +2,7 @@ package webapp
 
 import (
 	"context"
+	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 )
@@ -37,6 +38,12 @@ type ListQuery struct {
 	// bibliothèque (jalon 25). Un job antérieur au jalon 25, sans format
 	// enregistré, est un PDF.
 	Format string
+	// CreatedFrom / CreatedBefore filtrent sur la date d'import
+	// (CreatedAt), intervalle semi-ouvert [CreatedFrom, CreatedBefore) ;
+	// une borne nulle ne filtre pas — filtre par date de la bibliothèque
+	// (ticket "Ajouter un filtre sur les documents").
+	CreatedFrom   time.Time
+	CreatedBefore time.Time
 }
 
 // Store est le port de persistance des jobs : création, lecture, mise à

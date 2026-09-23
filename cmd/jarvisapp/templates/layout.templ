@@ -149,6 +149,10 @@ templ Layout(title string, active string) {
 				/* Bibliothèque : recherche + grille de cartes */
 				.search-bar { display: flex; gap: .6rem; margin: 0 0 1.5rem; }
 				.search-bar input[type=text] { font-size: 1.02rem; padding: .7rem 1rem; border-radius: 10px; }
+				.search-bar { flex-wrap: wrap; align-items: center; }
+				.search-bar input[type=text] { flex: 1 1 18rem; }
+				.date-field { display: flex; align-items: center; gap: .4rem; margin: 0; font-weight: 500; color: var(--text-2); white-space: nowrap; }
+				.date-field input[type=date] { font: inherit; padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); }
 				.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 1.1rem; }
 				.doc-card { position: relative; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; color: inherit; transition: box-shadow .15s, transform .15s; }
 				.doc-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); text-decoration: none; }

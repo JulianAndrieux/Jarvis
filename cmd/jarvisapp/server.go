@@ -187,7 +187,10 @@ func (s *Server) renderJob(w http.ResponseWriter, r *http.Request, job webapp.Jo
 func (s *Server) handleDocuments(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("q")
 	typeFilter := r.URL.Query().Get("type")
-	jobs, err := s.Jobs.List(r.Context(), webapp.ListQuery{Search: search, Format: typeFilter, SummaryOnly: true})
+	filters := templates.DocumentFilters{Search: search, From: r.URL.Query().Get("from"), To: r.URL.Query().Get("to")}
+	query := webapp.ListQuery{Search: search, Format: typeFilter, SummaryOnly: true}
+	query.CreatedFrom, query.CreatedBefore, filters.Error = importDateRange(filters.From, filters.To)
+	jobs, err := s.Jobs.List(r.Context(), query)
 	if err != nil {
 		http.Error(w, "erreur de lecture des documents : "+err.Error(), http.StatusInternalServerError)
 		return
@@ -208,9 +211,34 @@ func (s *Server) handleDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.DocumentsPage(rows, search, typeFilters(typeFilter)).Render(r.Context(), w); err != nil {
+	if err := templates.DocumentsPage(rows, filters, typeFilters(typeFilter)).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render documents: %v\n", err)
 	}
+}
+
+// importDateRange convertit les dates saisies (AAAA-MM-JJ, bornes
+// incluses, heure locale) en intervalle semi-ouvert [from, before) sur
+// la date d'import. Une date refusée n'est pas appliquée : msg l'explique.
+func importDateRange(fromStr, toStr string) (from, before time.Time, msg string) {
+	parse := func(v string) (time.Time, bool) {
+		if v == "" {
+			return time.Time{}, true
+		}
+		d, err := time.ParseInLocation("2006-01-02", v, time.Local)
+		return d, err == nil
+	}
+	from, okFrom := parse(fromStr)
+	to, okTo := parse(toStr)
+	if !okFrom || !okTo {
+		return time.Time{}, time.Time{}, "Date invalide (format attendu : AAAA-MM-JJ) : le filtre par date n'est pas appliqué."
+	}
+	if !to.IsZero() {
+		before = to.AddDate(0, 0, 1) // le jour de fin est inclus
+	}
+	if !from.IsZero() && !to.IsZero() && to.Before(from) {
+		msg = "La date de fin précède la date de début : aucun document ne peut correspondre."
+	}
+	return from, before, msg
 }
 
 // typeFilters : les filtres par type de la bibliothèque (jalon 25).

@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
@@ -58,20 +59,45 @@ func familyIcon(f formats.Family) string {
 	}
 }
 
-func filterURL(value, search string) string {
-	u := "/documents"
-	sep := "?"
-	if value != "" {
-		u += sep + "type=" + value
-		sep = "&"
-	}
-	if search != "" {
-		u += sep + "q=" + search
-	}
-	return u
+// DocumentFilters : recherche et dates saisies dans la bibliothèque,
+// telles que tapées (réaffichées dans le formulaire). Error explique une
+// date refusée (elle n'est alors pas appliquée).
+type DocumentFilters struct {
+	Search string
+	From   string // AAAA-MM-JJ, inclus
+	To     string // AAAA-MM-JJ, inclus
+	Error  string
 }
 
-templ DocumentsPage(docs []DocumentRow, search string, filters []TypeFilter) {
+// activeType : le filtre par type sélectionné ("" : tous).
+func activeType(filters []TypeFilter) string {
+	for _, tf := range filters {
+		if tf.Active {
+			return tf.Value
+		}
+	}
+	return ""
+}
+
+// Active : un filtre de recherche ou de date est en cours.
+func (f DocumentFilters) Active() bool { return f.Search != "" || f.From != "" || f.To != "" }
+
+// filterURL : lien d'un filtre par type qui garde la recherche et les
+// dates. url.Values échappe la recherche (un « & » la coupait).
+func filterURL(value string, f DocumentFilters) string {
+	q := url.Values{}
+	for k, v := range map[string]string{"type": value, "q": f.Search, "from": f.From, "to": f.To} {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	if len(q) == 0 {
+		return "/documents"
+	}
+	return "/documents?" + q.Encode()
+}
+
+templ DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) {
 	@Layout("Jarvis — documents", "documents") {
 		<div class="page-wide">
 			<div class="page-title">
@@ -79,23 +105,33 @@ templ DocumentsPage(docs []DocumentRow, search string, filters []TypeFilter) {
 				<a class="button button-primary" href="/">+ Importer</a>
 			</div>
 			<form class="search-bar" method="get" action="/documents">
-				<input type="text" name="q" id="q" value={ search } placeholder="Rechercher : nom, type, tag, ou contenu du document…"/>
-				for _, f := range filters {
-					if f.Active && f.Value != "" {
-						<input type="hidden" name="type" value={ f.Value }/>
+				<input type="text" name="q" id="q" value={ f.Search } placeholder="Rechercher : nom, type, tag, ou contenu du document…"/>
+				<label class="date-field">Importé du <input type="date" name="from" value={ f.From }/></label>
+				<label class="date-field">au <input type="date" name="to" value={ f.To }/></label>
+				for _, tf := range filters {
+					if tf.Active && tf.Value != "" {
+						<input type="hidden" name="type" value={ tf.Value }/>
 					}
 				}
 				<button type="submit">Rechercher</button>
+				if f.Active() {
+					<a class="button button-ghost" href={ templ.SafeURL(filterURL(activeType(filters), DocumentFilters{})) }>Effacer</a>
+				}
 			</form>
+			if f.Error != "" {
+				<p class="form-error" role="alert">{ f.Error }</p>
+			}
 			<div class="type-filters">
-				for _, f := range filters {
-					<a class={ "chip", "filter-chip", templ.KV("active", f.Active) } href={ templ.SafeURL(filterURL(f.Value, search)) }>{ f.Label }</a>
+				for _, tf := range filters {
+					<a class={ "chip", "filter-chip", templ.KV("active", tf.Active) } href={ templ.SafeURL(filterURL(tf.Value, f)) }>{ tf.Label }</a>
 				}
 			</div>
 			if len(docs) == 0 {
 				<div class="empty-state">
-					if search != "" {
-						<p>Aucun document ne correspond à « { search } ».</p>
+					if f.Search != "" {
+						<p>Aucun document ne correspond à « { f.Search } ».</p>
+					} else if f.Active() {
+						<p>Aucun document importé à ces dates.</p>
 					} else {
 						<p>Aucun document pour l'instant.</p>
 						<a class="button button-primary" href="/">Importer un premier PDF</a>

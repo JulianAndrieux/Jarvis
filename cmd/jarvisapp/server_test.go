@@ -1130,3 +1130,63 @@ func TestHandleDocumentComment_UnknownDocumentIs404(t *testing.T) {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
 }
+
+// --- Filtre par date d'import (ticket "Ajouter un filtre sur les documents") ---
+
+func dateFilterServer(t *testing.T) *Server {
+	t.Helper()
+	s, store := newTestServer(t, &blockingRunner{})
+	day := func(d, h int) time.Time { return time.Date(2026, 9, d, h, 0, 0, 0, time.Local) }
+	for name, at := range map[string]time.Time{"le-9.pdf": day(9, 23), "le-10.pdf": day(10, 0), "le-12.pdf": day(12, 23), "le-13.pdf": day(13, 0)} {
+		if _, err := store.Create(context.Background(), webapp.Job{ID: name, Filename: name, Status: webapp.StatusDone, CreatedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return s
+}
+
+func getDocuments(s *Server, query string) string {
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/documents?"+query, nil))
+	return rec.Body.String()
+}
+
+// Bornes incluses : du 10 à 00:00 au 12 à 23:59, en heure locale.
+func TestDocuments_FilterByImportDate(t *testing.T) {
+	s := dateFilterServer(t)
+	body := getDocuments(s, "from=2026-09-10&to=2026-09-12")
+	for _, want := range []string{"le-10.pdf", "le-12.pdf", `name="from" value="2026-09-10"`, `name="to" value="2026-09-12"`, "2 document(s)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	for _, unwanted := range []string{"le-9.pdf", "le-13.pdf"} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("page shows %s, outside the dates", unwanted)
+		}
+	}
+	if body := getDocuments(s, "from=2026-09-12"); !strings.Contains(body, "le-13.pdf") || strings.Contains(body, "le-10.pdf") {
+		t.Error("from alone must keep everything since that day")
+	}
+}
+
+// Les filtres par type gardent les dates et la recherche (échappée).
+func TestDocuments_TypeFilterLinksKeepDatesAndSearch(t *testing.T) {
+	s := dateFilterServer(t)
+	body := getDocuments(s, "from=2026-09-10&to=2026-09-12&q=a%26b")
+	if !strings.Contains(body, `href="/documents?from=2026-09-10&amp;q=a%26b&amp;to=2026-09-12&amp;type=pdf"`) {
+		t.Errorf("PDF filter link does not keep the dates and escaped search")
+	}
+}
+
+func TestDocuments_InvalidDatesAreExplainedNotApplied(t *testing.T) {
+	s := dateFilterServer(t)
+	body := getDocuments(s, "from=10/09/2026")
+	if !strings.Contains(body, "Date invalide") || !strings.Contains(body, "le-9.pdf") {
+		t.Error("an invalid date must be reported and ignored")
+	}
+	body = getDocuments(s, "from=2026-09-12&to=2026-09-10")
+	if !strings.Contains(body, "La date de fin précède la date de début") {
+		t.Error("reversed dates must be reported")
+	}
+}

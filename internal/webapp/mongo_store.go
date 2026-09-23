@@ -284,6 +284,12 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	if q.Status != "" {
 		and = append(and, bson.M{"status": string(q.Status)})
 	}
+	if !q.CreatedFrom.IsZero() {
+		and = append(and, bson.M{"created_at": bson.M{"$gte": q.CreatedFrom}})
+	}
+	if !q.CreatedBefore.IsZero() {
+		and = append(and, bson.M{"created_at": bson.M{"$lt": q.CreatedBefore}})
+	}
 	switch q.Format {
 	case "":
 	case "pdf":

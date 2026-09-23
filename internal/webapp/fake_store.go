@@ -105,6 +105,12 @@ func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 		if q.Format != "" && string(familyOf(j)) != q.Format {
 			continue
 		}
+		if !q.CreatedFrom.IsZero() && j.CreatedAt.Before(q.CreatedFrom) {
+			continue
+		}
+		if !q.CreatedBefore.IsZero() && !j.CreatedAt.Before(q.CreatedBefore) {
+			continue
+		}
 		if search == "" || jobMatchesSearch(j, search) {
 			if q.SummaryOnly {
 				j.Content, j.Result, j.Thumbnail, j.Progress = nil, nil, nil, nil

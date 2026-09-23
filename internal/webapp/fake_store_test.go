@@ -2,6 +2,7 @@ package webapp
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -386,5 +387,39 @@ func TestFakeStore_List_FiltersBySearchOnComment(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "1" {
 		t.Errorf("search by comment = %+v, want just job 1", got)
+	}
+}
+
+// Ticket "Ajouter un filtre sur les documents" : filtre par date
+// d'import, intervalle semi-ouvert [CreatedFrom, CreatedBefore) — une
+// borne nulle ne filtre pas.
+func TestFakeStore_List_FiltersByCreationDate(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	day := func(d, h int) time.Time { return time.Date(2026, 9, d, h, 0, 0, 0, time.Local) }
+	_, _ = s.Create(ctx, Job{ID: "avant", CreatedAt: day(9, 23)})
+	_, _ = s.Create(ctx, Job{ID: "debut", CreatedAt: day(10, 0)})
+	_, _ = s.Create(ctx, Job{ID: "fin", CreatedAt: day(12, 23)})
+	_, _ = s.Create(ctx, Job{ID: "apres", CreatedAt: day(13, 0)})
+
+	ids := func(q ListQuery) string {
+		got, err := s.List(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, j := range got {
+			out = append(out, j.ID)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := ids(ListQuery{CreatedFrom: day(10, 0), CreatedBefore: day(13, 0)}); got != "fin,debut" {
+		t.Errorf("10 → 12 septembre = %s, want fin,debut", got)
+	}
+	if got := ids(ListQuery{CreatedFrom: day(12, 0)}); got != "apres,fin" {
+		t.Errorf("depuis le 12 = %s", got)
+	}
+	if got := ids(ListQuery{CreatedBefore: day(10, 0)}); got != "avant" {
+		t.Errorf("avant le 10 = %s", got)
 	}
 }

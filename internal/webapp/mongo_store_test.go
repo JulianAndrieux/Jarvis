@@ -5,7 +5,9 @@ package webapp
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -557,5 +559,32 @@ func TestMongoStore_MigrateComments_AddsEmptyCommentOnlyWhereMissing(t *testing.
 	n, err := store.MigrateComments(ctx)
 	if err != nil || n != 0 {
 		t.Errorf("second MigrateComments() = %d, %v, want 0 documents touched", n, err)
+	}
+}
+
+// Filtre par date d'import (ticket "Ajouter un filtre sur les
+// documents"), intervalle semi-ouvert, combiné à la recherche.
+func TestMongoStore_List_FiltersByCreationDate(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	stamp := time.Now().Format("20060102150405")
+	day := func(d int) time.Time { return time.Date(2031, 1, d, 12, 0, 0, 0, time.Local) }
+	for _, d := range []int{9, 10, 12, 13} {
+		job := Job{ID: fmt.Sprintf("test-date-%s-%d", stamp, d), Filename: "date-" + stamp + ".pdf", Status: StatusDone, CreatedAt: day(d)}
+		defer cleanupJob(t, store, job.ID)
+		if _, err := store.Create(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := store.List(ctx, ListQuery{Search: "date-" + stamp, CreatedFrom: day(10).Add(-12 * time.Hour), CreatedBefore: day(13).Add(-12 * time.Hour), SummaryOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || !strings.HasSuffix(got[0].ID, "-12") || !strings.HasSuffix(got[1].ID, "-10") {
+		var ids []string
+		for _, j := range got {
+			ids = append(ids, j.ID)
+		}
+		t.Errorf("jobs = %v, want the 12th then the 10th", ids)
 	}
 }
