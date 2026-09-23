@@ -35,6 +35,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/gate"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
+	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 	"github.com/JulianAndrieux/Jarvis/internal/store"
@@ -75,6 +76,8 @@ func main() {
 	agentContext := flag.Int("agent-context-chars", 16000, "Taille maximale (caractères) de la conversation envoyée à l'agent — à adapter au contexte du serveur (8192 jetons aujourd'hui)")
 	ticketsCollection := flag.String("tickets-collection", "tickets", "Collection MongoDB des tickets")
 	agentsCollection := flag.String("agents-collection", "agents", "Collection MongoDB des prompts des agents (onglet Agents)")
+	notesCollection := flag.String("notes-collection", "notes", "Collection MongoDB des notes (onglet Notes)")
+	tasksCollection := flag.String("tasks-collection", "tasks", "Collection MongoDB des tâches (onglet Tâches)")
 	agentTimeout := flag.Duration("agent-timeout", 15*time.Minute, "Délai d'un appel au modèle de l'agent — un tour qui écrit un fichier entier peut prendre plusieurs minutes sur un modèle local lent")
 	agentDev := flag.Bool("agent-dev", true, "Développement automatique des tickets au plan validé (copie de travail git isolée, vérification complète, diff à relire)")
 	worktreesDir := flag.String("worktrees-dir", "", "Dossier des copies de travail des tickets ; vide = ~/.jarvis/worktrees")
@@ -114,6 +117,15 @@ func main() {
 	cancelAgents()
 	if err != nil {
 		log.Fatalf("jarvisapp: agents : %v", err)
+	}
+
+	// Notes et tâches (jalon 32), dans Atlas comme les documents
+	// (décision de l'utilisateur).
+	notesCtx, cancelNotes := context.WithTimeout(context.Background(), 10*time.Second)
+	notesStore, err := notes.NewMongoStore(notesCtx, mongoConn, *mongoDB, *notesCollection, *tasksCollection)
+	cancelNotes()
+	if err != nil {
+		log.Fatalf("jarvisapp: notes : %v", err)
 	}
 
 	registry := doctype.NewDefaultRegistry()
@@ -313,7 +325,7 @@ func main() {
 	}
 	log.Printf("jarvisapp: agent des tickets -> %s (%s)", *agentURL, *agentModel)
 
-	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry}
+	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore}}
 	if *agentDev {
 		srv.Unpushed = git.Unpushed
 	}

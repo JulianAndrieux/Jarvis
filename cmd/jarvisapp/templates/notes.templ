@@ -1,0 +1,281 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/JulianAndrieux/Jarvis/internal/notes"
+)
+
+// NotesPage : la liste des notes, avec recherche et tags.
+templ NotesPage(cards []NoteCard, search, tag string, tags []string) {
+	@Layout("Jarvis — notes", "notes") {
+		<div class="page-wide">
+			<div class="page-title">
+				<h2>Notes</h2>
+				<form method="post" action="/notes">
+					<button type="submit" class="button-primary">+ Nouvelle note</button>
+				</form>
+			</div>
+			<form class="search-bar" method="get" action="/notes">
+				<input type="text" name="q" value={ search } placeholder="Rechercher dans les titres, le texte et les tags…"/>
+				if tag != "" {
+					<input type="hidden" name="tag" value={ tag }/>
+				}
+				<button type="submit">Rechercher</button>
+			</form>
+			if len(tags) > 0 {
+				<div class="type-filters">
+					<a class={ "chip", "filter-chip", templ.KV("active", tag == "") } href="/notes">Toutes</a>
+					for _, tg := range tags {
+						<a class={ "chip", "filter-chip", templ.KV("active", tag == tg) } href={ templ.SafeURL("/notes?tag=" + urlQuery(tg)) }>{ tg }</a>
+					}
+				</div>
+			}
+			if len(cards) == 0 {
+				<div class="empty-state"><p>Aucune note.</p></div>
+			} else {
+				<div class="note-grid">
+					for _, c := range cards {
+						<a class="card note-card" href={ templ.SafeURL("/notes/" + c.ID) }>
+							<div class="note-card-title">
+								if c.Pinned {
+									<span title="Épinglée">📌</span>
+								}
+								{ c.Title }
+							</div>
+							if c.Excerpt != "" {
+								<p class="note-excerpt">{ c.Excerpt }</p>
+							}
+							<div class="doc-meta">
+								for _, tg := range c.Tags {
+									<span class="chip">{ tg }</span>
+								}
+							</div>
+							<div class="doc-date">{ c.Updated }</div>
+						</a>
+					}
+				</div>
+			}
+		</div>
+	}
+}
+
+// NotePage : une note, en lecture ou en édition.
+templ NotePage(v NoteView) {
+	@Layout("Jarvis — "+v.Note.Title, "notes") {
+		<div class="page-wide note-page">
+			<a class="panel-back" href="/notes">← Notes</a>
+			if v.Edit {
+				<form class="card note-editor" method="post" action={ templ.SafeURL("/notes/" + v.Note.ID) }>
+					<label for="title">Titre</label>
+					<input type="text" id="title" name="title" value={ v.Note.Title }/>
+					<label for="body">Texte (Markdown : ## titre, - liste, **gras**, `code`)</label>
+					<textarea id="body" name="body" rows="16" class="mono">{ v.Note.Body }</textarea>
+					<label for="tags">Tags, séparés par des virgules</label>
+					<input type="text" id="tags" name="tags" value={ joinTags(v.Note.Tags) }/>
+					<label class="inline-check"><input type="checkbox" name="pinned" checked?={ v.Note.Pinned }/> Épingler en tête de liste</label>
+					<div class="field-row">
+						<button type="submit" class="button-primary">Enregistrer</button>
+						<a class="button button-ghost" href={ templ.SafeURL("/notes/" + v.Note.ID) }>Annuler</a>
+					</div>
+				</form>
+			} else {
+				<div class="page-title">
+					<h2>
+						if v.Note.Pinned {
+							<span title="Épinglée">📌 </span>
+						}
+						{ v.Note.Title }
+					</h2>
+					<a class="button" href={ templ.SafeURL("/notes/" + v.Note.ID + "?edit=1") }>Modifier</a>
+				</div>
+				<div class="doc-meta">
+					for _, tg := range v.Note.Tags {
+						<a class="chip" href={ templ.SafeURL("/notes?tag=" + urlQuery(tg)) }>{ tg }</a>
+					}
+					<span class="muted">modifiée le { v.Note.UpdatedAt.Local().Format("02/01/2006 15:04") }</span>
+				</div>
+				<div class="card markdown">
+					if v.Note.Body == "" {
+						<p class="muted">Note vide — « Modifier » pour l'écrire.</p>
+					} else {
+						@templ.Raw(v.BodyHTML)
+					}
+				</div>
+			}
+			<div class="section-title">Tâches de cette note</div>
+			@quickAddForm(v.Note.ID, "", "/notes/"+v.Note.ID)
+			@taskGroups(v.Tasks, "/notes/"+v.Note.ID)
+			<div class="section-title">Documents liés</div>
+			@docLinks(v)
+			<div class="section-title">Zone dangereuse</div>
+			<form method="post" action={ templ.SafeURL("/notes/" + v.Note.ID + "/delete") } onsubmit="return confirm('Supprimer cette note ? Ses tâches sont gardées.')">
+				<button type="submit" class="button-danger">Supprimer la note</button>
+			</form>
+		</div>
+	}
+}
+
+templ docLinks(v NoteView) {
+	if len(v.Docs) == 0 {
+		<p class="muted">Aucun document lié.</p>
+	} else {
+		<ul class="link-list">
+			for _, d := range v.Docs {
+				<li>
+					<a href={ templ.SafeURL("/documents/" + d.ID) }>📄 { d.Name }</a>
+					<form class="inline-form" method="post" action={ templ.SafeURL("/notes/" + v.Note.ID + "/docs/" + d.ID + "/unlink") }>
+						<button type="submit" class="button-ghost" title="Retirer le lien">✕</button>
+					</form>
+				</li>
+			}
+		</ul>
+	}
+	if len(v.Choices) > 0 {
+		<form class="field-row" method="post" action={ templ.SafeURL("/notes/" + v.Note.ID + "/docs") }>
+			<select name="doc">
+				for _, d := range v.Choices {
+					<option value={ d.ID }>{ d.Name }</option>
+				}
+			</select>
+			<button type="submit">Lier ce document</button>
+		</form>
+	}
+}
+
+// TasksPage : la todo, par groupe.
+templ TasksPage(groups []TaskGroupView) {
+	@Layout("Jarvis — tâches", "tasks") {
+		<div class="page-wide tasks-page">
+			<div class="page-title">
+				<h2>Tâches</h2>
+			</div>
+			@quickAddForm("", "", "/tasks")
+			if len(groups) == 0 {
+				<div class="empty-state"><p>Rien à faire. Ajoute une tâche ci-dessus.</p></div>
+			}
+			@taskGroups(groups, "/tasks")
+		</div>
+	}
+}
+
+templ quickAddForm(noteID, docID, back string) {
+	<form class="quick-add" method="post" action="/tasks">
+		<input type="text" name="text" required placeholder="Nouvelle tâche… ex. Appeler le notaire demain !" title={ quickAddHelp }/>
+		<input type="hidden" name="note" value={ noteID }/>
+		<input type="hidden" name="doc" value={ docID }/>
+		<input type="hidden" name="back" value={ back }/>
+		<button type="submit" class="button-primary">Ajouter</button>
+	</form>
+	<p class="muted quick-help">{ quickAddHelp }</p>
+}
+
+templ taskGroups(groups []TaskGroupView, back string) {
+	for _, g := range groups {
+		<div class={ "task-group", "task-group-" + string(g.Bucket) }>
+			<div class="task-group-title">{ g.Label } <span class="count">{ fmt.Sprint(len(g.Tasks)) }</span></div>
+			<ul class="task-list">
+				for _, t := range g.Tasks {
+					@taskRow(t, back)
+				}
+			</ul>
+		</div>
+	}
+}
+
+templ taskRow(t TaskView, back string) {
+	<li class={ "task-row", templ.KV("task-done", t.Done) }>
+		<form class="inline-form" method="post" action={ templ.SafeURL("/tasks/" + t.ID + "/toggle") }>
+			<input type="hidden" name="back" value={ back }/>
+			<button type="submit" class="task-check" title="Cocher / décocher">
+				if t.Done {
+					☑
+				} else {
+					☐
+				}
+			</button>
+		</form>
+		<a class="task-title" href={ templ.SafeURL("/tasks/" + t.ID) }>{ t.Title }</a>
+		if t.Priority == notes.High {
+			<span class="chip chip-failed">haute</span>
+		} else if t.Priority == notes.Low {
+			<span class="chip">basse</span>
+		}
+		if t.DueLabel != "" {
+			<span class={ "chip", templ.KV("chip-failed", t.Overdue), templ.KV("chip-review", !t.Overdue) }>{ t.DueLabel }</span>
+		}
+		if t.NoteID != "" {
+			<a class="chip" href={ templ.SafeURL("/notes/" + t.NoteID) }>📝 { t.NoteTitle }</a>
+		}
+		if t.DocID != "" {
+			<a class="chip" href={ templ.SafeURL("/documents/" + t.DocID) }>📄 { t.DocName }</a>
+		}
+	</li>
+}
+
+// TaskEditPage : modifier une tâche.
+templ TaskEditPage(v TaskEditView) {
+	@Layout("Jarvis — tâche", "tasks") {
+		<div class="page-wide note-page">
+			<a class="panel-back" href="/tasks">← Tâches</a>
+			<form class="card note-editor" method="post" action={ templ.SafeURL("/tasks/" + v.Task.ID) }>
+				if v.Error != "" {
+					<p class="form-error" role="alert">{ v.Error }</p>
+				}
+				<label for="title">Tâche</label>
+				<input type="text" id="title" name="title" value={ v.Task.Title }/>
+				<div class="task-fields">
+					<label>Échéance <input type="date" name="due" value={ v.Task.Due }/></label>
+					<label>
+						Priorité
+						<select name="priority">
+							<option value="" selected?={ v.Task.Priority == notes.Normal }>normale</option>
+							<option value="haute" selected?={ v.Task.Priority == notes.High }>haute</option>
+							<option value="basse" selected?={ v.Task.Priority == notes.Low }>basse</option>
+						</select>
+					</label>
+				</div>
+				<label for="note">Note liée</label>
+				<select id="note" name="note">
+					<option value="">— aucune —</option>
+					for _, n := range v.Notes {
+						<option value={ n.ID } selected?={ n.ID == v.Task.NoteID }>{ n.Name }</option>
+					}
+				</select>
+				<label for="doc">Document lié</label>
+				<select id="doc" name="doc">
+					<option value="">— aucun —</option>
+					for _, d := range v.Docs {
+						<option value={ d.ID } selected?={ d.ID == v.Task.DocID }>{ d.Name }</option>
+					}
+				</select>
+				<div class="field-row">
+					<button type="submit" class="button-primary">Enregistrer</button>
+					<a class="button button-ghost" href="/tasks">Annuler</a>
+				</div>
+			</form>
+			<form method="post" action={ templ.SafeURL("/tasks/" + v.Task.ID + "/delete") } onsubmit="return confirm('Supprimer cette tâche ?')">
+				<button type="submit" class="button-danger">Supprimer la tâche</button>
+			</form>
+		</div>
+	}
+}
+
+// DocumentLinks : notes et tâches liées à un document (fiche du document,
+// chargé à part).
+templ DocumentLinks(v DocumentLinksView) {
+	<div class="section-title">Notes et tâches</div>
+	if len(v.Notes) > 0 {
+		<ul class="link-list">
+			for _, n := range v.Notes {
+				<li><a href={ templ.SafeURL("/notes/" + n.ID) }>📝 { n.Title }</a></li>
+			}
+		</ul>
+	}
+	<form class="inline-form" method="post" action="/notes">
+		<input type="hidden" name="doc" value={ v.DocID }/>
+		<button type="submit">+ Note sur ce document</button>
+	</form>
+	@quickAddForm("", v.DocID, "/documents/"+v.DocID)
+	@taskGroups(v.Tasks, "/documents/"+v.DocID)
+}

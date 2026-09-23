@@ -37,6 +37,10 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
      quand elle sera précisée). La CLI (`jarvis`/`jarvis process`) et
      `internal/store` (JSON sur disque) restent, eux, 100% locaux et
      inchangés — cette exception ne concerne que le flux web.
+  3. **Notes et tâches (`internal/notes`, jalon 32) : stockées dans
+     MongoDB Atlas, comme les documents.** Décision explicite de
+     l'utilisateur (question posée : Atlas ou disque local), pour la même
+     raison de simplicité et un accès futur depuis une app hébergée.
 - TDD strict : chaque paquet a ses tests avant son implémentation. Pas de
   code non testé.
 - Construire à partir de primitives ; éviter les frameworks lourds et les
@@ -2149,6 +2153,45 @@ spécifique à `localhost`.
     repose `FinderInfo` sur le bundle ensuite ; la signature reste
     valide). Un dépôt git synchronisé par iCloud reste fragile en soi
     (conflits, fichiers évincés) : à garder en tête.
+- **Jalon 32 — notes et tâches (prototype) : fait, en attente de validation
+  utilisateur.** Demandé : "me servir de cette application pour ma prise de
+  note et pour la création de ma todo". Décisions de l'utilisateur :
+  stockage Atlas (cf. contraintes, exception 3) ; périmètre : notes
+  Markdown, todo à échéances, liens notes ↔ tâches, liens vers les
+  documents.
+  - **`internal/notes`** (nouveau) : `Note` (titre, Markdown, tags,
+    épinglée, documents liés) et `Task` (échéance **"AAAA-MM-JJ" — une
+    date, pas un instant** : ni fuseau ni heure, l'ordre alphabétique est
+    l'ordre chronologique ; priorité ; note et document liés).
+    `ParseQuickAdd` : mots-clés **en fin de saisie** seulement
+    (aujourd'hui, demain, après-demain, jour de la semaine — jamais
+    aujourd'hui —, JJ/MM — l'an prochain si passée —, JJ/MM/AAAA, « ! »,
+    « !basse ») ; dates impossibles (31/02) refusées au lieu d'être
+    normalisées par `time.Date`. `GroupTasks` (En retard, Aujourd'hui, À
+    venir, Sans échéance, Terminées ; priorité puis échéance puis
+    ancienneté). `DueLabel` (aujourd'hui, demain, hier, jour de la
+    semaine, JJ/MM) — **arrondi du nombre de jours** : une journée de
+    changement d'heure dure 23 h (vu rouge sur le 29 mars avec une
+    troncature). `Service` (création, enregistrement, liens, saisie
+    rapide, cocher, validation de l'échéance ; supprimer une note garde
+    ses tâches, déliées). **Un seul contrat de test pour `FakeStore` et
+    `MongoStore`** (le faux ne peut plus diverger du vrai, cf. jalon 23) ;
+    recherche Mongo **littérale** (`regexp.QuoteMeta`).
+  - **UI** : onglets **Notes** (cartes, épinglées d'abord, recherche,
+    filtres par tag ; note en lecture — Markdown rendu par
+    `projectinfo.RenderMarkdown`, tout échappé — ou en édition ; ses
+    tâches, saisie rapide ; documents liés, lier/délier) et **Tâches**
+    (saisie rapide, groupes, cocher, fiche d'édition avec refus expliqué
+    sans perdre la saisie). La fiche d'un document charge ses notes et
+    tâches liées sous les onglets (« + Note sur ce document », saisie
+    rapide). Retour après une action : chemin local seulement (pas de
+    redirection ouverte). Flags `--notes-collection`, `--tasks-collection`.
+  - Validé : contrat Mongo sur Atlas ; instance séparée (:8091,
+    collections jetables) — note épinglée liée à un document, tâches par
+    saisie rapide, captures des quatre écrans ; deux défauts vus ainsi et
+    corrigés (étiquette qui renvoyait à la note/au document où l'on est
+    déjà ; bloc repoussant les onglets du document). `MongoStore` écrit en
+    même temps que son test (pas vu rouge d'abord).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

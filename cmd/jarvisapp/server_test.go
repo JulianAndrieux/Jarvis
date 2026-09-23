@@ -818,7 +818,9 @@ func TestHandleDocumentPanel_RunningJobPollsDoneJobDoesNot(t *testing.T) {
 		t.Errorf("running panel should poll itself, got %d: %s", running.Code, running.Body.String())
 	}
 	done := get(t, s, "/documents/done/panel")
-	if done.Code != http.StatusOK || strings.Contains(done.Body.String(), "hx-get") {
+	// Ne se sonde plus (le chargement ponctuel des notes liées, jalon 32,
+	// n'est pas un sondage).
+	if done.Code != http.StatusOK || strings.Contains(done.Body.String(), `/documents/done/panel"`) {
 		t.Errorf("done panel must not poll, got %d: %s", done.Code, done.Body.String())
 	}
 	if get(t, s, "/documents/nope/panel").Code != http.StatusNotFound {

@@ -24,6 +24,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/diagram"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
+	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/projectinfo"
 	"github.com/JulianAndrieux/Jarvis/internal/testmap"
 	"github.com/JulianAndrieux/Jarvis/internal/testrunner"
@@ -46,6 +47,8 @@ type Server struct {
 	// Agents : les agents du système et leur prompt modifiable (onglet
 	// Agents) ; nil désactive l'onglet.
 	Agents *agents.Registry
+	// Notes : prise de notes et todo (jalon 32) ; nil désactive les onglets.
+	Notes *notes.Service
 	// Infra : composants sondés et dessinés sur la page Architecture
 	// (jalon 29) ; vide, le schéma est vide.
 	Infra projectinfo.Diagram
@@ -132,6 +135,7 @@ func (s *Server) Routes() chi.Router {
 	r.Get("/model", s.handleModel)
 	s.ticketRoutes(r)
 	s.agentRoutes(r)
+	s.notesRoutes(r)
 	r.Get("/tests", s.handleTests)
 	r.Post("/tests/run", s.handleTestsRun)
 	r.Post("/refresh", s.handleRefresh)

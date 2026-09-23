@@ -331,6 +331,9 @@ templ DocumentPanel(job webapp.Job, view ResultView, docTypes []string) {
 			<div class="tab-panel" data-tab-panel="info" hidden>
 				@infoTab(job, view, docTypes)
 			</div>
+			// Notes et tâches liées (jalon 32), chargées à part, sous les
+			// onglets pour ne pas repousser les données du document.
+			<div class="doc-links" hx-get={ "/documents/" + job.ID + "/links" } hx-trigger="load" hx-swap="innerHTML"></div>
 		</section>
 	}
 }
