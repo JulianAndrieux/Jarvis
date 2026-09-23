@@ -7,6 +7,7 @@ package agent
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -135,7 +136,7 @@ func (t Tools) ListFiles(dir string) string {
 	}
 	entries, err := os.ReadDir(abs)
 	if err != nil {
-		return "ERREUR : " + err.Error()
+		return describeErr(err)
 	}
 	var names []string
 	for _, e := range entries {
@@ -166,13 +167,13 @@ func (t Tools) ReadFile(path string, start, end int) string {
 	case os.IsNotExist(err):
 		return t.notFound(path)
 	case err != nil:
-		return "ERREUR : " + err.Error()
+		return describeErr(err)
 	case info.IsDir():
 		return fmt.Sprintf("%s est un dossier, pas un fichier (utilise list_files). Contenu :\n%s", path, t.ListFiles(path))
 	}
 	f, err := os.Open(abs)
 	if err != nil {
-		return "ERREUR : " + err.Error()
+		return describeErr(err)
 	}
 	defer f.Close()
 
@@ -264,9 +265,20 @@ func (t Tools) Search(pattern, dir string) string {
 	// lignes, dans l'ordre alphabétique, cachait les fichiers utiles.
 	var results []string
 	var files []string
+	var denied []string // dossiers/fichiers illisibles (accès refusé)
+	var rootDenied error
 	counts := map[string]int{}
 	walkErr := filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			// Vu en réel : un dépôt devenu illisible (macOS) donnait
+			// « (aucun résultat) » — le refus doit se voir.
+			if errors.Is(err, fs.ErrPermission) {
+				if p == abs {
+					rootDenied = err
+				} else if rel, relErr := filepath.Rel(root, p); relErr == nil {
+					denied = append(denied, filepath.ToSlash(rel))
+				}
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -278,13 +290,16 @@ func (t Tools) Search(pattern, dir string) string {
 		if !searchable(d.Name()) {
 			return nil
 		}
+		rel, _ := filepath.Rel(root, p)
+		rel = filepath.ToSlash(rel)
 		f, err := os.Open(p)
 		if err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				denied = append(denied, rel)
+			}
 			return nil
 		}
 		defer f.Close()
-		rel, _ := filepath.Rel(root, p)
-		rel = filepath.ToSlash(rel)
 		sc := bufio.NewScanner(f)
 		sc.Buffer(make([]byte, 64*1024), 1024*1024)
 		line := 0
@@ -306,8 +321,15 @@ func (t Tools) Search(pattern, dir string) string {
 		return nil
 	})
 	if walkErr != nil {
-		return "ERREUR : " + walkErr.Error()
+		return describeErr(walkErr)
 	}
+	if rootDenied != nil {
+		return describeErr(rootDenied)
+	}
+	return withDenied(searchOutput(results, files, counts), denied)
+}
+
+func searchOutput(results, files []string, counts map[string]int) string {
 	if len(results) == 0 {
 		return "(aucun résultat)"
 	}
@@ -320,6 +342,37 @@ func (t Tools) Search(pattern, dir string) string {
 		return out
 	}
 	return searchSummary(files, counts, total)
+}
+
+// withDenied signale les chemins que la recherche n'a pas pu lire : sans
+// ce signal, « aucun résultat » laisserait croire que le code n'existe pas.
+func withDenied(out string, denied []string) string {
+	if len(denied) == 0 {
+		return out
+	}
+	if len(denied) > 5 {
+		denied = append(denied[:5], fmt.Sprintf("… et %d autres", len(denied)-5))
+	}
+	return out + "\nAttention, recherche incomplète — chemins illisibles (accès refusé) : " + strings.Join(denied, ", ")
+}
+
+// accessDeniedPrefix : erreur d'accès au dépôt (droits, ou macOS qui
+// refuse l'accès à un dossier protégé). La boucle de l'agent s'arrête
+// dessus : ce n'est pas au modèle de la contourner.
+const accessDeniedPrefix = "ERREUR D'ACCÈS : "
+
+// describeErr : message d'erreur d'un outil, l'accès refusé étant distingué.
+func describeErr(err error) string {
+	if errors.Is(err, fs.ErrPermission) {
+		return accessDeniedPrefix + err.Error()
+	}
+	return "ERREUR : " + err.Error()
+}
+
+// Accessible vérifie que la racine du dépôt est lisible.
+func (t Tools) Accessible() error {
+	_, err := os.ReadDir(t.Root)
+	return err
 }
 
 // searchOutputChars : au-delà, la liste des lignes serait coupée par la

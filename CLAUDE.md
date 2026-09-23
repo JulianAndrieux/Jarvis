@@ -2104,6 +2104,30 @@ spécifique à `localhost`.
   - Validé : Mongo réel (Atlas), capture de la page sur une instance
     séparée (:8091). Constat hors périmètre : en largeur étroite, la barre
     de navigation (qui ne passe pas à la ligne) élargit toute la page.
+- **Ticket "Déplacer le filtre date documents" : échec dû à l'environnement,
+  pas au modèle — ticket gardé tel quel en exemple (non développé).**
+  - **Constat** : `list_files internal/webapp` → `operation not
+    permitted` ; toutes les recherches → « (aucun résultat) », même sur
+    « document ». Le processus Jarvis en service ne pouvait plus lire son
+    propre dépôt : la page Architecture affichait aussi `open CLAUDE.md:
+    operation not permitted` et `git: Unable to read current working
+    directory`. Au démarrage (19:04) l'analyse du code avait pourtant lu le
+    dépôt : l'accès a été retiré ensuite. Signature typique d'un refus de
+    macOS sur un dossier protégé (le dépôt est dans `~/Documents` ;
+    `Jarvis.app` est signé ad hoc, identifiant `a.out`) — non prouvé
+    d'ici : journaux et base des autorisations illisibles depuis le
+    terminal.
+  - **Défauts du harnais qui ont transformé ce refus en « tourne en
+    rond »** (corrigés, TDD, refus simulé par un dossier `chmod 000` :
+    même `fs.ErrPermission`) : la recherche ignorait un dossier illisible
+    et répondait « (aucun résultat) » — elle renvoie désormais une
+    `ERREUR D'ACCÈS` (racine illisible) ou signale les chemins illisibles
+    (recherche incomplète) ; `list_files`/`read_file` distinguent l'accès
+    refusé ; l'agent s'arrête **dès la première erreur d'accès** et
+    **vérifie l'accès au dépôt avant d'appeler le modèle**, avec un message
+    qui désigne l'accès (et où le rétablir) au lieu d'accuser le ticket.
+  - Piste de fond, non tranchée : dépôt hors de `~/Documents` (dossier non
+    protégé), ou `Jarvis.app` signé avec une identité stable.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

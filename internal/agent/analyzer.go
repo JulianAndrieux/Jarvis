@@ -114,6 +114,9 @@ func userPrompt(req tickets.AnalysisRequest) string {
 // un plan, dans la limite de MaxSteps. onStep (nil accepté) reçoit chaque
 // action, pour le fil du ticket.
 func (a *Analyzer) Analyze(ctx context.Context, req tickets.AnalysisRequest, onStep func(tickets.AgentStep)) (string, error) {
+	if err := a.Tools.Accessible(); err != nil {
+		return "", accessError(err.Error())
+	}
 	return runLoop(ctx, loopConfig{
 		model:           a.Model,
 		specs:           ReadOnlySpecs(),
@@ -209,6 +212,9 @@ func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, 
 			if cfg.onStep != nil {
 				cfg.onStep(tickets.AgentStep{Summary: summary, Detail: out})
 			}
+			if detail, ok := strings.CutPrefix(out, accessDeniedPrefix); ok {
+				return "", accessError(detail)
+			}
 			if isSterile(out) {
 				sterile++
 			} else {
@@ -263,6 +269,14 @@ const (
 // isSterile : un appel qui n'a rien apporté.
 func isSterile(out string) bool {
 	return out == "(aucun résultat)" || strings.HasPrefix(out, "ERREUR") || strings.HasPrefix(out, "Appel déjà fait")
+}
+
+// accessError : le dépôt est illisible pour Jarvis — une panne de
+// l'environnement, pas du ticket ni du modèle (vu en réel : macOS avait
+// retiré l'accès au dossier Documents, l'échec disait « le ticket est
+// peut-être trop gros »).
+func accessError(detail string) error {
+	return fmt.Errorf("agent: Jarvis n'a pas accès au dépôt (%s). Ce n'est pas le ticket : sur macOS, vérifie que Jarvis peut accéder au dossier du dépôt (Réglages Système › Confidentialité et sécurité › Fichiers et dossiers), puis relance Jarvis et le ticket", detail)
 }
 
 // historySafe : la réponse telle qu'elle sera renvoyée au modèle dans

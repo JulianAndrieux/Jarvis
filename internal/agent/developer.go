@@ -96,6 +96,9 @@ func devUserPrompt(req tickets.DevRequest) string {
 // l'agent.
 func (d *Developer) Develop(ctx context.Context, req tickets.DevRequest, onStep func(tickets.AgentStep)) (string, error) {
 	tools := DevTools{Tools: Tools{Root: req.Dir}, Checker: d.Checker}
+	if err := tools.Accessible(); err != nil {
+		return "", accessError(err.Error())
+	}
 	// Vu en réel : relancer à température 0 rejoue exactement le même
 	// déroulé. À partir de la deuxième tentative, un peu d'aléa.
 	model := d.Model
