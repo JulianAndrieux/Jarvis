@@ -1,0 +1,64 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/JulianAndrieux/Jarvis/internal/notes"
+)
+
+// Sidebar : contenu de la barre latérale (fragment, rafraîchi seul).
+templ Sidebar(v SidebarView) {
+	<section class="side-block">
+		<div class="side-title">🗓 Cette semaine <span class="count">{ fmt.Sprint(len(v.Week) + v.WeekMore) }</span></div>
+		if len(v.Week) == 0 {
+			<p class="side-empty">Aucune échéance dans les 7 jours.</p>
+		}
+		<ul class="side-list">
+			for _, t := range v.Week {
+				<li class="side-task">
+					<button class="task-check" title="Cocher" hx-post={ "/sidebar/tasks/" + t.ID + "/toggle" } hx-target="#sidebar" hx-swap="innerHTML">☐</button>
+					<a class="side-task-title" href={ templ.SafeURL("/tasks/" + t.ID) }>{ t.Title }</a>
+					if t.Priority == notes.High {
+						<span class="side-prio" title="Priorité haute">!</span>
+					}
+					<span class={ "side-due", templ.KV("side-overdue", t.Overdue) }>{ t.DueLabel }</span>
+				</li>
+			}
+		</ul>
+		<a class="side-more" href="/tasks">
+			if v.WeekMore > 0 {
+				+ { fmt.Sprint(v.WeekMore) } autre(s) —
+			}
+			Toutes les tâches →
+		</a>
+	</section>
+	<section class="side-block">
+		<div class="side-title">⏳ En cours <span class="count">{ fmt.Sprint(len(v.Running)) }</span></div>
+		if len(v.Running) == 0 {
+			<p class="side-empty">Rien en cours.</p>
+		}
+		@sideItems(v.Running, false)
+	</section>
+	<section class="side-block">
+		<div class="side-title">⚠️ Erreurs à suivre <span class={ "count", templ.KV("count-alert", len(v.Errors) > 0) }>{ fmt.Sprint(len(v.Errors)) }</span></div>
+		if len(v.Errors) == 0 {
+			<p class="side-empty">Aucune erreur. 👍</p>
+		}
+		@sideItems(v.Errors, true)
+	</section>
+}
+
+templ sideItems(items []SideItem, isError bool) {
+	<ul class="side-list">
+		for _, it := range items {
+			<li>
+				<a class={ "side-item", templ.KV("side-error", isError) } href={ templ.SafeURL(it.Href) } title={ it.Full }>
+					<span class="side-item-title">{ it.Icon } { it.Title }</span>
+					if it.Detail != "" {
+						<span class="side-item-detail">{ it.Detail }</span>
+					}
+				</a>
+			</li>
+		}
+	</ul>
+}

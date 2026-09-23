@@ -136,6 +136,8 @@ func (s *Server) Routes() chi.Router {
 	s.ticketRoutes(r)
 	s.agentRoutes(r)
 	s.notesRoutes(r)
+	r.Get("/sidebar", s.handleSidebar)
+	r.Post("/sidebar/tasks/{id}/toggle", s.handleSidebarToggle)
 	r.Get("/admin/tests", s.handleTests)
 	r.Post("/admin/tests/run", s.handleTestsRun)
 	r.Post("/admin/refresh", s.handleRefresh)

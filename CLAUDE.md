@@ -2218,6 +2218,33 @@ spécifique à `localhost`.
     adresses ; captures des deux espaces sur une instance séparée — un
     défaut vu ainsi et corrigé (la case à cocher des tâches héritait du
     rembourrage des boutons de l'espace utilisateur).
+- **Jalon 34 — barre latérale de l'application : fait, en attente de
+  validation utilisateur.** Demandé : "une side bar sur le côté où j'aurais
+  les todo avec une échéance dans la semaine, les jobs en cours, les
+  erreurs à suivre".
+  - **Contenu** (`buildSidebar`, fonction pure testée) : **Cette semaine**
+    — tâches non faites, en retard (incluses : c'est quand elles sont le
+    plus urgentes) ou à échéance dans les 7 jours, dans l'ordre de la todo,
+    8 au plus puis « + N » ; **En cours** — documents en traitement ou en
+    attente, tickets en analyse/développement/déploiement, tickets qui
+    attendent une validation (plan ou diff) ; **Erreurs à suivre** —
+    documents et tickets en échec (première ligne de l'erreur, message
+    complet au survol : la cause est souvent à la fin).
+  - **Affichage** : à droite de toutes les pages de l'application (pas de
+    l'Admin), chargée à part (`GET /sidebar`) et **rafraîchie toutes les
+    15 s** ; cocher une tâche depuis la barre ne recharge que la barre
+    (`POST /sidebar/tasks/{id}/toggle`) ; bouton ☰ pour la replier
+    (préférence du navigateur, `localStorage`) ; masquée sous 1000 px de
+    large. Une source illisible laisse son bloc vide plutôt que de casser
+    la barre.
+  - Validé sur une instance séparée : tâches de la semaine (retard,
+    aujourd'hui, priorité), un `.docx` corrompu vu « En cours » puis dans
+    « Erreurs à suivre » ; captures de la page Tâches et d'une fiche de
+    document (deux volets + barre). Deux tests (cocher depuis la barre,
+    rendu du fragment) écrits en même temps que leur code.
+  - **Constat hors périmètre, non corrigé** : quand la conversion d'un
+    fichier échoue, le volet d'aperçu de sa fiche affiche un brut « 404
+    page not found » (pas de version PDF).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 
