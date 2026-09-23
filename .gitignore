@@ -15,3 +15,9 @@
 
 # Copies de travail des agents Claude Code (jalon 25)
 .claude/worktrees/
+
+# Binaires produits par un "go build ./cmd/..." lancé à la racine
+/jarvis
+/jarvisapp
+/jarvis-launcher
+/codebrowser
