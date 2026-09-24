@@ -169,6 +169,13 @@ func NewJobManager(store Store, runner Runner) *JobManager {
 // automatiquement pendant le traitement (classification). Retourne
 // immédiatement avec le job à l'état StatusPending.
 func (m *JobManager) Submit(ctx context.Context, filename string, content []byte) (Job, error) {
+	return m.SubmitWithTags(ctx, filename, content, nil)
+}
+
+// SubmitWithTags : Submit, avec des tags posés dès la création du job —
+// jamais juste après (le traitement, déjà lancé, pourrait réécrire le job
+// entre-temps ; vu en réel au jalon 39).
+func (m *JobManager) SubmitWithTags(ctx context.Context, filename string, content []byte, tags []string) (Job, error) {
 	id, err := m.newID()
 	if err != nil {
 		return Job{}, fmt.Errorf("webapp: generate job id: %w", err)
@@ -180,7 +187,7 @@ func (m *JobManager) Submit(ctx context.Context, filename string, content []byte
 	}
 	f := formats.Detect(filename, head)
 	job := Job{
-		ID: id, Filename: filename, Content: content,
+		ID: id, Filename: filename, Content: content, Tags: tags,
 		Status: StatusPending, CreatedAt: time.Now(),
 		Format: string(f.Family), MIME: f.MIME, Size: int64(len(content)),
 		SourceHash: fmt.Sprintf("%x", sha256.Sum256(content)),

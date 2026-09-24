@@ -131,6 +131,24 @@ func TestJobManager_Submit_StartsPendingThenRunning(t *testing.T) {
 	}
 }
 
+// Des tags donnés à l'envoi font partie du job dès sa création (jalon 39 :
+// posés juste après, ils étaient écrasés par un traitement qui échouait
+// aussitôt — vu en réel, tags perdus dans MongoDB).
+func TestJobManager_SubmitWithTags_TagsFromCreation(t *testing.T) {
+	m := newTestJobManager(&fakeRunner{err: errors.New("modèle absent")})
+	job, err := m.SubmitWithTags(context.Background(), "facture.pdf", []byte("%PDF"), []string{"email"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(job.Tags, ",") != "email" {
+		t.Errorf("created job tags = %v", job.Tags)
+	}
+	done := waitForStatus(t, m, job.ID, StatusFailed)
+	if strings.Join(done.Tags, ",") != "email" {
+		t.Errorf("tags after processing = %v, want kept", done.Tags)
+	}
+}
+
 func TestJobManager_Submit_MaterializesContentForRunner(t *testing.T) {
 	started := make(chan struct{})
 	proceed := make(chan struct{})

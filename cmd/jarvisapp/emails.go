@@ -294,12 +294,11 @@ func (s *Server) handleEmailAttachmentImport(w http.ResponseWriter, r *http.Requ
 	if name == "" {
 		name = fmt.Sprintf("piece-jointe-%d", a.Index)
 	}
-	job, err := s.Jobs.Submit(context.WithoutCancel(ctx), name, data)
+	job, err := s.Jobs.SubmitWithTags(context.WithoutCancel(ctx), name, data, []string{"email"})
 	if err != nil {
 		serverError(w, err)
 		return
 	}
-	s.Jobs.SetTags(ctx, job.ID, []string{"email"})
 	if err := s.Mail.Store.SetAttachmentDoc(ctx, m.ID, a.Index, job.ID); err != nil {
 		serverError(w, err)
 		return

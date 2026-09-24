@@ -2481,6 +2481,17 @@ spécifique à `localhost`.
     Trois défauts vus ainsi et corrigés : emails déjà relevés masqués tant
     que la boîte n'est pas connectée, préfixe d'erreur répété, champ mot de
     passe sans style.
+  - **Défaut trouvé au nettoyage des données d'essai, corrigé** : le
+    document créé depuis une pièce jointe avait perdu son tag `email` dans
+    MongoDB (le test unitaire, sur la `FakeStore`, le gardait). Le tag était
+    posé juste après l'envoi ; le traitement, déjà lancé et en échec
+    immédiat (modèles absents), relit puis réécrit le job entier et l'a
+    écrasé. `JobManager.SubmitWithTags` : tags posés **à la création**.
+    **Constat, non corrigé** : `SetTags`/`SetComment` et `save` relisent
+    puis réécrivent tout le job ; deux écritures dans la même fenêtre (quelques
+    millisecondes) peuvent encore se perdre l'une l'autre. Correctif propre :
+    écritures ciblées (`$set` des seuls tags/commentaire, comme
+    `SetThumbnail`).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 
