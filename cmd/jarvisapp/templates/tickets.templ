@@ -221,6 +221,21 @@ templ reviewBlock(r tickets.ReviewResult) {
 		if r.Summary != "" && (r.Approved || len(r.Issues) > 0) {
 			<p>{ r.Summary }</p>
 		}
+		for _, c := range r.Captures {
+			<div class="review-capture">
+				<div class="review-capture-page">Page { c.Page }</div>
+				<div class="review-capture-pair">
+					<figure>
+						<figcaption>Avant</figcaption>
+						<img src={ pngDataURI(c.Before) } alt={ "Avant : " + c.Page } loading="lazy"/>
+					</figure>
+					<figure>
+						<figcaption>Après</figcaption>
+						<img src={ pngDataURI(c.After) } alt={ "Après : " + c.Page } loading="lazy"/>
+					</figure>
+				</div>
+			</div>
+		}
 		if len(r.Issues) > 0 {
 			<ul class="review-issues">
 				for _, i := range r.Issues {

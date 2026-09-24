@@ -417,3 +417,21 @@ func TestTickets_ReviewVerdictShownBeforeDiff(t *testing.T) {
 		t.Error("review should come before the diff")
 	}
 }
+
+// Jalon 38 : les captures de la relecture visuelle, avant / après, sur la
+// page du ticket.
+func TestTickets_VisualCapturesShown(t *testing.T) {
+	s, store := newTicketServer(t, "## Étapes\n1. x")
+	tk, _ := s.Tickets.Create(context.Background(), "Déplacer le filtre", "besoin", "")
+	tk.Status = tickets.Review
+	tk.Review = &tickets.ReviewResult{Summary: "À droite.", Rounds: 1, Captures: []tickets.ReviewCapture{{Page: "/documents", Before: []byte("\x89PNGavant"), After: []byte("\x89PNGapres")}}}
+	store.Update(context.Background(), tk)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tickets/"+tk.ID, nil))
+	body := rec.Body.String()
+	for _, want := range []string{"/documents", "Avant", "Après", `src="data:image/png;base64,iVBOR2F2YW50"`, `src="data:image/png;base64,iVBOR2FwcmVz"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("ticket page lacks %q", want)
+		}
+	}
+}

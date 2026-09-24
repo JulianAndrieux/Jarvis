@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"encoding/base64"
 	"fmt"
 	"html"
 	"strings"
@@ -141,4 +142,9 @@ func issueLocation(i tickets.ReviewIssue) string {
 		return fmt.Sprintf("%s:%d", i.File, i.Line)
 	}
 	return i.File
+}
+
+// pngDataURI : une capture de la relecture visuelle, affichée en ligne.
+func pngDataURI(png []byte) string {
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
 }

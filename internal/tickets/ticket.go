@@ -259,6 +259,17 @@ type ReviewResult struct {
 	Summary  string        `bson:"summary"`
 	Issues   []ReviewIssue `bson:"issues,omitempty"`
 	Rounds   int           `bson:"rounds"`
+	// Captures : pages capturées par la relecture visuelle (jalon 38),
+	// avant et après, montrées aussi à l'humain.
+	Captures []ReviewCapture `bson:"captures,omitempty"`
+}
+
+// ReviewCapture : une page, avant (version en service) et après (version
+// du ticket), en PNG.
+type ReviewCapture struct {
+	Page   string `bson:"page"`
+	Before []byte `bson:"before"`
+	After  []byte `bson:"after"`
 }
 
 // Reviewer relit un diff vérifié selon les standards du projet (jalon

@@ -42,6 +42,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/store"
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 	"github.com/JulianAndrieux/Jarvis/internal/triage"
+	"github.com/JulianAndrieux/Jarvis/internal/visual"
 	"github.com/JulianAndrieux/Jarvis/internal/vlm"
 	"github.com/JulianAndrieux/Jarvis/internal/watch"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
@@ -77,6 +78,8 @@ func main() {
 	agentToolOutput := flag.Int("agent-tool-output-chars", 3000, "Taille maximale (caractères) d'une sortie d'outil de l'agent — 3000 pour Qwen3-8B à 8k jetons ; plus pour un modèle à grand contexte")
 	agentThinking := flag.Bool("agent-thinking", false, "Laisser l'agent des tickets réfléchir avant de répondre (sinon /no_think) — plus lent, meilleur sur les modèles qui en tirent parti")
 	modelsFile := flag.String("models-file", "", "Profils de modèles (documents / code) que jarvisapp charge selon le travail — écrit par le lanceur (jalon 37) ; vide : les serveurs de modèles sont gérés ailleurs")
+	visualReview := flag.Bool("visual-review", true, "Relecture visuelle des diffs qui touchent une page : captures avant/après jugées par le modèle de vision de l'agent (jalon 38)")
+	chromePath := flag.String("chrome-path", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "Chrome, pour les captures de la relecture visuelle")
 	agentReview := flag.Bool("agent-review", true, "Relecture du diff vérifié par un agent, selon les standards (onglet Agents), avant la revue humaine (jalon 36)")
 	agentTemperature := flag.Float64("agent-temperature", 0, "Température de l'agent des tickets (0 : déterministe ; Qwen recommande 0,6 pour le code)")
 	agentMaxTokens := flag.Int("agent-max-tokens", 2048, "Jetons générés au plus par réponse de l'agent des tickets (0 : pas de limite) — une réécriture qui s'emballe est coupée vite au lieu de saturer le contexte")
@@ -328,7 +331,7 @@ func main() {
 		}
 		if *agentReview {
 			// Même modèle, température 0 : un verdict stable.
-			ticketManager.Reviewer = &agent.Reviewer{
+			codeReviewer := &agent.Reviewer{
 				Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}, MaxTokens: *agentMaxTokens},
 				ProjectBrief:    brief,
 				CodeMap:         codeMap,
@@ -337,6 +340,21 @@ func main() {
 				DisableThinking: !*agentThinking,
 				Instructions:    agentRegistry.PromptFunc(agents.Review),
 			}
+			reviewers := tickets.MultiReviewer{codeReviewer}
+			if _, err := os.Stat(*chromePath); *visualReview && err == nil {
+				self, _ := os.Executable()
+				reviewers = append(reviewers, &visual.Reviewer{
+					Build:        deploy.GoBuild,
+					Launch:       launchIsolated(*mongoCollection, *ticketsCollection),
+					BeforeBinary: self,
+					Capturer:     visual.Chrome{Path: *chromePath},
+					Judge:        visual.VisionJudge{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}},
+				})
+				log.Printf("jarvisapp: relecture visuelle activée (captures avant/après)")
+			} else if *visualReview {
+				log.Printf("jarvisapp: relecture visuelle désactivée : Chrome introuvable (%s)", *chromePath)
+			}
+			ticketManager.Reviewer = reviewers
 			log.Printf("jarvisapp: relecture des diffs activée")
 		}
 		log.Printf("jarvisapp: développement des tickets activé (copies de travail : %s)", wtRoot)

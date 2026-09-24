@@ -2378,6 +2378,39 @@ spécifique à `localhost`.
   - Mesuré : Devstral **avec son module de vision** (mmproj F16, 0,9 Go)
     tient avec 32k de contexte ; il lit une capture (« le champ de date se
     trouve en dessous du cadre bleu ») — base de la relecture visuelle.
+  - Validé en réel sur l'application : démarrage → profil « documents » en
+    9 s (Devstral arrêté) ; analyse d'un ticket → profil « code »,
+    Devstral prêt en 13 s, modèles de documents arrêtés.
+- **Jalon 38 — relecture visuelle des diffs : fait, validé sur le cas réel,
+  en attente de validation utilisateur.** Demandé après l'essai de
+  Devstral : ce que ni les tests ni le relecteur de code ne voient (« à
+  droite au lieu d'en dessous »).
+  - `internal/visual` (nouveau) : `PagesFor` (pages dont un gabarit change,
+    3 au plus) ; `Reviewer` compile la version du ticket, lance **côte à
+    côte** la version en service et celle du ticket (isolées : port libre,
+    collections `*_visualcheck`, ni modèles, ni dossier surveillé, ni
+    tickets), capture chaque page avant/après, fait juger ; `Chrome`
+    (sans interface, profil temporaire — jamais celui de l'utilisateur ;
+    vu en réel : avec un profil neuf, Chrome écrit la capture puis ne se
+    termine pas → on attend une capture stable puis on l'arrête) ;
+    `VisionJudge` (Devstral + module de vision, images en data URI,
+    réponse contrainte par un schéma JSON).
+  - `tickets.MultiReviewer` : relecture de code puis visuelle, un seul
+    verdict (accepté si toutes acceptent ; remarques et captures réunies ;
+    une relecture impossible notée sans bloquer). Les captures avant/après
+    s'affichent sous le verdict sur la page du ticket. `--visual-review`
+    (défaut vrai), `--chrome-path` ; sans Chrome : désactivée, dit au
+    démarrage.
+  - **Mémoire** : avec 32k de contexte, l'encodage des images échoue
+    (« failed to process mtmd chunk », Insufficient Memory) ; **profil code
+    ramené à 24k** (texte et images passent, sans erreur) et agent ajusté
+    (conversation 40000 caractères, réponse 8192 jetons).
+  - **Validé en réel** sur les copies de travail des essais Devstral : le
+    diff aux dates **à droite** → « n'a pas été déplacé en dessous… toujours
+    à côté », bloquant (1 min 30) ; une version **correcte** faite à la main
+    (dates dans le formulaire, ligne pleine largeur dessous) →
+    « correctement déplacé en dessous », acceptable, page d'accueil jugée
+    intacte (3 min). Captures vérifiées à l'œil : jugements fondés.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

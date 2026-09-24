@@ -182,7 +182,7 @@ func TestModelProfiles(t *testing.T) {
 	if len(docs) != 2 || docs[0].Port != 8080 || docs[1].Port != 8081 || !containsFlag(docs[0].Args, "--port", "8080") {
 		t.Errorf("documents = %+v", docs)
 	}
-	if len(code) != 1 || code[0].Port != 8082 || !containsFlag(code[0].Args, "-m", cfg.CodeModelPath) || !containsFlag(code[0].Args, "--mmproj", cfg.CodeMMProjPath) || !containsFlag(code[0].Args, "--ctx-size", "32768") || !containsFlag(code[0].Args, "-np", "1") {
+	if len(code) != 1 || code[0].Port != 8082 || !containsFlag(code[0].Args, "-m", cfg.CodeModelPath) || !containsFlag(code[0].Args, "--mmproj", cfg.CodeMMProjPath) || !containsFlag(code[0].Args, "--ctx-size", "24576") || !containsFlag(code[0].Args, "-np", "1") {
 		t.Errorf("code = %+v", code)
 	}
 	if mc.Binary != "llama-server" || mc.LogDir != "/home/andri/.jarvis/logs" {
@@ -196,9 +196,9 @@ func TestArgsForJarvisApp_CodeModelWiring(t *testing.T) {
 		{"--models-file", "/home/andri/.jarvis/models.json"},
 		{"--agent-url", "http://127.0.0.1:8082/v1"},
 		{"--agent-model", "devstral-small-2"},
-		{"--agent-context-chars", "55000"},
+		{"--agent-context-chars", "40000"},
 		{"--agent-tool-output-chars", "12000"},
-		{"--agent-max-tokens", "12288"},
+		{"--agent-max-tokens", "8192"},
 		{"--agent-temperature", "0.15"},
 	} {
 		if !containsFlag(args, pair[0], pair[1]) {

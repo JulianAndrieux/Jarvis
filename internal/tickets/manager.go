@@ -693,3 +693,29 @@ func newID() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+
+// MultiReviewer enchaîne des relectures (code, puis visuelle — jalon 38)
+// en un seul verdict : accepté si toutes acceptent ; remarques, captures et
+// résumés réunis. Une relecture impossible est notée dans le résumé sans
+// peser sur le verdict (renvoyer le développeur n'y changerait rien).
+type MultiReviewer []Reviewer
+
+func (mr MultiReviewer) Review(ctx context.Context, req ReviewRequest, onStep func(AgentStep)) (ReviewResult, error) {
+	out := ReviewResult{Approved: true}
+	var summaries []string
+	for _, r := range mr {
+		res, err := r.Review(ctx, req, onStep)
+		if err != nil {
+			summaries = append(summaries, "Relecture impossible : "+err.Error())
+			continue
+		}
+		out.Approved = out.Approved && res.Approved
+		out.Issues = append(out.Issues, res.Issues...)
+		out.Captures = append(out.Captures, res.Captures...)
+		if s := strings.TrimSpace(res.Summary); s != "" {
+			summaries = append(summaries, s)
+		}
+	}
+	out.Summary = strings.Join(summaries, " ")
+	return out, nil
+}

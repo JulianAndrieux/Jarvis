@@ -157,3 +157,33 @@ func TestManager_SwitchesToCodeModels(t *testing.T) {
 		t.Errorf("last event = %+v", last)
 	}
 }
+
+// Jalon 38 : relecture de code puis relecture visuelle, un seul verdict.
+func TestMultiReviewer_MergesVerdicts(t *testing.T) {
+	code := &fakeReviewer{results: []ReviewResult{{Approved: true, Summary: "Code correct."}}}
+	visual := &fakeReviewer{results: []ReviewResult{{Summary: "À droite au lieu d'en dessous.",
+		Issues:   []ReviewIssue{{File: "capture /documents", Severity: "important", Message: "sous la barre"}},
+		Captures: []ReviewCapture{{Page: "/documents", Before: []byte("a"), After: []byte("b")}}}}}
+	res, err := MultiReviewer{code, visual}.Review(context.Background(), ReviewRequest{}, nil)
+	if err != nil || res.Approved || len(res.Issues) != 1 || len(res.Captures) != 1 {
+		t.Fatalf("res = %+v, err = %v", res, err)
+	}
+	if !strings.Contains(res.Summary, "Code correct.") || !strings.Contains(res.Summary, "À droite") {
+		t.Errorf("summary = %q", res.Summary)
+	}
+	ok := &fakeReviewer{results: []ReviewResult{{Approved: true, Summary: "ok"}}}
+	if res, _ := (MultiReviewer{ok, ok}).Review(context.Background(), ReviewRequest{}, nil); !res.Approved {
+		t.Error("both approve: not approved")
+	}
+}
+
+// Une relecture impossible (Chrome absent, modèle en panne) est signalée,
+// sans bloquer ni renvoyer le développeur pour rien.
+func TestMultiReviewer_FailingReviewerIsNoted(t *testing.T) {
+	ok := &fakeReviewer{results: []ReviewResult{{Approved: true, Summary: "Code correct."}}}
+	broken := &fakeReviewer{err: errors.New("chrome introuvable")}
+	res, err := MultiReviewer{ok, broken}.Review(context.Background(), ReviewRequest{}, nil)
+	if err != nil || !res.Approved || !strings.Contains(res.Summary, "chrome introuvable") {
+		t.Errorf("res = %+v, err = %v", res, err)
+	}
+}

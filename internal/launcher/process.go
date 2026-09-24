@@ -48,14 +48,17 @@ func ArgsForLLM(cfg Config) []string {
 }
 
 // ArgsForCode construit les arguments du serveur du modèle de code
-// (jalon 37) : 32k de contexte, un seul emplacement (sinon 4 × 32k),
-// cache en 8 bits — mesuré : c'est ce qui tient sur le Mac (24 Go).
+// (jalon 37) : un seul emplacement (sinon 4 contextes), cache en 8 bits,
+// 24k de contexte — mesuré sur le Mac (24 Go) : 32k tient pour le texte,
+// mais l'encodage des captures de la relecture visuelle (jalon 38) manque
+// alors de mémoire (« failed to process mtmd chunk ») ; 24k laisse la
+// place.
 func ArgsForCode(cfg Config) []string {
 	args := []string{
 		"-m", cfg.CodeModelPath,
 		"--host", "127.0.0.1",
 		"--port", strconv.Itoa(cfg.CodePort),
-		"--ctx-size", "32768", "-np", "1", "--jinja",
+		"--ctx-size", "24576", "-np", "1", "--jinja",
 		"-ngl", "99", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0",
 	}
 	if cfg.CodeMMProjPath != "" {
@@ -100,16 +103,16 @@ func ArgsForJarvisApp(cfg Config) []string {
 		"--module-dir", cfg.RepoDir,
 	}
 	if cfg.CodeEnabled() {
-		// Réglages mesurés sur le ticket d'exemple (Devstral, 32k de
-		// contexte) : l'agent voit bien plus que les 3000 caractères
-		// calibrés pour Qwen3-8B à 8k.
+		// Réglages mesurés sur le ticket d'exemple (Devstral) : l'agent voit
+		// bien plus que les 3000 caractères calibrés pour Qwen3-8B à 8k.
+		// Conversation (~13k jetons) + réponse (8192) tiennent dans les 24k.
 		args = append(args,
 			"--models-file", cfg.ModelsFile,
 			"--agent-url", fmt.Sprintf("http://127.0.0.1:%d/v1", cfg.CodePort),
 			"--agent-model", cfg.CodeModel,
-			"--agent-context-chars", "55000",
+			"--agent-context-chars", "40000",
 			"--agent-tool-output-chars", "12000",
-			"--agent-max-tokens", "12288",
+			"--agent-max-tokens", "8192",
 			"--agent-timeout", "90m",
 			"--agent-temperature", "0.15",
 		)
