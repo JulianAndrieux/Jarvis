@@ -172,8 +172,8 @@ func TestReadFile_FitsTheBudgetAndSaysHowToContinue(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(root, "big.templ"), []byte(b.String()), 0o644)
 	out := Tools{Root: root}.ReadFile("big.templ", 0, 0)
-	if len(out) > readOutputChars {
-		t.Errorf("output = %d chars, budget %d", len(out), readOutputChars)
+	if len(out) > 3000 {
+		t.Errorf("output = %d chars, budget 3000", len(out))
 	}
 	if !strings.Contains(out, "sur 500") || !strings.Contains(out, "start_line=") {
 		t.Errorf("output end = %q, want the range shown and how to continue", out[max(0, len(out)-200):])
@@ -212,5 +212,36 @@ func TestDevelop_TruncatedWriteFileArgsWithdrawTheTool(t *testing.T) {
 	last := model.calls[1][len(model.calls[1])-1]
 	if !strings.Contains(last.Content, "edit_file") {
 		t.Errorf("last message = %q, want the model told to use edit_file", last.Content)
+	}
+}
+
+// Un modèle à grand contexte (Qwen3.6-27B, 32k jetons) peut lire bien
+// plus qu'une soixantaine de lignes à la fois : le budget de sortie des
+// outils se règle (0 : 3000 caractères, calibré pour Qwen3-8B à 8k).
+func TestTools_OutputBudgetIsConfigurable(t *testing.T) {
+	root := t.TempDir()
+	var b strings.Builder
+	for i := 1; i <= 500; i++ {
+		b.WriteString("\t\t<div class=\"ligne assez longue pour remplir la sortie de l'outil\">texte</div>\n")
+	}
+	os.WriteFile(filepath.Join(root, "big.templ"), []byte(b.String()), 0o644)
+	small := Tools{Root: root}.ReadFile("big.templ", 0, 0)
+	large := Tools{Root: root, MaxOutputChars: 20000}.ReadFile("big.templ", 0, 0)
+	if len(small) > 3000 || len(large) > 20000 || strings.Count(large, "\n") < 4*strings.Count(small, "\n") {
+		t.Errorf("default %d chars / %d lines, large %d chars / %d lines", len(small), strings.Count(small, "\n"), len(large), strings.Count(large, "\n"))
+	}
+}
+
+// Température de base réglable (Qwen recommande 0,6 pour le code) ; les
+// relances gardent au moins retryTemperature.
+func TestDevelop_BaseTemperature(t *testing.T) {
+	base := &temperatureModel{}
+	d := &Developer{Model: base, Checker: &fakeChecker{ok: true}, Temperature: 0.6}
+	req := devRequest(writeRepo(t))
+	d.Develop(context.Background(), req, nil)
+	req.Attempt = 2
+	d.Develop(context.Background(), req, nil)
+	if len(base.temps) != 2 || base.temps[0] != 0.6 || base.temps[1] != 0.6 {
+		t.Errorf("temperatures = %v, want 0.6 then 0.6 (above the retry floor)", base.temps)
 	}
 }

@@ -40,6 +40,18 @@ type Tools struct {
 	// jetons sur le serveur actuel).
 	MaxLines   int
 	MaxResults int
+	// MaxOutputChars : budget d'une sortie d'outil, aligné sur celui de la
+	// boucle (ToolOutputChars de l'agent) ; 0 : 3000 caractères, calibré
+	// pour Qwen3-8B à 8k jetons. Un modèle à grand contexte lit plus d'un
+	// coup.
+	MaxOutputChars int
+}
+
+func (t Tools) outputChars() int {
+	if t.MaxOutputChars > 0 {
+		return t.MaxOutputChars
+	}
+	return 3000
 }
 
 // skipDirs : jamais lus ni listés — historique git, copies de travail
@@ -198,7 +210,7 @@ func (t Tools) ReadFile(path string, start, end int) string {
 			continue
 		}
 		line := fmt.Sprintf("%d\t%s\n", n, sc.Text())
-		if shown == maxLines || b.Len()+len(line) > readOutputChars-readNoteChars {
+		if shown == maxLines || b.Len()+len(line) > t.outputChars()-readMarginChars {
 			full = true
 			continue
 		}
@@ -214,13 +226,9 @@ func (t Tools) ReadFile(path string, start, end int) string {
 	return b.String()
 }
 
-// readOutputChars : budget d'une lecture de fichier, sous la limite de
-// sortie d'outil de la boucle (3000 caractères) ; readNoteChars : place
-// gardée pour la note de fin.
-const (
-	readOutputChars = 2800
-	readNoteChars   = 220
-)
+// readMarginChars : place gardée sous le budget de sortie pour la note de
+// fin d'une lecture (et la marge de la boucle).
+const readMarginChars = 420
 
 // notFound : erreur de fichier introuvable accompagnée des fichiers du
 // dépôt au nom proche (même nom sans extension) — trouvé en réel : un
@@ -342,7 +350,7 @@ func (t Tools) Search(pattern, dir string) string {
 	if rootDenied != nil {
 		return describeErr(rootDenied)
 	}
-	out := searchOutput(results, files, counts)
+	out := searchOutput(results, files, counts, t.outputChars()-600)
 	// Vu en réel : les bonnes lignes trouvées, puis des recherches au
 	// hasard faute de savoir lire autour.
 	if len(files) == 1 && !strings.HasPrefix(out, "(aucun") && !strings.Contains(out, "trop pour tout afficher") {
@@ -351,7 +359,9 @@ func (t Tools) Search(pattern, dir string) string {
 	return withDenied(out, denied)
 }
 
-func searchOutput(results, files []string, counts map[string]int) string {
+// searchOutput : les lignes trouvées si elles tiennent dans budget (au-delà,
+// la boucle les couperait), sinon un résumé par fichier.
+func searchOutput(results, files []string, counts map[string]int, budget int) string {
 	if len(results) == 0 {
 		return "(aucun résultat)"
 	}
@@ -360,10 +370,10 @@ func searchOutput(results, files []string, counts map[string]int) string {
 		total += n
 	}
 	out := strings.Join(results, "\n")
-	if total <= len(results) && len(out) <= searchOutputChars {
+	if total <= len(results) && len(out) <= budget {
 		return out
 	}
-	return searchSummary(files, counts, total)
+	return searchSummary(files, counts, total, budget)
 }
 
 // withDenied signale les chemins que la recherche n'a pas pu lire : sans
@@ -397,14 +407,10 @@ func (t Tools) Accessible() error {
 	return err
 }
 
-// searchOutputChars : au-delà, la liste des lignes serait coupée par la
-// boucle de l'agent (3000 caractères par sortie d'outil) ; on résume.
-const searchOutputChars = 2400
-
 // maxCountedFiles borne le parcours d'une recherche très large.
 const maxCountedFiles = 500
 
-func searchSummary(files []string, counts map[string]int, total int) string {
+func searchSummary(files []string, counts map[string]int, total, budget int) string {
 	// Les fichiers les plus concernés d'abord (à égalité : par chemin).
 	files = append([]string(nil), files...)
 	sort.SliceStable(files, func(i, j int) bool { return counts[files[i]] > counts[files[j]] })
@@ -412,7 +418,7 @@ func searchSummary(files []string, counts map[string]int, total int) string {
 	fmt.Fprintf(&b, "%d résultats dans %d fichiers — trop pour tout afficher. Correspondances par fichier :\n", total, len(files))
 	for i, f := range files {
 		line := fmt.Sprintf("%s (%d)\n", f, counts[f])
-		if b.Len()+len(line) > searchOutputChars-200 {
+		if b.Len()+len(line) > budget-200 {
 			fmt.Fprintf(&b, "… et %d autres fichiers\n", len(files)-i)
 			break
 		}

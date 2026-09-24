@@ -120,10 +120,14 @@ func (a *Analyzer) Analyze(ctx context.Context, req tickets.AnalysisRequest, onS
 	if err := a.Tools.Accessible(); err != nil {
 		return "", accessError(err.Error())
 	}
+	tools := a.Tools
+	if tools.MaxOutputChars == 0 {
+		tools.MaxOutputChars = orDefault(a.ToolOutputChars, 3000)
+	}
 	return runLoop(ctx, loopConfig{
 		model:           a.Model,
 		specs:           ReadOnlySpecs(),
-		exec:            func(ctx context.Context, c ToolCall) string { return a.Tools.Execute(c) },
+		exec:            func(ctx context.Context, c ToolCall) string { return tools.Execute(c) },
 		terminal:        "propose_plan",
 		terminalArg:     "plan",
 		what:            "l'analyse",

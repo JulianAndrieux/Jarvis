@@ -25,6 +25,10 @@ type Developer struct {
 	DisableThinking bool
 	// CodeMap : voir Analyzer.CodeMap.
 	CodeMap string
+	// Temperature : température de la première tentative (0 : déterministe ;
+	// Qwen recommande 0,6 pour le code) ; les relances prennent au moins
+	// retryTemperature.
+	Temperature float64
 	// Instructions : voir Analyzer.Instructions (défaut :
 	// DefaultDevelopmentPrompt).
 	Instructions func() string
@@ -101,7 +105,7 @@ func devUserPrompt(req tickets.DevRequest) string {
 // Develop développe le ticket dans req.Dir et retourne le résumé de
 // l'agent.
 func (d *Developer) Develop(ctx context.Context, req tickets.DevRequest, onStep func(tickets.AgentStep)) (string, error) {
-	tools := DevTools{Tools: Tools{Root: req.Dir}, Checker: d.Checker}
+	tools := DevTools{Tools: Tools{Root: req.Dir, MaxOutputChars: orDefault(d.ToolOutputChars, 3000)}, Checker: d.Checker}
 	if err := tools.Accessible(); err != nil {
 		return "", accessError(err.Error())
 	}
@@ -109,9 +113,9 @@ func (d *Developer) Develop(ctx context.Context, req tickets.DevRequest, onStep 
 	// déroulé. À partir de la deuxième tentative, un peu d'aléa.
 	model := d.Model
 	if ts, ok := model.(temperatureSetter); ok {
-		temp := 0.0
+		temp := d.Temperature
 		if req.Attempt > 1 {
-			temp = retryTemperature
+			temp = max(temp, retryTemperature)
 		}
 		model = ts.WithTemperature(temp)
 	}
