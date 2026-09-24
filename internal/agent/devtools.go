@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -82,6 +83,11 @@ func (d DevTools) Execute(ctx context.Context, call ToolCall) string {
 		pkg := strings.TrimSpace(args.Package)
 		if pkg == "" {
 			pkg = "./..."
+		}
+		// Vu en réel : « cmd/jarvisapp » refusé, une étape perdue. Un
+		// chemin relatif sans « ./ » est complété (la validation suit).
+		if !strings.HasPrefix(pkg, "./") && !strings.HasPrefix(pkg, "/") && !strings.HasPrefix(pkg, ".") {
+			pkg = "./" + pkg
 		}
 		if !validPackagePattern(pkg) {
 			return "ERREUR : motif de paquet refusé (relatif au dépôt, ex. ./internal/webapp/ ou ./...) : " + pkg
@@ -171,17 +177,161 @@ func (d DevTools) editFile(path, old, new string) string {
 		return "ERREUR : old est vide — utilise write_file pour créer un fichier"
 	}
 	content := string(data)
+	original := content
+	note := ""
 	switch n := strings.Count(content, old); {
-	case n == 0:
-		return "ERREUR : extrait introuvable dans " + path + " (il doit correspondre exactement, indentation comprise)." + nearbyLines(content, old)
 	case n > 1:
 		return fmt.Sprintf("ERREUR : extrait présent %d fois dans %s — ajoute du contexte pour qu'il soit unique", n, path)
+	case n == 1:
+		content = strings.Replace(content, old, new, 1)
+	default:
+		// Vu en réel : l'extrait recopié avec des espaces au lieu des
+		// tabulations (ou avec les numéros de ligne de read_file) n'était
+		// jamais trouvé. On le cherche en ignorant l'indentation — toujours
+		// à un seul endroit — et le nouveau texte prend celle du fichier.
+		replaced, count := looseReplace(content, old, new)
+		switch {
+		case count > 1:
+			return fmt.Sprintf("ERREUR : extrait présent %d fois dans %s (indentation ignorée) — ajoute du contexte pour qu'il soit unique", count, path)
+		case count == 0:
+			return "ERREUR : extrait introuvable dans " + path + " (il doit reprendre des lignes réelles du fichier)." + nearbyLines(content, old)
+		}
+		content = replaced
+		note = " (extrait retrouvé en ignorant l'indentation, remise à celle du fichier : relis la zone avec read_file si besoin)"
 	}
-	if err := os.WriteFile(abs, []byte(strings.Replace(content, old, new, 1)), 0o644); err != nil {
+	// Vu en réel : new reprenait old (indentation mise à part) — « Modifié »
+	// alors que rien n'avait changé, puis « aucun fichier modifié ».
+	if content == original {
+		return "ERREUR : le nouveau texte est identique à l'ancien (indentation mise à part) : rien n'a changé dans " + path + ". Mets dans new la version modifiée de ces lignes."
+	}
+	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
 		return "ERREUR : " + err.Error()
 	}
-	return "Modifié : " + path
+	return "Modifié : " + path + note
 }
+
+// lineNumberPrefix : le numéro de ligne que read_file affiche devant
+// chaque ligne (« 12<tab> »), parfois recopié par le modèle.
+var lineNumberPrefix = regexp.MustCompile(`^\d+\t`)
+
+// splitSnippet découpe un extrait en lignes, sans lignes vides en bord et
+// sans numéros de ligne recopiés (s'ils sont sur toutes les lignes).
+func splitSnippet(s string) []string {
+	lines := strings.Split(s, "\n")
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	numbered := len(lines) > 0
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" && !lineNumberPrefix.MatchString(l) {
+			numbered = false
+		}
+	}
+	if numbered {
+		for i, l := range lines {
+			lines[i] = lineNumberPrefix.ReplaceAllString(l, "")
+		}
+	}
+	return lines
+}
+
+func leading(l string) string { return l[:len(l)-len(strings.TrimLeft(l, " \t"))] }
+
+// looseReplace cherche old dans content ligne à ligne, espaces de bord
+// ignorés. Une seule occurrence : remplacée par new, réindenté comme le
+// fichier (même indentation pour les mêmes lignes, espaces convertis en
+// tabulations au besoin). count : nombre d'occurrences trouvées.
+func looseReplace(content, old, new string) (string, int) {
+	oldLines := splitSnippet(old)
+	if len(oldLines) == 0 {
+		return "", 0
+	}
+	fileLines := strings.Split(content, "\n")
+	at, count := -1, 0
+	for i := 0; i+len(oldLines) <= len(fileLines); i++ {
+		match := true
+		for k, ol := range oldLines {
+			if strings.TrimSpace(fileLines[i+k]) != strings.TrimSpace(ol) {
+				match = false
+				break
+			}
+		}
+		if match {
+			at, count = i, count+1
+		}
+	}
+	if count != 1 {
+		return "", count
+	}
+
+	// Indentation : celle du modèle -> celle du fichier.
+	indent := map[string]string{}
+	unit, fileTabs := 0, false
+	for k, ol := range oldLines {
+		if strings.TrimSpace(ol) == "" {
+			continue
+		}
+		ml, fl := leading(ol), leading(fileLines[at+k])
+		indent[ml] = fl
+		fileTabs = fileTabs || strings.Contains(fl, "\t")
+		if unit == 0 && ml != "" && strings.Trim(ml, " ") == "" && fl != "" && strings.Trim(fl, "\t") == "" {
+			unit = len(ml) / len(fl)
+		}
+	}
+	if unit <= 0 {
+		unit = 4
+	}
+	newLines := splitSnippet(new)
+	for i, nl := range newLines {
+		ml := leading(nl)
+		switch fl, ok := indent[ml]; {
+		case ok:
+			newLines[i] = fl + nl[len(ml):]
+		case fileTabs && ml != "" && strings.Trim(ml, " ") == "":
+			newLines[i] = strings.Repeat("\t", len(ml)/unit) + strings.Repeat(" ", len(ml)%unit) + nl[len(ml):]
+		}
+	}
+	out := append(append(append([]string{}, fileLines[:at]...), newLines...), fileLines[at+len(oldLines):]...)
+	return strings.Join(out, "\n"), 1
+}
+
+// keywordScores : les lignes qui partagent le plus de mots-clés (4
+// caractères ou plus) avec l'extrait, au moins deux.
+func keywordScores(lines []string, old string) map[int]bool {
+	words := map[string]bool{}
+	for _, w := range keywordRe.FindAllString(old, -1) {
+		if len(w) >= 4 {
+			words[w] = true
+		}
+	}
+	scores := make([]int, len(lines))
+	max := 0
+	for i, l := range lines {
+		for w := range words {
+			if strings.Contains(l, w) {
+				scores[i]++
+			}
+		}
+		if scores[i] > max {
+			max = scores[i]
+		}
+	}
+	out := map[int]bool{}
+	if max < 2 {
+		return out
+	}
+	for i, sc := range scores {
+		if sc == max {
+			out[i] = true
+		}
+	}
+	return out
+}
+
+var keywordRe = regexp.MustCompile(`[\p{L}\p{N}_-]+`)
 
 // nearbyLines montre les lignes du fichier qui ressemblent à la première
 // ligne non vide de l'extrait (comparées sans les espaces de bord), avec
@@ -200,8 +350,16 @@ func nearbyLines(content, old string) string {
 	lines := strings.Split(content, "\n")
 	var b strings.Builder
 	found := 0
+	matches := func(i int, l string) bool { return strings.Contains(strings.TrimSpace(l), first) }
+	// Vu en réel : un extrait reformulé (première ligne inexistante telle
+	// quelle) ne donnait aucune piste. Repli : les lignes qui partagent le
+	// plus de mots-clés avec l'extrait.
+	if !strings.Contains(content, first) {
+		best := keywordScores(lines, old)
+		matches = func(i int, l string) bool { return best[i] }
+	}
 	for i, l := range lines {
-		if strings.Contains(strings.TrimSpace(l), first) {
+		if matches(i, l) {
 			if found == 0 {
 				b.WriteString("\nLignes réelles les plus proches (numéro, tabulation, texte) :\n")
 			}

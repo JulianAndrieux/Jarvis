@@ -349,3 +349,42 @@ func TestLoop_InvalidToolArgumentsAreNotSentBack(t *testing.T) {
 		t.Errorf("tool reply = %q, want the model told its call was unreadable", toolReply)
 	}
 }
+
+// Vu en réel : un plan citant un fichier inexistant
+// (internal/webapp/list_jobs.go, cherché sans succès). Le plan est
+// renvoyé au modèle avec la liste des chemins inexistants.
+func TestAnalyze_PlanWithMissingFilesIsSentBack(t *testing.T) {
+	model := &scriptedModel{replies: []Message{
+		call("p1", "propose_plan", `{"plan": "## Fichiers concernés\n- `+"`internal/store/store.go`"+`\n- `+"`internal/webapp/list_jobs.go`"+`\n## Étapes\n1. x"}`),
+		call("p2", "propose_plan", `{"plan": "## Fichiers concernés\n- `+"`internal/store/store.go`"+`\n## Étapes\n1. x"}`),
+	}}
+	a := &Analyzer{Model: model, Tools: Tools{Root: writeRepo(t)}}
+	plan, err := a.Analyze(context.Background(), request(), nil)
+	if err != nil || strings.Contains(plan, "list_jobs") {
+		t.Fatalf("plan = %q, err = %v, want the corrected plan", plan, err)
+	}
+	if len(model.calls) != 2 {
+		t.Fatalf("model called %d times, want 2", len(model.calls))
+	}
+	var feedback string
+	for _, m := range model.calls[1] {
+		if m.Role == "tool" || m.Role == "user" {
+			feedback = m.Content
+		}
+	}
+	if !strings.Contains(feedback, "internal/webapp/list_jobs.go") {
+		t.Errorf("feedback = %q, want the missing path named", feedback)
+	}
+}
+
+// Deux renvois au plus : ensuite le plan est accepté tel quel (la
+// validation humaine reste le dernier filet).
+func TestAnalyze_PlanCheckGivesUpAfterTwoTries(t *testing.T) {
+	bad := call("p", "propose_plan", `{"plan": "## Fichiers concernés\n- `+"`nulle/part.go`"+`\n## Étapes\n1. x"}`)
+	model := &scriptedModel{replies: []Message{bad, bad, bad}}
+	a := &Analyzer{Model: model, Tools: Tools{Root: writeRepo(t)}}
+	plan, err := a.Analyze(context.Background(), request(), nil)
+	if err != nil || !strings.Contains(plan, "nulle/part.go") || len(model.calls) != 3 {
+		t.Errorf("plan = %q, err = %v, calls = %d", plan, err, len(model.calls))
+	}
+}

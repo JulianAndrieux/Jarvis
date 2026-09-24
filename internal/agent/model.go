@@ -20,6 +20,10 @@ type HTTPModel struct {
 	HTTP    *http.Client // nil : http.DefaultClient
 	// Temperature : 0 par défaut (déterministe).
 	Temperature float64
+	// MaxTokens borne chaque réponse (0 : pas de limite envoyée). Vu en
+	// réel : sans limite, une réécriture complète qui s'emballe a généré
+	// 6 minutes jusqu'à saturer le contexte.
+	MaxTokens int
 }
 
 // WithTemperature retourne une copie du client à la température donnée
@@ -60,7 +64,8 @@ func (m HTTPModel) Chat(ctx context.Context, msgs []Message, tools []ToolSpec) (
 		Messages    []wireMessage `json:"messages"`
 		Tools       []wireTool    `json:"tools,omitempty"`
 		Temperature float64       `json:"temperature"`
-	}{Model: m.Model, Temperature: m.Temperature}
+		MaxTokens   int           `json:"max_tokens,omitempty"`
+	}{Model: m.Model, Temperature: m.Temperature, MaxTokens: m.MaxTokens}
 	for _, msg := range msgs {
 		w := wireMessage{Role: msg.Role, Content: msg.Content, ToolCallID: msg.ToolCallID}
 		for _, c := range msg.ToolCalls {

@@ -1192,3 +1192,23 @@ func TestDocuments_InvalidDatesAreExplainedNotApplied(t *testing.T) {
 		t.Error("reversed dates must be reported")
 	}
 }
+
+// Constat du jalon 34 : un fichier dont la conversion a échoué affichait
+// un brut « 404 page not found » dans le volet d'aperçu (pas de version
+// PDF). La fiche le dit et propose l'original ; une adresse d'aperçu sans
+// fichier répond une page lisible.
+func TestDocumentDetail_FailedConversionHasNoBrokenPreview(t *testing.T) {
+	s, store := newTestServer(t, &blockingRunner{})
+	store.Create(context.Background(), webapp.Job{ID: "casse", Filename: "contrat.docx", Format: "word", Status: webapp.StatusFailed,
+		Err: "webapp: conversion de contrat.docx : formats: libreoffice -> pdf: exit status 1: Error: source file could not be loaded", CreatedAt: time.Now()})
+	page := get(t, s, "/documents/casse").Body.String()
+	if strings.Contains(page, `/documents/casse/pdf#view`) || !strings.Contains(page, "conversion de ce fichier a échoué") || !strings.Contains(page, `/documents/casse/original`) {
+		t.Errorf("preview pane of a failed conversion: broken iframe, or no explanation / download")
+	}
+	for _, path := range []string{"/documents/casse/pdf", "/documents/casse/view"} {
+		rec := get(t, s, path)
+		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "Aperçu indisponible") || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+			t.Errorf("%s = %d %q (%s)", path, rec.Code, rec.Body.String(), rec.Header().Get("Content-Type"))
+		}
+	}
+}

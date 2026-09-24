@@ -2242,9 +2242,58 @@ spécifique à `localhost`.
     « Erreurs à suivre » ; captures de la page Tâches et d'une fiche de
     document (deux volets + barre). Deux tests (cocher depuis la barre,
     rendu du fragment) écrits en même temps que leur code.
-  - **Constat hors périmètre, non corrigé** : quand la conversion d'un
+  - **Constat hors périmètre, corrigé ensuite (jalon 35)** : quand la conversion d'un
     fichier échoue, le volet d'aperçu de sa fiche affiche un brut « 404
     page not found » (pas de version PDF).
+- **Jalon 35 — l'agent de développement, rendu utilisable sur un vrai
+  ticket (ticket d'exemple "Déplacer le filtre date documents", rejoué
+  dans un clone isolé) : harnais corrigé, développement réel pas encore
+  abouti.** Demandé : "il faut qu'on arrive à faire fonctionner l'agent qui
+  développe les tickets". Chaque correctif vient d'une étape réelle
+  observée (TDD, reproduit d'abord en test).
+  - **Analyse** : la carte du code **nomme les pages** d'un dossier de
+    gabarits (`documents`, `notes`, `tasks`…) — l'analyse partait dans
+    `internal/webapp` ; ensuite droite sur `documents.templ` en 4 étapes.
+    **Plan vérifié** : un chemin cité qui n'existe pas (vu :
+    `internal/webapp/list_jobs.go`) renvoie le plan au modèle, 2 fois au
+    plus (« (nouveau) » pour un fichier à créer).
+  - **Développement** : `edit_file` **tolère l'indentation** (espaces pour
+    tabulations, numéros de ligne de read_file recopiés), toujours à un
+    seul endroit, le nouveau texte remis à l'indentation du fichier ;
+    **modification sans effet = erreur** (vu : « Modifié » alors que rien
+    n'avait changé) ; lignes proches **par mots-clés** si l'extrait est
+    reformulé. **`read_file` tient dans le budget de sortie** (vu : 250
+    lignes coupées à 3000 caractères, le modèle ne voyait que ~60 lignes
+    sans le savoir) et dit la plage affichée et la suite ; une recherche
+    dans un fichier rappelle `start_line`/`end_line`. Le garde-fou de
+    répétition ne bloque plus que les **appels stériles** (vu : relecture
+    refusée alors que la compaction disait « relis ») et se réinitialise
+    après une écriture. En développement, **une réponse en texte ne
+    termine plus** la tentative. « Aucun fichier modifié » **relance**
+    l'agent avec une consigne au lieu d'échouer. `run_tests cmd/x`
+    complété en `./cmd/x`. **Extraits du code dans la consigne** : les
+    lignes des fichiers du plan qui contiennent les mots du ticket (vu : le
+    modèle ne lisait jamais le formulaire) — recherche de mots, pas
+    d'index. **`--agent-max-tokens` (2048)** : sans limite, une réécriture
+    complète qui s'emballe générait 6 min puis saturait le contexte (et
+    continuait côté serveur après l'arrêt du client) ; un `write_file` aux
+    arguments tronqués compte comme une coupure (`write_file` retiré,
+    consigne d'utiliser `edit_file`).
+  - **Résultat en réel (Qwen3-8B, 8k de contexte)** : analyse juste et
+    rapide ; en développement, le modèle trouve et lit le formulaire, un
+    `edit_file` réussit une fois (retrouvé malgré l'indentation) — mais il
+    persiste à vouloir réécrire le fichier entier (536 lignes) au lieu de
+    l'éditer. Le dernier essai (avec la limite de jetons) n'a pas pu
+    aboutir : **machine saturée** (17,2 Go de swap sur 18, charge 42 —
+    modèles + applications + tâches de fond de macOS), chaque étape prenant
+    plusieurs minutes. À rejouer machine reposée ; le constat de fond du
+    jalon 28 tient : un modèle de code et un plus grand contexte (machine
+    dédiée) restent la vraie réponse.
+  - **Aussi** : fiche d'un document dont la conversion a échoué — message
+    et téléchargement de l'original au lieu d'une iframe vers un PDF
+    absent ; les adresses d'aperçu sans fichier répondent une page lisible
+    (`webapp.ConversionFailed`, préfixe d'erreur défini à un seul
+    endroit).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

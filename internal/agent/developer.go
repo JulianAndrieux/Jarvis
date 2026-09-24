@@ -79,6 +79,9 @@ type temperatureSetter interface {
 // retryTemperature : aléa des tentatives après la première.
 const retryTemperature = 0.5
 
+// excerptChars : budget des extraits de code donnés dans la consigne.
+const excerptChars = 2500
+
 func devUserPrompt(req tickets.DevRequest) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Ticket : %s\n\nBesoin :\n%s\n", req.Title, req.Need)
@@ -86,6 +89,9 @@ func devUserPrompt(req tickets.DevRequest) string {
 		fmt.Fprintf(&b, "\nCritères d'acceptation :\n%s\n", req.Acceptance)
 	}
 	fmt.Fprintf(&b, "\nPlan validé :\n%s\n", req.Plan)
+	if ex := planExcerpts(req.Dir, req, excerptChars); ex != "" {
+		fmt.Fprintf(&b, "\nExtraits du code où le ticket s'applique probablement (lignes réelles, numérotées comme read_file ; pour edit_file, recopie ces lignes sans les numéros) :\n%s", ex)
+	}
 	if req.Feedback != "" {
 		fmt.Fprintf(&b, "\nÀ corriger (tentative précédente) :\n%s\n", req.Feedback)
 	}

@@ -187,24 +187,40 @@ func (t Tools) ReadFile(path string, start, end int) string {
 	var b strings.Builder
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
-	n, shown := 0, 0
+	// Vu en réel : 250 lignes rendues puis coupées à 3000 caractères par la
+	// boucle — le modèle ne voyait qu'une soixantaine de lignes sans le
+	// savoir. Autant de lignes entières que le budget en permet, et la
+	// plage réellement affichée est dite, avec la suite.
+	n, shown, last, full := 0, 0, 0, false
 	for sc.Scan() {
 		n++
-		if n < start || (end > 0 && n > end) {
+		if full || n < start || (end > 0 && n > end) {
 			continue
 		}
-		if shown == maxLines {
-			fmt.Fprintf(&b, "... (tronqué à %d lignes : relis avec start_line=%d)\n", maxLines, n)
-			break
+		line := fmt.Sprintf("%d\t%s\n", n, sc.Text())
+		if shown == maxLines || b.Len()+len(line) > readOutputChars-readNoteChars {
+			full = true
+			continue
 		}
-		fmt.Fprintf(&b, "%d\t%s\n", n, sc.Text())
-		shown++
+		b.WriteString(line)
+		shown, last = shown+1, n
 	}
 	if shown == 0 {
-		return fmt.Sprintf("(aucune ligne dans l'intervalle ; le fichier en compte au moins %d)", n)
+		return fmt.Sprintf("(aucune ligne dans l'intervalle ; le fichier en compte %d)", n)
+	}
+	if full {
+		fmt.Fprintf(&b, "… tronqué : lignes %d-%d sur %d affichées. Suite : read_file avec start_line=%d, ou start_line/end_line autour des numéros donnés par search.\n", start, last, n, last+1)
 	}
 	return b.String()
 }
+
+// readOutputChars : budget d'une lecture de fichier, sous la limite de
+// sortie d'outil de la boucle (3000 caractères) ; readNoteChars : place
+// gardée pour la note de fin.
+const (
+	readOutputChars = 2800
+	readNoteChars   = 220
+)
 
 // notFound : erreur de fichier introuvable accompagnée des fichiers du
 // dépôt au nom proche (même nom sans extension) — trouvé en réel : un
@@ -326,7 +342,13 @@ func (t Tools) Search(pattern, dir string) string {
 	if rootDenied != nil {
 		return describeErr(rootDenied)
 	}
-	return withDenied(searchOutput(results, files, counts), denied)
+	out := searchOutput(results, files, counts)
+	// Vu en réel : les bonnes lignes trouvées, puis des recherches au
+	// hasard faute de savoir lire autour.
+	if len(files) == 1 && !strings.HasPrefix(out, "(aucun") && !strings.Contains(out, "trop pour tout afficher") {
+		out += "\n(Pour voir le contexte : read_file avec start_line/end_line autour de ces numéros de ligne.)"
+	}
+	return withDenied(out, denied)
 }
 
 func searchOutput(results, files []string, counts map[string]int) string {

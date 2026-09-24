@@ -65,3 +65,25 @@ func TestHTTPModel_ServerErrorIsReported(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// Vu en réel : sans limite, une réécriture complète qui s'emballe a
+// généré pendant 6 minutes jusqu'à saturer le contexte. MaxTokens borne
+// chaque réponse ; 0 : pas de limite envoyée.
+func TestHTTPModel_SendsMaxTokens(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got = nil
+		json.Unmarshal(body, &got)
+		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`)
+	}))
+	defer srv.Close()
+	HTTPModel{BaseURL: srv.URL + "/v1", Model: "m", MaxTokens: 2048}.Chat(context.Background(), []Message{{Role: "user", Content: "x"}}, nil)
+	if got["max_tokens"] != 2048.0 {
+		t.Errorf("max_tokens = %v", got["max_tokens"])
+	}
+	HTTPModel{BaseURL: srv.URL + "/v1", Model: "m"}.Chat(context.Background(), []Message{{Role: "user", Content: "x"}}, nil)
+	if _, ok := got["max_tokens"]; ok {
+		t.Error("max_tokens sent although unset")
+	}
+}

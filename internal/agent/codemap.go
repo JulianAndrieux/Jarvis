@@ -33,7 +33,8 @@ func PackageMap(root string, maxChars int) string {
 		rel = filepath.ToSlash(rel)
 		switch {
 		case strings.HasSuffix(name, ".templ"):
-			entry(dirs, rel).templ = true
+			e := entry(dirs, rel)
+			e.pages = append(e.pages, strings.TrimSuffix(name, ".templ"))
 		case strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") && !strings.HasSuffix(name, "_templ.go"):
 			e := entry(dirs, rel)
 			if e.doc == "" {
@@ -55,12 +56,15 @@ func PackageMap(root string, maxChars int) string {
 		var b strings.Builder
 		for _, p := range paths {
 			e := dirs[p]
-			desc := e.doc
-			if desc == "" && e.templ {
-				desc = "gabarits templ des pages web (modifie les .templ ; les _templ.go sont générés)"
+			desc := shorten(e.doc, limit)
+			// Vu en réel : « gabarits des pages web » ne disait pas quelle
+			// page est où — les pages sont nommées, jamais raccourcies.
+			if len(e.pages) > 0 && limit > 0 {
+				sort.Strings(e.pages)
+				desc = "pages web (templ) : " + strings.Join(e.pages, ", ") + " — modifie le .templ de la page, les _templ.go sont générés"
 			}
 			b.WriteString(p)
-			if desc = shorten(desc, limit); desc != "" {
+			if desc != "" {
 				b.WriteString(" — " + desc)
 			}
 			b.WriteString("\n")
@@ -70,7 +74,13 @@ func PackageMap(root string, maxChars int) string {
 			return out
 		}
 		if limit <= 0 {
-			return truncate(out, maxChars)
+			// Même sans descriptions, trop de paquets : coupé à une fin de
+			// ligne, sans dépasser le budget.
+			out = out[:maxChars]
+			if i := strings.LastIndex(out, "\n"); i > 0 {
+				out = out[:i]
+			}
+			return out
 		}
 	}
 }
@@ -93,7 +103,7 @@ func shorten(s string, limit int) string {
 
 type mapEntry struct {
 	doc   string
-	templ bool
+	pages []string // gabarits .templ du dossier, sans extension
 }
 
 func entry(dirs map[string]*mapEntry, rel string) *mapEntry {

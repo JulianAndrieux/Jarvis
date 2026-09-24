@@ -449,10 +449,14 @@ func (m *Manager) develop(t Ticket, feedback string) {
 		}
 
 		// Aucun fichier modifié : inutile de lancer la vérification complète
-		// (vu en réel : une minute perdue avant de le constater).
+		// (vu en réel : une minute perdue avant de le constater). L'agent est
+		// relancé avec une consigne — vu en réel, l'échec immédiat laissait
+		// la seconde tentative inutilisée.
 		if changes, err := m.Workspace.Diff(ctx, dir); err == nil && strings.TrimSpace(changes) == "" {
-			m.fail(ctx, t, "L'agent n'a modifié aucun fichier : aucune modification à vérifier.", "")
-			return
+			failure = fmt.Sprintf("L'agent n'a modifié aucun fichier en %d tentatives : aucune modification à vérifier.", attempts)
+			m.event(ctx, t.ID, Event{Kind: EventError, Author: AuthorAgent, Text: "Aucun fichier modifié"})
+			feedback = "Ta tentative précédente n'a modifié aucun fichier. Lis le fichier concerné avec read_file, puis modifie-le avec edit_file (old : quelques lignes copiées depuis read_file, sans les numéros de ligne ; new : leur nouvelle version). N'appelle finish qu'après une modification réussie (« Modifié : ... »)."
+			continue
 		}
 
 		var ok bool

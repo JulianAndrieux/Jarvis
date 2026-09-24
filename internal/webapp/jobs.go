@@ -294,7 +294,7 @@ func (m *JobManager) pipelineInput(ctx context.Context, job Job, fam formats.Fam
 
 	r, err := m.Converter.Convert(ctx, formats.Format{Family: fam, MIME: job.MIME, Ext: strings.TrimPrefix(sourceExt(job, fam), ".")}, src)
 	if err != nil {
-		return nil, fmt.Errorf("webapp: conversion de %s : %w", job.Filename, err)
+		return nil, conversionError(job.Filename, err)
 	}
 	if err := m.store.WriteFile(ctx, job.ID, FileRendition, r.PDF); err != nil {
 		return nil, fmt.Errorf("webapp: store rendition %s: %w", job.ID, err)
@@ -612,4 +612,19 @@ func randomID() (string, error) {
 		return "", fmt.Errorf("webapp: random id: %w", err)
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// conversionErrPrefix : début du message d'un échec de conversion en PDF.
+// Défini ici seulement : ConversionFailed s'y fie.
+const conversionErrPrefix = "webapp: conversion de "
+
+func conversionError(name string, err error) error {
+	return fmt.Errorf(conversionErrPrefix+"%s : %w", name, err)
+}
+
+// ConversionFailed : le job a échoué à la conversion en PDF — il n'a donc
+// pas de version PDF à montrer (l'aperçu de sa fiche le dit, au lieu d'une
+// iframe vers un fichier absent).
+func ConversionFailed(j Job) bool {
+	return j.Status == StatusFailed && strings.HasPrefix(j.Err, conversionErrPrefix)
 }

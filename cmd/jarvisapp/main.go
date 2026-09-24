@@ -73,6 +73,7 @@ func main() {
 	llmConcurrency := flag.Int("llm-concurrency", 1, "Nombre de pages traitées en parallèle pour l'extraction LLM, par document ; 1 (défaut) = séquentiel. Un contenu dense (page transcrite par le VLM) peut faire échouer le serveur llama.cpp (\"Context size has been exceeded\") au-delà de 1 en parallèle sur ce type de matériel, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
 	agentURL := flag.String("agent-url", "", "URL du serveur du modèle de l'agent des tickets (compatible OpenAI, appels d'outils) ; vide = --llm-url")
 	agentModel := flag.String("agent-model", "", "Modèle de l'agent des tickets ; vide = --llm-model")
+	agentMaxTokens := flag.Int("agent-max-tokens", 2048, "Jetons générés au plus par réponse de l'agent des tickets (0 : pas de limite) — une réécriture qui s'emballe est coupée vite au lieu de saturer le contexte")
 	agentContext := flag.Int("agent-context-chars", 16000, "Taille maximale (caractères) de la conversation envoyée à l'agent — à adapter au contexte du serveur (8192 jetons aujourd'hui)")
 	ticketsCollection := flag.String("tickets-collection", "tickets", "Collection MongoDB des tickets")
 	agentsCollection := flag.String("agents-collection", "agents", "Collection MongoDB des prompts des agents (onglet Agents)")
@@ -264,7 +265,7 @@ func main() {
 		Store: ticketStore,
 		Gate:  modelGate,
 		Analyst: &agent.Analyzer{
-			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}},
+			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}, MaxTokens: *agentMaxTokens},
 			Tools:           agent.Tools{Root: dir},
 			ProjectBrief:    brief,
 			CodeMap:         codeMap,
@@ -288,7 +289,7 @@ func main() {
 		ticketManager.Workspace = git
 		ticketManager.Verifier = checker
 		ticketManager.Developer = &agent.Developer{
-			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}},
+			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}, MaxTokens: *agentMaxTokens},
 			Checker:         checker,
 			ProjectBrief:    brief,
 			CodeMap:         codeMap,

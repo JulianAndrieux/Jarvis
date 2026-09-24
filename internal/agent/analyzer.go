@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
@@ -128,6 +131,8 @@ func (a *Analyzer) Analyze(ctx context.Context, req tickets.AnalysisRequest, onS
 		contextChars:    orDefault(a.ContextChars, 18000),
 		toolOutputChars: orDefault(a.ToolOutputChars, 3000),
 		onStep:          onStep,
+		textResult:      true,
+		check:           a.checkPlan,
 	}, a.systemPrompt(), userPrompt(req))
 }
 
@@ -145,7 +150,18 @@ type loopConfig struct {
 	contextChars          int
 	toolOutputChars       int
 	onStep                func(tickets.AgentStep)
+	// textResult : une réponse en texte (sans outil) vaut résultat — pour
+	// l'analyse (le plan peut arriver en texte), jamais pour le
+	// développement (vu en réel : tentative close sans modification).
+	textResult bool
+	// check, s'il est donné, examine le résultat : un message non vide le
+	// renvoie au modèle (maxChecks fois au plus), qui doit le corriger.
+	check func(result string) string
 }
+
+// maxChecks : renvois d'un résultat au modèle avant de l'accepter tel
+// quel (la validation humaine reste le dernier filet).
+const maxChecks = 2
 
 func orDefault(v, def int) int {
 	if v > 0 {
@@ -159,7 +175,13 @@ func orDefault(v, def int) int {
 // avec compaction du contexte et refus des appels répétés.
 func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, error) {
 	msgs := []Message{{Role: "system", Content: system}, {Role: "user", Content: user}}
-	seen := map[string]bool{} // appels déjà faits (outil + arguments)
+	// sterileSeen : appels déjà faits sans résultat (outil + arguments) —
+	// les répéter ne changerait rien. Un appel utile peut être refait (la
+	// compaction retire les anciennes sorties en disant « relis si
+	// besoin » : vu en réel, la relecture refusée a bloqué le modèle).
+	sterileSeen := map[string]bool{}
+	checks := 0
+	truncated := false // un write_file coupé dans la dernière réponse
 	truncations := 0
 	specs := cfg.specs
 	sterile := 0 // appels stériles d'affilée (aucun résultat, erreur, répétition)
@@ -186,8 +208,20 @@ func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, 
 			}
 			return "", fmt.Errorf("agent: modèle : %w", err)
 		}
-		if result, ok := resultFrom(reply, cfg.terminal, cfg.terminalArg); ok {
-			return result, nil
+		if result, ok := resultFrom(reply, cfg.terminal, cfg.terminalArg, cfg.textResult); ok {
+			msg := ""
+			if cfg.check != nil && checks < maxChecks {
+				msg = cfg.check(result)
+			}
+			if msg == "" {
+				return result, nil
+			}
+			checks++
+			msgs = append(msgs, historySafe(reply), feedbackFor(reply, cfg.terminal, msg))
+			if cfg.onStep != nil {
+				cfg.onStep(tickets.AgentStep{Summary: "Résultat renvoyé au modèle pour correction", Detail: msg})
+			}
+			continue
 		}
 		msgs = append(msgs, historySafe(reply))
 		if len(reply.ToolCalls) == 0 {
@@ -198,15 +232,21 @@ func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, 
 			key := call.Name + " " + call.Arguments
 			summary := summarize(call)
 			var out string
-			if seen[key] && call.Name != "run_tests" && call.Name != "run_checks" {
+			if sterileSeen[key] && call.Name != "run_tests" && call.Name != "run_checks" {
 				// Vu en réel : le même appel en échec répété jusqu'à la
 				// limite d'étapes. Le relancer ne changerait rien (sauf
 				// tests et vérifications : le code a pu changer entre-temps).
 				out = "Appel déjà fait (même outil, mêmes arguments) : son résultat ne changera pas. Change d'approche — list_files pour voir les noms réels, search pour trouver un identifiant — ou termine."
 				summary += " (répété, non réexécuté)"
 			} else {
-				seen[key] = true
 				out = truncate(cfg.exec(ctx, call), cfg.toolOutputChars)
+				switch {
+				case isSterile(out):
+					sterileSeen[key] = true
+				case strings.HasPrefix(out, "Modifié") || strings.HasPrefix(out, "Écrit"):
+					// Le code a changé : ce qui ne donnait rien peut aboutir.
+					sterileSeen = map[string]bool{}
+				}
 			}
 			msgs = append(msgs, Message{Role: "tool", ToolCallID: call.ID, Content: out})
 			if cfg.onStep != nil {
@@ -215,11 +255,23 @@ func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, 
 			if detail, ok := strings.CutPrefix(out, accessDeniedPrefix); ok {
 				return "", accessError(detail)
 			}
+			// Vu en réel : une réécriture coupée arrive aussi comme un
+			// write_file aux arguments tronqués — même remède qu'une coupure
+			// signalée par le serveur.
+			if call.Name == "write_file" && !json.Valid([]byte(call.Arguments)) && truncations < maxTruncations {
+				truncations++
+				specs = withoutTool(specs, "write_file")
+				truncated = true
+			}
 			if isSterile(out) {
 				sterile++
 			} else {
 				sterile = 0
 			}
+		}
+		if truncated {
+			truncated = false
+			msgs = append(msgs, Message{Role: "user", Content: "Ta réponse a été coupée (trop longue) : write_file n'est plus disponible. Modifie les fichiers avec edit_file, un petit changement à la fois (old : quelques lignes réelles, new : leur nouvelle version)."})
 		}
 		// Vu en réel : des dizaines de recherches d'identifiants inventés,
 		// jusqu'à la limite d'étapes. Recadrage, puis arrêt anticipé.
@@ -243,7 +295,7 @@ func runLoop(ctx context.Context, cfg loopConfig, system, user string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("agent: modèle : %w", err)
 	}
-	if result, ok := resultFrom(reply, cfg.terminal, cfg.terminalArg); ok {
+	if result, ok := resultFrom(reply, cfg.terminal, cfg.terminalArg, cfg.textResult); ok {
 		return result, nil
 	}
 	return "", fmt.Errorf("agent: %s n'a pas abouti en %d étapes (aucun %s)", cfg.what, cfg.maxSteps, cfg.terminal)
@@ -269,6 +321,48 @@ const (
 // isSterile : un appel qui n'a rien apporté.
 func isSterile(out string) bool {
 	return out == "(aucun résultat)" || strings.HasPrefix(out, "ERREUR") || strings.HasPrefix(out, "Appel déjà fait")
+}
+
+// feedbackFor : la réponse à un résultat renvoyé — réponse de l'outil de
+// fin s'il a été appelé (l'API attend une réponse à chaque appel),
+// message de l'utilisateur sinon.
+func feedbackFor(reply Message, terminal, msg string) Message {
+	for _, c := range reply.ToolCalls {
+		if c.Name == terminal {
+			return Message{Role: "tool", ToolCallID: c.ID, Content: msg}
+		}
+	}
+	return Message{Role: "user", Content: msg}
+}
+
+// planPathRe : un chemin de fichier cité entre accents graves dans un plan.
+var planPathRe = regexp.MustCompile("`([A-Za-z0-9_./-]+\\.(?:go|templ|md|mod|sh|py|json|css|js|html))`")
+
+// checkPlan : vu en réel, un plan citait un fichier inexistant (cherché
+// sans succès). Les chemins cités doivent exister, sauf ceux annoncés
+// comme nouveaux sur leur ligne.
+func (a *Analyzer) checkPlan(plan string) string {
+	var missing []string
+	for _, line := range strings.Split(plan, "\n") {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "nouveau") || strings.Contains(lower, "à créer") || strings.Contains(lower, "a creer") {
+			continue
+		}
+		for _, m := range planPathRe.FindAllStringSubmatch(line, -1) {
+			abs, err := a.Tools.resolve(m[1])
+			if err != nil {
+				missing = append(missing, m[1])
+				continue
+			}
+			if _, err := os.Stat(abs); err != nil && !slices.Contains(missing, m[1]) {
+				missing = append(missing, m[1])
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return "Ces fichiers cités dans le plan n'existent pas : " + strings.Join(missing, ", ") + ". Corrige le plan avec des chemins que tu as vus (list_files, search) — un fichier à créer s'écrit avec « (nouveau) » sur sa ligne — puis rappelle propose_plan."
 }
 
 // accessError : le dépôt est illisible pour Jarvis — une panne de
@@ -308,7 +402,7 @@ func isTruncatedCall(err error) bool {
 
 // resultFrom extrait le résultat d'une réponse : appel à l'outil de fin,
 // ou texte libre substantiel sans appel d'outil.
-func resultFrom(reply Message, terminal, arg string) (string, bool) {
+func resultFrom(reply Message, terminal, arg string, textResult bool) (string, bool) {
 	for _, call := range reply.ToolCalls {
 		if call.Name != terminal {
 			continue
@@ -320,7 +414,7 @@ func resultFrom(reply Message, terminal, arg string) (string, bool) {
 			}
 		}
 	}
-	if len(reply.ToolCalls) == 0 && len(strings.TrimSpace(reply.Content)) >= minPlanChars {
+	if textResult && len(reply.ToolCalls) == 0 && len(strings.TrimSpace(reply.Content)) >= minPlanChars {
 		return strings.TrimSpace(reply.Content), true
 	}
 	return "", false

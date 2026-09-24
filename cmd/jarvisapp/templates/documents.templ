@@ -261,7 +261,14 @@ func documentMeta(job webapp.Job, view ResultView) []string {
 // Les aperçus natifs (/view) viennent de contenu fourni par
 // l'utilisateur : iframe en bac à sable, en plus de la CSP du serveur.
 templ previewPane(job webapp.Job) {
-	if !previewReady(job) {
+	if webapp.ConversionFailed(job) {
+		<div class="preview-placeholder">
+			<div class="doc-icon">{ familyIcon(fileFamily(job)) }</div>
+			<p><strong>{ job.Filename }</strong></p>
+			<p class="muted">La conversion de ce fichier a échoué : pas d'aperçu. Le détail de l'erreur est dans l'onglet Données.</p>
+			<a class="button button-primary" href={ templ.SafeURL("/documents/" + job.ID + "/original") }>Télécharger l'original</a>
+		</div>
+	} else if !previewReady(job) {
 		<div class="preview-placeholder">
 			<div class="doc-icon">{ familyIcon(fileFamily(job)) }</div>
 			<p>Aperçu disponible dès la fin de la conversion…</p>

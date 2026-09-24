@@ -36,7 +36,7 @@ func TestPackageMap_ListsPackagesWithTheirRole(t *testing.T) {
 		"cmd/app — l'application web : upload et suivi de documents",
 		"internal/webapp — orchestre le pipeline pour l'interface web",
 		"internal/nodoc",
-		"cmd/app/templates — gabarits templ des pages web",
+		"cmd/app/templates — pages web (templ) : page",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("map lacks %q:\n%s", want, got)
@@ -96,6 +96,22 @@ func TestPackageMap_NoDanglingParenthesis(t *testing.T) {
 	os.MkdirAll(filepath.Dir(p), 0o755)
 	os.WriteFile(p, []byte("// Package parsing lit les pages sans texte fiable (cf. triage) avec le VLM.\npackage parsing\n"), 0o644)
 	if got := PackageMap(root, 500); got != "internal/parsing — lit les pages sans texte fiable" {
+		t.Errorf("map = %q", got)
+	}
+}
+
+// Vu en réel (ticket "Déplacer le filtre date documents", deuxième essai) :
+// « gabarits templ des pages web » ne disait pas quelle page est où, et
+// l'analyse est partie dans internal/webapp. La carte nomme les pages.
+func TestPackageMap_NamesTheTemplPages(t *testing.T) {
+	root := t.TempDir()
+	for _, f := range []string{"documents.templ", "notes.templ", "layout.templ", "documents_templ.go", "helpers.go"} {
+		p := filepath.Join(root, "cmd", "app", "templates", f)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte("package templates\n"), 0o644)
+	}
+	got := PackageMap(root, 1000)
+	if !strings.Contains(got, "cmd/app/templates — pages web (templ) : documents, layout, notes") {
 		t.Errorf("map = %q", got)
 	}
 }

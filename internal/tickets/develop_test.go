@@ -318,3 +318,30 @@ func TestUntestedGoChange(t *testing.T) {
 		}
 	}
 }
+
+// Vu en réel (ticket "Déplacer le filtre date documents") : « aucun
+// fichier modifié » faisait échouer tout de suite, sans utiliser la
+// seconde tentative. L'agent est relancé avec une consigne précise.
+type lateWorkspace struct {
+	fakeWorkspace
+	dev *fakeDeveloper
+}
+
+// Diff : rien tant que l'agent n'a pas été relancé.
+func (w *lateWorkspace) Diff(ctx context.Context, dir string) (string, error) {
+	if len(w.dev.Requests()) < 2 {
+		return "", nil
+	}
+	return "+x", nil
+}
+
+func TestManager_NoChangeIsRetriedWithGuidance(t *testing.T) {
+	dev := &fakeDeveloper{summaries: []string{"rien", "fait"}}
+	m, s, tk := approvedTicket(t, dev, &lateWorkspace{dev: dev}, &fakeVerifier{results: []bool{true}})
+	m.ApprovePlan(context.Background(), tk.ID)
+	waitTicket(t, s, tk.ID, Review)
+	reqs := dev.Requests()
+	if len(reqs) != 2 || !strings.Contains(reqs[1].Feedback, "edit_file") {
+		t.Errorf("requests = %+v, want a second attempt told to use edit_file", reqs)
+	}
+}

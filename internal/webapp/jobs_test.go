@@ -1071,3 +1071,20 @@ func TestJobManager_CommentSetDuringProcessingSurvives(t *testing.T) {
 		t.Errorf("comment after processing = %q, want it kept (set while running)", done.Comment)
 	}
 }
+
+// Une erreur de conversion est reconnaissable (la fiche n'a alors pas de
+// version PDF à montrer) ; une autre erreur ne l'est pas.
+func TestConversionFailed(t *testing.T) {
+	conv := Job{Status: StatusFailed, Err: conversionError("contrat.docx", errors.New("source file could not be loaded")).Error()}
+	if !ConversionFailed(conv) {
+		t.Error("conversion error not recognised")
+	}
+	for _, j := range []Job{
+		{Status: StatusFailed, Err: "vlm: délai dépassé"},
+		{Status: StatusDone, Err: conv.Err},
+	} {
+		if ConversionFailed(j) {
+			t.Errorf("ConversionFailed(%+v) = true", j)
+		}
+	}
+}

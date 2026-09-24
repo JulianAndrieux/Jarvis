@@ -65,7 +65,7 @@ func (s *Server) readFile(w http.ResponseWriter, r *http.Request, id string, nam
 		return nil, false
 	}
 	if !ok {
-		http.NotFound(w, r)
+		previewUnavailable(w)
 		return nil, false
 	}
 	return data, true
@@ -120,7 +120,7 @@ func (s *Server) handleDocumentPDF(w http.ResponseWriter, r *http.Request) {
 	name := webapp.FileOriginal
 	switch {
 	case !fam.Pipeline():
-		http.NotFound(w, r)
+		previewUnavailable(w)
 		return
 	case fam.NeedsRendition():
 		name = webapp.FileRendition
@@ -212,7 +212,7 @@ func (s *Server) handleDocumentView(w http.ResponseWriter, r *http.Request) {
 		}
 		page = emailViewHTML(msg)
 	default:
-		http.NotFound(w, r)
+		previewUnavailable(w)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -397,4 +397,15 @@ func thumbnailError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	fmt.Fprintf(os.Stderr, "jarvisapp: thumbnail: %v\n", err)
 	http.Error(w, "miniature indisponible : "+err.Error(), http.StatusInternalServerError)
+}
+
+// previewUnavailable : réponse d'une adresse d'aperçu sans fichier
+// derrière (conversion échouée, pas encore faite, famille sans aperçu).
+// Elle s'affiche dans l'iframe de la fiche : une page lisible plutôt
+// qu'un brut « 404 page not found » (constat du jalon 34).
+func previewUnavailable(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprint(w, `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><body style="font-family:-apple-system,system-ui,sans-serif;color:#4b5160;display:grid;place-items:center;height:90vh;margin:0"><p>Aperçu indisponible pour ce fichier.</p></body></html>`)
 }
