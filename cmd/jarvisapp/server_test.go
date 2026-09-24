@@ -1212,3 +1212,22 @@ func TestDocumentDetail_FailedConversionHasNoBrokenPreview(t *testing.T) {
 		}
 	}
 }
+
+// Garde (vue en réel : un agent a déplacé les champs de date sous la
+// barre de recherche mais hors du <form>, et tous les tests passaient —
+// ils vérifiaient seulement que les champs existent). Les dates doivent
+// être envoyées avec la recherche.
+func TestDocuments_DateFieldsAreInsideTheSearchForm(t *testing.T) {
+	s := dateFilterServer(t)
+	body := getDocuments(s, "")
+	start := strings.Index(body, `<form class="search-bar"`)
+	if start < 0 {
+		t.Fatal("no search form")
+	}
+	form := body[start : start+strings.Index(body[start:], "</form>")]
+	for _, field := range []string{`name="q"`, `name="from"`, `name="to"`} {
+		if !strings.Contains(form, field) {
+			t.Errorf("%s is not inside the search form", field)
+		}
+	}
+}
