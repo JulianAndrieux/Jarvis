@@ -14,6 +14,7 @@ const (
 	Extraction     = "extraction"
 	Analysis       = "analysis"
 	Development    = "development"
+	Review         = "review"
 )
 
 // Models : modèles en service, lus dans les options de jarvisapp.
@@ -57,6 +58,14 @@ func Defaults(m Models) []Definition {
 			Tools:         toolNames(agent.DevSpecs()),
 			DefaultPrompt: agent.DefaultDevelopmentPrompt,
 			Appended:      "Le contexte du projet (début de CLAUDE.md), la carte du code (chaque paquet et son rôle), /no_think, puis le ticket, son plan validé et le rapport de la vérification précédente.",
+		},
+		{
+			ID: Review, Name: "Relecture de code", Group: "Tickets",
+			Role:          "Relit le diff d'un ticket, déjà compilé et testé, selon les standards du projet : ce que les tests ne voient pas. S'il demande des changements, le développeur est relancé (2 allers-retours au plus) avant ta revue.",
+			Model:         m.Tickets,
+			Tools:         toolNames(agent.ReviewSpecs()),
+			DefaultPrompt: agent.DefaultReviewPrompt,
+			Appended:      "Le contexte du projet, la carte du code, puis le ticket, son plan validé et le diff à relire.",
 		},
 	}
 }

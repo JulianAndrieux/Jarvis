@@ -75,6 +75,7 @@ func main() {
 	agentModel := flag.String("agent-model", "", "Modèle de l'agent des tickets ; vide = --llm-model")
 	agentToolOutput := flag.Int("agent-tool-output-chars", 3000, "Taille maximale (caractères) d'une sortie d'outil de l'agent — 3000 pour Qwen3-8B à 8k jetons ; plus pour un modèle à grand contexte")
 	agentThinking := flag.Bool("agent-thinking", false, "Laisser l'agent des tickets réfléchir avant de répondre (sinon /no_think) — plus lent, meilleur sur les modèles qui en tirent parti")
+	agentReview := flag.Bool("agent-review", true, "Relecture du diff vérifié par un agent, selon les standards (onglet Agents), avant la revue humaine (jalon 36)")
 	agentTemperature := flag.Float64("agent-temperature", 0, "Température de l'agent des tickets (0 : déterministe ; Qwen recommande 0,6 pour le code)")
 	agentMaxTokens := flag.Int("agent-max-tokens", 2048, "Jetons générés au plus par réponse de l'agent des tickets (0 : pas de limite) — une réécriture qui s'emballe est coupée vite au lieu de saturer le contexte")
 	agentContext := flag.Int("agent-context-chars", 16000, "Taille maximale (caractères) de la conversation envoyée à l'agent — à adapter au contexte du serveur (8192 jetons aujourd'hui)")
@@ -302,6 +303,19 @@ func main() {
 			DisableThinking: !*agentThinking,
 			Instructions:    agentRegistry.PromptFunc(agents.Development),
 			Temperature:     *agentTemperature,
+		}
+		if *agentReview {
+			// Même modèle, température 0 : un verdict stable.
+			ticketManager.Reviewer = &agent.Reviewer{
+				Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}, MaxTokens: *agentMaxTokens},
+				ProjectBrief:    brief,
+				CodeMap:         codeMap,
+				ContextChars:    *agentContext,
+				ToolOutputChars: *agentToolOutput,
+				DisableThinking: !*agentThinking,
+				Instructions:    agentRegistry.PromptFunc(agents.Review),
+			}
+			log.Printf("jarvisapp: relecture des diffs activée")
 		}
 		log.Printf("jarvisapp: développement des tickets activé (copies de travail : %s)", wtRoot)
 	}

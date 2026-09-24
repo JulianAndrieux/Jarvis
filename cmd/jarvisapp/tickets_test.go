@@ -394,3 +394,26 @@ func TestTickets_DeployedTicketOffersPushWithPendingCommits(t *testing.T) {
 		t.Error("after the push, the panel should say so and no longer offer the button")
 	}
 }
+
+// Jalon 36 : le verdict du relecteur est affiché avant le diff — verdict,
+// résumé, remarques (échappées : texte écrit par un modèle).
+func TestTickets_ReviewVerdictShownBeforeDiff(t *testing.T) {
+	s, store := newTicketServer(t, "## Étapes\n1. x")
+	tk, _ := s.Tickets.Create(context.Background(), "Déplacer le filtre", "besoin", "")
+	tk.Status, tk.Diff, tk.Branch = tickets.Review, "+++ b/a.templ\n+<div>", "ticket/"+tk.ID
+	tk.Review = &tickets.ReviewResult{Summary: "Points restants.", Rounds: 2, Issues: []tickets.ReviewIssue{
+		{File: "cmd/jarvisapp/templates/documents.templ", Line: 119, Severity: "bloquant", Message: "Champs hors du <form>"},
+	}}
+	store.Update(context.Background(), tk)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tickets/"+tk.ID, nil))
+	body := rec.Body.String()
+	for _, want := range []string{"Relecture", "à ta décision", "Points restants.", "documents.templ:119", "bloquant", "Champs hors du &lt;form&gt;", "2 relecture"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("ticket page lacks %q", want)
+		}
+	}
+	if strings.Index(body, "Points restants.") > strings.Index(body, `class="diff-file"`) && strings.Contains(body, `class="diff-file"`) {
+		t.Error("review should come before the diff")
+	}
+}

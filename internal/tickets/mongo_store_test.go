@@ -78,3 +78,23 @@ func TestMongoStore_TicketLifecycle(t *testing.T) {
 		t.Error("ticket still present after Delete")
 	}
 }
+
+// Le verdict du relecteur (jalon 36) est persisté et relu.
+func TestMongoStore_ReviewRoundTrips(t *testing.T) {
+	s := newTestMongoStore(t)
+	ctx := context.Background()
+	id := "test-review-" + time.Now().Format("150405.000000")
+	defer s.Delete(ctx, id)
+	tk := Ticket{ID: id, Title: "x", Status: Draft, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := s.Create(ctx, tk); err != nil {
+		t.Fatal(err)
+	}
+	tk.Review = &ReviewResult{Summary: "hors du form", Rounds: 2, Issues: []ReviewIssue{{File: "a.templ", Line: 12, Severity: "bloquant", Message: "remets les champs"}}}
+	if err := s.Update(ctx, tk); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.Get(ctx, id)
+	if err != nil || got.Review == nil || got.Review.Rounds != 2 || len(got.Review.Issues) != 1 || got.Review.Issues[0].Line != 12 {
+		t.Errorf("review = %+v, %v", got.Review, err)
+	}
+}

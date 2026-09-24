@@ -135,10 +135,13 @@ type Ticket struct {
 	Diff   string `bson:"diff,omitempty"`
 	Report string `bson:"report,omitempty"`
 	// Pushed : commit de main poussé vers GitHub depuis ce ticket.
-	Pushed    string    `bson:"pushed,omitempty"`
-	CreatedAt time.Time `bson:"created_at"`
-	UpdatedAt time.Time `bson:"updated_at"`
-	Events    []Event   `bson:"events,omitempty"`
+	Pushed string `bson:"pushed,omitempty"`
+	// Review : verdict du relecteur sur le diff soumis à la revue (jalon
+	// 36) ; nil sans relecteur.
+	Review    *ReviewResult `bson:"review,omitempty"`
+	CreatedAt time.Time     `bson:"created_at"`
+	UpdatedAt time.Time     `bson:"updated_at"`
+	Events    []Event       `bson:"events,omitempty"`
 }
 
 // Store est le port de persistance des tickets.
@@ -230,4 +233,36 @@ type Pusher interface {
 type Verifier interface {
 	Checks(ctx context.Context, dir string) (string, bool)
 	Tests(ctx context.Context, dir, pkg string) (string, bool)
+}
+
+// ReviewRequest est ce que le relecteur reçoit (jalon 36) : le ticket, le
+// plan validé, le diff vérifié et la copie de travail (pour lire autour).
+type ReviewRequest struct {
+	Title, Need, Acceptance, Plan string
+	Diff                          string
+	Dir                           string
+}
+
+// ReviewIssue : une remarque du relecteur. Severity : "bloquant",
+// "important" ou "mineur".
+type ReviewIssue struct {
+	File     string `bson:"file"`
+	Line     int    `bson:"line"`
+	Severity string `bson:"severity"`
+	Message  string `bson:"message"`
+}
+
+// ReviewResult : le verdict du relecteur. Rounds : relectures menées
+// avant ce verdict.
+type ReviewResult struct {
+	Approved bool          `bson:"approved"`
+	Summary  string        `bson:"summary"`
+	Issues   []ReviewIssue `bson:"issues,omitempty"`
+	Rounds   int           `bson:"rounds"`
+}
+
+// Reviewer relit un diff vérifié selon les standards du projet (jalon
+// 36) : ce que les tests ne voient pas.
+type Reviewer interface {
+	Review(ctx context.Context, req ReviewRequest, onStep func(AgentStep)) (ReviewResult, error)
 }

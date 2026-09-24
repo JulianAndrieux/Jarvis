@@ -134,3 +134,11 @@ func shortHash(h string) string {
 	}
 	return h
 }
+
+// issueLocation : « fichier:ligne » d'une remarque de relecture.
+func issueLocation(i tickets.ReviewIssue) string {
+	if i.Line > 0 {
+		return fmt.Sprintf("%s:%d", i.File, i.Line)
+	}
+	return i.File
+}

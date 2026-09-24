@@ -8,7 +8,7 @@ import (
 // (sinon il serait refusé à la première modification) et ses outils.
 func TestDefaults_FourValidAgents(t *testing.T) {
 	defs := Defaults(Models{Documents: "qwen3-8b Q5_K_M", Tickets: "qwen3-8b"})
-	ids := []string{Classification, Extraction, Analysis, Development}
+	ids := []string{Classification, Extraction, Analysis, Development, Review}
 	if len(defs) != len(ids) {
 		t.Fatalf("defs = %d, want %d", len(defs), len(ids))
 	}

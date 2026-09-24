@@ -136,6 +136,9 @@ templ ticketPanelBody(t tickets.Ticket, a TicketActions) {
 			<button class="button-ghost" hx-post={ "/tickets/" + t.ID + "/cancel" } hx-target="#ticket-panel" hx-swap="outerHTML">Annuler le ticket</button>
 		}
 	</div>
+	if t.Review != nil {
+		@reviewBlock(*t.Review)
+	}
 	if t.Diff != "" {
 		<div class="section-title">Diff (branche { t.Branch })</div>
 		@renderDiff(t.Diff)
@@ -198,4 +201,36 @@ templ pushBlock(t tickets.Ticket, a TicketActions) {
 	} else if a.PushKnown && a.UnpushedErr == "" {
 		<p class="muted">main est à jour sur GitHub.</p>
 	}
+}
+
+// reviewBlock : le verdict du relecteur (jalon 36), avant le diff. Texte
+// écrit par un modèle : tout est échappé.
+templ reviewBlock(r tickets.ReviewResult) {
+	<div class="section-title">Relecture</div>
+	<div class={ "card", "review-block", templ.KV("review-ok", r.Approved) }>
+		<p class="review-verdict">
+			if r.Approved {
+				✅ Acceptable pour le relecteur
+			} else if len(r.Issues) > 0 {
+				⚠️ Points restants — à ta décision
+			} else {
+				⚠️ { r.Summary }
+			}
+			<span class="muted"> · { fmt.Sprint(r.Rounds) } relecture(s)</span>
+		</p>
+		if r.Summary != "" && (r.Approved || len(r.Issues) > 0) {
+			<p>{ r.Summary }</p>
+		}
+		if len(r.Issues) > 0 {
+			<ul class="review-issues">
+				for _, i := range r.Issues {
+					<li>
+						<span class={ "chip", templ.KV("chip-failed", i.Severity == "bloquant"), templ.KV("chip-review", i.Severity != "bloquant") }>{ i.Severity }</span>
+						<code>{ issueLocation(i) }</code>
+						{ i.Message }
+					</li>
+				}
+			</ul>
+		}
+	</div>
 }

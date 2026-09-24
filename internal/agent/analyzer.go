@@ -411,6 +411,14 @@ func resultFrom(reply Message, terminal, arg string, textResult bool) (string, b
 		if call.Name != terminal {
 			continue
 		}
+		// arg vide : le résultat est l'ensemble des arguments (JSON), comme
+		// pour submit_review.
+		if arg == "" {
+			if json.Valid([]byte(call.Arguments)) {
+				return call.Arguments, true
+			}
+			continue
+		}
 		var args map[string]any
 		if err := json.Unmarshal([]byte(call.Arguments), &args); err == nil {
 			if v, _ := args[arg].(string); strings.TrimSpace(v) != "" {

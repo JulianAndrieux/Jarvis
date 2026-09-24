@@ -110,6 +110,11 @@ templ Layout(title string, active string) {
 				label { display: block; margin-bottom: .35rem; font-weight: 600; font-size: .85rem; color: var(--text-2); }
 				input[type=text], select, textarea { font: inherit; font-size: .92rem; padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); width: 100%; }
 				textarea { resize: vertical; line-height: 1.45; }
+				/* Relecture des diffs (jalon 36) */
+				.review-block.review-ok { border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+				.review-verdict { font-weight: 700; margin: 0 0 .4rem; }
+				.review-issues { list-style: none; padding: 0; margin: .4rem 0 0; }
+				.review-issues li { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; padding: .3rem 0; border-top: 1px solid var(--border); }
 				/* Barre latérale (jalon 34) */
 				.with-sidebar { display: flex; align-items: flex-start; }
 				.main-col { flex: 1; min-width: 0; }

@@ -32,6 +32,11 @@ type Manager struct {
 	// MaxAttempts : tentatives de développement avant l'échec (0 : 2) —
 	// chaque nouvelle tentative reçoit le rapport de vérification.
 	MaxAttempts int
+	// Reviewer relit le diff vérifié avant la revue humaine (jalon 36) ;
+	// nil : pas de relecture. MaxReviewRounds : allers-retours avec le
+	// développeur avant de laisser l'humain trancher (0 : 2).
+	Reviewer        Reviewer
+	MaxReviewRounds int
 
 	// Deployer active le déploiement à l'acceptation du diff (jalon 30).
 	Deployer Deployer
@@ -432,10 +437,17 @@ func (m *Manager) develop(t Ticket, feedback string) {
 	if attempts <= 0 {
 		attempts = 2
 	}
+	maxReviews := m.MaxReviewRounds
+	if maxReviews <= 0 {
+		maxReviews = 2
+	}
 	var report string
 	failure := fmt.Sprintf("La vérification finale échoue encore après %d tentatives.", attempts)
 	previous := previousAttempts(t.Events)
-	for attempt := 1; attempt <= attempts; attempt++ {
+	// Les allers-retours avec le relecteur ne consomment pas les
+	// tentatives de vérification : chacun en ajoute une.
+	reviews := 0
+	for attempt := 1; attempt <= attempts+reviews; attempt++ {
 		n := previous + attempt
 		m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: fmt.Sprintf("Tentative %d", n)})
 		summary, err := m.Developer.Develop(ctx, DevRequest{
@@ -484,6 +496,15 @@ func (m *Manager) develop(t Ticket, feedback string) {
 			feedback = "Tu as modifié du code Go sans ajouter ni modifier aucun fichier _test.go. Le projet est en TDD strict : écris les tests qui couvrent ta modification."
 			continue
 		}
+		if m.Reviewer != nil {
+			res, sendBack := m.review(ctx, t, dir, diff, reviews, maxReviews)
+			if sendBack {
+				reviews++
+				feedback = "La relecture de ton diff demande des changements :\n" + FormatReview(res) + "\nCorrige ces points (read_file puis edit_file), relance les tests, puis appelle finish."
+				continue
+			}
+			t.Review = &res
+		}
 		if err := m.Workspace.Commit(ctx, dir, fmt.Sprintf("Ticket %s : %s\n\n%s", t.ID, t.Title, summary)); err != nil {
 			m.fail(ctx, t, "Commit impossible : "+err.Error(), report)
 			return
@@ -497,6 +518,66 @@ func (m *Manager) develop(t Ticket, feedback string) {
 		return
 	}
 	m.fail(ctx, t, failure, report)
+}
+
+// review fait relire le diff vérifié (jalon 36). sendBack : le relecteur
+// demande des changements et il reste des allers-retours. Une relecture
+// impossible ne bloque jamais : le diff va à la revue humaine avec la
+// raison.
+func (m *Manager) review(ctx context.Context, t Ticket, dir, diff string, done, max int) (res ReviewResult, sendBack bool) {
+	m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: "Relecture du diff"})
+	res, err := m.Reviewer.Review(ctx, ReviewRequest{
+		Title: t.Title, Need: t.Need, Acceptance: t.Acceptance, Plan: t.Plan, Diff: withoutGenerated(diff), Dir: dir,
+	}, func(s AgentStep) {
+		m.event(ctx, t.ID, Event{Kind: EventStep, Author: AuthorAgent, Text: "Relecture : " + s.Summary, Detail: clip(s.Detail, m.detailChars())})
+	})
+	if err != nil {
+		m.event(ctx, t.ID, Event{Kind: EventError, Author: AuthorAgent, Text: "Relecture impossible : " + err.Error()})
+		return ReviewResult{Summary: "Relecture impossible : " + err.Error(), Rounds: done + 1}, false
+	}
+	res.Rounds = done + 1
+	switch {
+	case res.Approved:
+		m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: "Relecture : acceptable", Detail: FormatReview(res)})
+	case done < max:
+		m.event(ctx, t.ID, Event{Kind: EventError, Author: AuthorAgent, Text: "Relecture : à reprendre", Detail: FormatReview(res)})
+		return res, true
+	default:
+		m.event(ctx, t.ID, Event{Kind: EventError, Author: AuthorAgent, Text: fmt.Sprintf("Relecture : points restants après %d allers-retours — à ta décision", max), Detail: FormatReview(res)})
+	}
+	return res, false
+}
+
+// withoutGenerated : le diff sans les fichiers générés (_templ.go) — vu
+// en réel, ils noyaient le vrai changement dans ce que lisait le
+// relecteur.
+func withoutGenerated(diff string) string {
+	var b strings.Builder
+	skip := false
+	for _, line := range strings.SplitAfter(diff, "\n") {
+		if rest, ok := strings.CutPrefix(line, "diff --git "); ok {
+			skip = strings.Contains(rest, "_templ.go")
+		}
+		if !skip {
+			b.WriteString(line)
+		}
+	}
+	return b.String()
+}
+
+// FormatReview : le verdict en texte (fil du ticket, consigne du
+// développeur).
+func FormatReview(r ReviewResult) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(r.Summary))
+	for _, i := range r.Issues {
+		fmt.Fprintf(&b, "\n- [%s] %s", i.Severity, i.File)
+		if i.Line > 0 {
+			fmt.Fprintf(&b, ":%d", i.Line)
+		}
+		b.WriteString(" : " + i.Message)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // untestedGoChange : le diff ajoute ou modifie du code Go sans toucher

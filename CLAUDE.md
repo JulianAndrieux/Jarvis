@@ -2294,6 +2294,59 @@ spécifique à `localhost`.
     absent ; les adresses d'aperçu sans fichier répondent une page lisible
     (`webapp.ConversionFailed`, préfixe d'erreur défini à un seul
     endroit).
+- **Essai de modèles de code sur le Mac (après le jalon 35).** Décision de
+  l'utilisateur : essais sur le Mac, "pas besoin de vitesse, juste de
+  résultat". Candidats argumentés (scores publiés par les éditeurs) :
+  **Qwen3.6-27B** (dense, SWE-bench Verified 77,2, Apache 2.0, 262k de
+  contexte, Q4_K_M 16,8 Go) et **Devstral Small 2 24B** (68,0, Apache 2.0
+  — licence vérifiée sur la fiche officielle de Mistral, 256k, Q4_K_M
+  14,3 Go) ; poids dans `~/models`. Réglages d'agent ajoutés :
+  `--agent-tool-output-chars`, `--agent-thinking`, `--agent-temperature`.
+  - **Mémoire** : macOS laisse ~17,8 Go au GPU (M3, 24 Go). Qwen3.6-27B ne
+    tient qu'avec 8k de contexte (16k et 32k : « Insufficient Memory »,
+    même avec `--fit`, `-ngl 40`, `-ub 256` ou un cache en 8 bits) — pas
+    un vrai test. **Devstral tient avec 32k** (cache 8 bits, 5,9 jetons/s).
+    Pièges : `-np` par défaut crée 4 emplacements de 32k ; « modèle prêt »
+    (`/health`) ne garantit pas que le calcul passe — une vraie requête de
+    contrôle s'impose. Les modèles de documents (~12 Go) sont arrêtés
+    pendant un essai.
+  - **Devstral, ticket d'exemple, bout en bout** : analyse 10 min (plan
+    juste), développement 11 min en 12 étapes (une seule modification) —
+    **premier diff réussi de l'agent**. Mais les champs de date sont sortis
+    du `<form>` (plus envoyés), tous les tests passant ; après « Demander
+    des changements », corrigé en 6 min 30 — sauf que la capture montre
+    les dates **à droite**, pas en dessous. Test de garde ajouté
+    (`TestDocuments_DateFieldsAreInsideTheSearchForm`, échoue sur le 1er
+    diff).
+- **Jalon 36 — relecture des diffs par un agent : mécanisme fait ; le
+  relecteur Devstral s'est révélé non fiable sur le cas réel.** Demandé :
+  "un agent qui relit et évalue la qualité du code produit selon des
+  standards qu'on définit".
+  - `agent.Reviewer` (lecture seule, fin par `submit_review` : verdict
+    `acceptable`/`a_reprendre`, résumé, remarques fichier/ligne/gravité ;
+    verdict mal formé renvoyé au modèle ; une remarque « bloquant »
+    empêche l'acceptation). Standards = son prompt, agent « Relecture de
+    code » de l'onglet Agents (`agent.DefaultReviewPrompt` tiré de
+    CLAUDE.md et de l'essai). `tickets.Manager` : après vérification
+    finale et contrôle TDD, relecture ; « à reprendre » relance le
+    développeur avec les remarques (`MaxReviewRounds`, 2 ; sans consommer
+    ses tentatives) ; ensuite, ou si la relecture échoue, le diff va
+    **toujours** à la revue humaine, verdict et remarques affichés avant
+    le diff (`Ticket.Review`, persisté). `--agent-review` (défaut vrai),
+    même modèle à température 0. Le relecteur ne reçoit que les fichiers
+    écrits à la main (vu : les `_templ.go` générés noyaient le vrai
+    changement).
+  - **Essai réel (Devstral développeur et relecteur)** : le développeur a
+    ajouté cette fois un style `.date-filters`, mais a de nouveau sorti
+    les champs du `<form>` ; **le relecteur a conclu « acceptable »**.
+    Rejoué seul sur le diff propre, avec les standards par défaut puis
+    avec une consigne imposant de citer les lignes du `<form>` : il lit
+    bien ces lignes et affirme à tort que les champs y sont. Un modèle
+    qui relit ses propres diffs partage ses angles morts. Pistes : un
+    relecteur plus fort (Qwen3.6-27B, limite GPU à relever), des
+    **normes vérifiées par des tests** pour les défauts récurrents (cf.
+    jalon 9 ; le test de garde ci-dessus l'aurait arrêté), une relecture
+    visuelle (capture + modèle de vision).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 
