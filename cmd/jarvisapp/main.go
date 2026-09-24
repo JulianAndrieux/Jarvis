@@ -35,6 +35,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/gate"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
+	"github.com/JulianAndrieux/Jarvis/internal/models"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
@@ -75,6 +76,7 @@ func main() {
 	agentModel := flag.String("agent-model", "", "Modèle de l'agent des tickets ; vide = --llm-model")
 	agentToolOutput := flag.Int("agent-tool-output-chars", 3000, "Taille maximale (caractères) d'une sortie d'outil de l'agent — 3000 pour Qwen3-8B à 8k jetons ; plus pour un modèle à grand contexte")
 	agentThinking := flag.Bool("agent-thinking", false, "Laisser l'agent des tickets réfléchir avant de répondre (sinon /no_think) — plus lent, meilleur sur les modèles qui en tirent parti")
+	modelsFile := flag.String("models-file", "", "Profils de modèles (documents / code) que jarvisapp charge selon le travail — écrit par le lanceur (jalon 37) ; vide : les serveurs de modèles sont gérés ailleurs")
 	agentReview := flag.Bool("agent-review", true, "Relecture du diff vérifié par un agent, selon les standards (onglet Agents), avant la revue humaine (jalon 36)")
 	agentTemperature := flag.Float64("agent-temperature", 0, "Température de l'agent des tickets (0 : déterministe ; Qwen recommande 0,6 pour le code)")
 	agentMaxTokens := flag.Int("agent-max-tokens", 2048, "Jetons générés au plus par réponse de l'agent des tickets (0 : pas de limite) — une réécriture qui s'emballe est coupée vite au lieu de saturer le contexte")
@@ -252,6 +254,26 @@ func main() {
 	// des documents : les modèles locaux ne sont jamais sollicités par
 	// les deux en même temps (cf. jalon 21 bis).
 	modelGate := gate.New(1)
+	if *modelsFile != "" {
+		mc, err := models.LoadConfig(*modelsFile)
+		if err != nil {
+			log.Fatalf("jarvisapp: %v", err)
+		}
+		switcher := &models.Switcher{Config: mc, Runner: models.ProcessRunner{Binary: mc.Binary, LogDir: mc.LogDir}, Log: log.Printf}
+		modelGate.Switch = switcher.Use
+		// Au démarrage, les modèles de documents (l'usage courant), à son
+		// tour dans la file : jamais pendant un ticket.
+		go func() {
+			release, err := modelGate.AcquireFor(context.Background(), gate.Documents)
+			if err != nil {
+				log.Printf("jarvisapp: modèles de documents : %v", err)
+				return
+			}
+			release()
+			log.Printf("jarvisapp: modèles de documents prêts")
+		}()
+		log.Printf("jarvisapp: bascule des modèles activée (%s)", *modelsFile)
+	}
 	jobs.Gate = modelGate
 	ticketsCtx, cancelTickets := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelTickets()

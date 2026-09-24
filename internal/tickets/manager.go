@@ -391,7 +391,11 @@ func (m *Manager) transition(ctx context.Context, id string, to Status, label st
 func (m *Manager) analyze(t Ticket, req AnalysisRequest) {
 	ctx := context.Background()
 	if m.Gate != nil {
-		release := m.Gate.Acquire()
+		release, err := m.Gate.AcquireFor(ctx, gate.Code)
+		if err != nil {
+			m.fail(ctx, t, "Modèle de code indisponible : "+err.Error(), "")
+			return
+		}
 		defer release()
 	}
 	plan, err := m.Analyst.Analyze(ctx, req, func(s AgentStep) {
@@ -420,7 +424,11 @@ func (m *Manager) analyze(t Ticket, req AnalysisRequest) {
 func (m *Manager) develop(t Ticket, feedback string) {
 	ctx := context.Background()
 	if m.Gate != nil {
-		release := m.Gate.Acquire()
+		release, err := m.Gate.AcquireFor(ctx, gate.Code)
+		if err != nil {
+			m.fail(ctx, t, "Modèle de code indisponible : "+err.Error(), "")
+			return
+		}
 		defer release()
 	}
 	dir, err := m.Workspace.Prepare(ctx, t.ID)

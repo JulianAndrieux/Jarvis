@@ -22,6 +22,7 @@ import (
 
 	"github.com/JulianAndrieux/Jarvis/internal/deploy"
 	"github.com/JulianAndrieux/Jarvis/internal/launcher"
+	"github.com/JulianAndrieux/Jarvis/internal/models"
 )
 
 func main() {
@@ -109,45 +110,28 @@ func run(jarvisDir, home string) error {
 	logDir := filepath.Join(jarvisDir, "logs")
 	var started []*exec.Cmd
 
-	vlmAddr := fmt.Sprintf("127.0.0.1:%d", cfg.VLMPort)
-	if launcher.PortOpen(vlmAddr, 300*time.Millisecond) {
-		log.Printf("VLM : un serveur écoute déjà sur %s, réutilisé tel quel", vlmAddr)
-	} else {
-		log.Printf("VLM : démarrage de %s...", cfg.LlamaServerBinary)
-		cmd, err := launcher.StartProcess(cfg.LlamaServerBinary, launcher.ArgsForVLM(cfg), nil, cfg.RepoDir, filepath.Join(logDir, "vlm.log"))
-		if err != nil {
-			return fmt.Errorf("démarrage VLM : %w", err)
+	// Jalon 37 : avec un modèle de code, jarvisapp gère lui-même les
+	// serveurs de modèles par profil (documents / code : ils ne tiennent
+	// pas ensemble en mémoire). Le lanceur décrit les profils et ne les
+	// démarre plus — sinon il prendrait l'arrêt d'un serveur, lors d'une
+	// bascule, pour une panne et fermerait tout.
+	if cfg.CodeEnabled() {
+		if err := checkFileExists("modèle de code", cfg.CodeModelPath); err != nil {
+			return err
 		}
-		started = append(started, cmd)
-	}
-
-	llmAddr := fmt.Sprintf("127.0.0.1:%d", cfg.LLMPort)
-	if launcher.PortOpen(llmAddr, 300*time.Millisecond) {
-		log.Printf("LLM : un serveur écoute déjà sur %s, réutilisé tel quel", llmAddr)
-	} else {
-		log.Printf("LLM : démarrage de %s...", cfg.LlamaServerBinary)
-		cmd, err := launcher.StartProcess(cfg.LlamaServerBinary, launcher.ArgsForLLM(cfg), nil, cfg.RepoDir, filepath.Join(logDir, "llm.log"))
-		if err != nil {
-			return fmt.Errorf("démarrage LLM : %w", err)
+		if cfg.ModelsFile == "" {
+			cfg.ModelsFile = filepath.Join(jarvisDir, "models.json")
 		}
-		started = append(started, cmd)
+		if err := models.SaveConfig(cfg.ModelsFile, launcher.ModelProfiles(cfg, logDir)); err != nil {
+			return fmt.Errorf("profils de modèles : %w", err)
+		}
+		log.Printf("modèles : profils écrits dans %s (jarvisapp charge le bon profil selon le travail)", cfg.ModelsFile)
+	} else {
+		var err error
+		if started, err = startDocumentModels(cfg, logDir); err != nil {
+			return err
+		}
 	}
-
-	// Chargement à froid observé jusqu'à ~30s (CLAUDE.md, "Performances
-	// observées") ; 5 min de marge large plutôt qu'un timeout serré.
-	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	log.Printf("VLM : attente de %s/health...", vlmAddr)
-	if err := launcher.WaitHealthy(healthCtx, "http://"+vlmAddr+"/health", 2*time.Second); err != nil {
-		terminateAll(started)
-		return fmt.Errorf("VLM jamais prêt : %w", err)
-	}
-	log.Printf("LLM : attente de %s/health...", llmAddr)
-	if err := launcher.WaitHealthy(healthCtx, "http://"+llmAddr+"/health", 2*time.Second); err != nil {
-		terminateAll(started)
-		return fmt.Errorf("LLM jamais prêt : %w", err)
-	}
-	log.Printf("VLM et LLM prêts.")
 
 	appLog := filepath.Join(logDir, "jarvisapp.log")
 	startApp := func() (*exec.Cmd, error) {
@@ -183,6 +167,52 @@ func run(jarvisDir, home string) error {
 
 	waitForShutdown(started, app, startApp, filepath.Join(jarvisDir, "deploy.json"), appLog)
 	return nil
+}
+
+// startDocumentModels démarre les serveurs VLM et LLM (sans modèle de
+// code : comportement d'avant le jalon 37) et attend qu'ils soient prêts.
+func startDocumentModels(cfg launcher.Config, logDir string) ([]*exec.Cmd, error) {
+	var started []*exec.Cmd
+	vlmAddr := fmt.Sprintf("127.0.0.1:%d", cfg.VLMPort)
+	if launcher.PortOpen(vlmAddr, 300*time.Millisecond) {
+		log.Printf("VLM : un serveur écoute déjà sur %s, réutilisé tel quel", vlmAddr)
+	} else {
+		log.Printf("VLM : démarrage de %s...", cfg.LlamaServerBinary)
+		cmd, err := launcher.StartProcess(cfg.LlamaServerBinary, launcher.ArgsForVLM(cfg), nil, cfg.RepoDir, filepath.Join(logDir, "vlm.log"))
+		if err != nil {
+			return started, fmt.Errorf("démarrage VLM : %w", err)
+		}
+		started = append(started, cmd)
+	}
+
+	llmAddr := fmt.Sprintf("127.0.0.1:%d", cfg.LLMPort)
+	if launcher.PortOpen(llmAddr, 300*time.Millisecond) {
+		log.Printf("LLM : un serveur écoute déjà sur %s, réutilisé tel quel", llmAddr)
+	} else {
+		log.Printf("LLM : démarrage de %s...", cfg.LlamaServerBinary)
+		cmd, err := launcher.StartProcess(cfg.LlamaServerBinary, launcher.ArgsForLLM(cfg), nil, cfg.RepoDir, filepath.Join(logDir, "llm.log"))
+		if err != nil {
+			return started, fmt.Errorf("démarrage LLM : %w", err)
+		}
+		started = append(started, cmd)
+	}
+
+	// Chargement à froid observé jusqu'à ~30s (CLAUDE.md, "Performances
+	// observées") ; 5 min de marge large plutôt qu'un timeout serré.
+	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	log.Printf("VLM : attente de %s/health...", vlmAddr)
+	if err := launcher.WaitHealthy(healthCtx, "http://"+vlmAddr+"/health", 2*time.Second); err != nil {
+		terminateAll(started)
+		return nil, fmt.Errorf("VLM jamais prêt : %w", err)
+	}
+	log.Printf("LLM : attente de %s/health...", llmAddr)
+	if err := launcher.WaitHealthy(healthCtx, "http://"+llmAddr+"/health", 2*time.Second); err != nil {
+		terminateAll(started)
+		return nil, fmt.Errorf("LLM jamais prêt : %w", err)
+	}
+	log.Printf("VLM et LLM prêts.")
+	return started, nil
 }
 
 func checkFileExists(label, path string) error {

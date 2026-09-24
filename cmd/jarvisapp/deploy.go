@@ -60,7 +60,8 @@ func settleDeployment(ctx context.Context, markerPath string, tm *tickets.Manage
 
 // smokeTest : l'essai à blanc d'une nouvelle version — mêmes options que
 // le processus courant, mais port libre, collections jetables, ni dossier
-// surveillé, ni copie locale, ni marqueur de déploiement.
+// surveillé, ni copie locale, ni marqueur de déploiement, ni gestion des
+// modèles.
 func smokeTest(jobsCollection, ticketsCollection string) func(ctx context.Context, binary string) (string, error) {
 	return func(ctx context.Context, binary string) (string, error) {
 		addr, err := deploy.FreeAddr()
@@ -74,6 +75,9 @@ func smokeTest(jobsCollection, ticketsCollection string) func(ctx context.Contex
 			"watch-dir":          "",
 			"out-dir":            "",
 			"deploy-marker":      filepath.Join(os.TempDir(), "jarvis-deploycheck.json"),
+			// Jalon 37 : l'essai à blanc ne touche jamais aux modèles (il
+			// arrêterait ceux de l'application en service).
+			"models-file": "",
 		})
 		s := deploy.Smoke{Args: args, Env: os.Environ(), Addr: addr, Paths: []string{"/", "/documents", "/tickets", "/admin/architecture"}}
 		return s.Run(ctx, binary)

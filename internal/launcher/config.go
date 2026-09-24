@@ -41,6 +41,17 @@ type Config struct {
 	// MongoURI n'est JAMAIS deviné ni pré-rempli par DefaultConfig — voir
 	// cmd/jarvis-launcher : demandé une fois via une boîte de dialogue
 	// macOS au premier lancement, puis mémorisé ici.
+	// Modèle de code (jalon 37) : Devstral Small 2 pour l'agent des tickets.
+	// Renseigné, le lanceur ne démarre plus lui-même les serveurs de
+	// modèles : il décrit les profils (documents, code) dans ModelsFile et
+	// jarvisapp bascule de l'un à l'autre (ils ne tiennent pas ensemble en
+	// mémoire). Vide : comportement d'avant.
+	CodeModelPath  string `json:"code_model_path,omitempty"`
+	CodeMMProjPath string `json:"code_mmproj_path,omitempty"` // vision (relecture visuelle)
+	CodeModel      string `json:"code_model,omitempty"`
+	CodePort       int    `json:"code_port,omitempty"`
+	ModelsFile     string `json:"models_file,omitempty"`
+
 	MongoURI        string `json:"mongo_uri"`
 	MongoDB         string `json:"mongo_db"`
 	MongoCollection string `json:"mongo_collection"`
@@ -72,10 +83,15 @@ func DefaultConfig(homeDir, repoDir string) Config {
 		LLMModel:        "qwen3-8b",
 		LLMModelVersion: "Q5_K_M",
 
+		ModelsFile: filepath.Join(homeDir, ".jarvis", "models.json"),
+
 		MongoDB:         "jarvis",
 		MongoCollection: "jobs",
 	}
 }
+
+// CodeEnabled : un modèle de code est configuré (jalon 37).
+func (c Config) CodeEnabled() bool { return c.CodeModelPath != "" }
 
 // LoadConfig lit et décode le fichier JSON à path. Si le fichier
 // n'existe pas, l'erreur satisfait errors.Is(err, os.ErrNotExist) — à

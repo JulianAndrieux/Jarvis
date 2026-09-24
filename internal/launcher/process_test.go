@@ -159,3 +159,55 @@ func TestStartProcess_PassesTheGivenEnvironment(t *testing.T) {
 		t.Errorf("log = %q, want the variable seen by the process", b)
 	}
 }
+
+// Jalon 37 : avec un modèle de code configuré, le lanceur décrit les deux
+// profils (documents, code) et jarvisapp les gère ; l'agent des tickets
+// pointe vers le modèle de code.
+func codeConfig() Config {
+	cfg := testConfig()
+	cfg.CodeModelPath = "/home/andri/models/devstral/Devstral.gguf"
+	cfg.CodeMMProjPath = "/home/andri/models/devstral/mmproj-F16.gguf"
+	cfg.CodeModel = "devstral-small-2"
+	cfg.CodePort = 8082
+	return cfg
+}
+
+func TestModelProfiles(t *testing.T) {
+	if testConfig().CodeEnabled() {
+		t.Fatal("code enabled without a code model")
+	}
+	cfg := codeConfig()
+	mc := ModelProfiles(cfg, "/home/andri/.jarvis/logs")
+	docs, code := mc.Profiles["documents"], mc.Profiles["code"]
+	if len(docs) != 2 || docs[0].Port != 8080 || docs[1].Port != 8081 || !containsFlag(docs[0].Args, "--port", "8080") {
+		t.Errorf("documents = %+v", docs)
+	}
+	if len(code) != 1 || code[0].Port != 8082 || !containsFlag(code[0].Args, "-m", cfg.CodeModelPath) || !containsFlag(code[0].Args, "--mmproj", cfg.CodeMMProjPath) || !containsFlag(code[0].Args, "--ctx-size", "32768") || !containsFlag(code[0].Args, "-np", "1") {
+		t.Errorf("code = %+v", code)
+	}
+	if mc.Binary != "llama-server" || mc.LogDir != "/home/andri/.jarvis/logs" {
+		t.Errorf("binary/logs = %q %q", mc.Binary, mc.LogDir)
+	}
+}
+
+func TestArgsForJarvisApp_CodeModelWiring(t *testing.T) {
+	args := ArgsForJarvisApp(codeConfig())
+	for _, pair := range [][2]string{
+		{"--models-file", "/home/andri/.jarvis/models.json"},
+		{"--agent-url", "http://127.0.0.1:8082/v1"},
+		{"--agent-model", "devstral-small-2"},
+		{"--agent-context-chars", "55000"},
+		{"--agent-tool-output-chars", "12000"},
+		{"--agent-max-tokens", "12288"},
+		{"--agent-temperature", "0.15"},
+	} {
+		if !containsFlag(args, pair[0], pair[1]) {
+			t.Errorf("args lack %s %s: %v", pair[0], pair[1], args)
+		}
+	}
+	for _, a := range ArgsForJarvisApp(testConfig()) {
+		if a == "--models-file" {
+			t.Error("models file without a code model")
+		}
+	}
+}

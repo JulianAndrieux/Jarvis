@@ -2294,7 +2294,8 @@ spécifique à `localhost`.
     absent ; les adresses d'aperçu sans fichier répondent une page lisible
     (`webapp.ConversionFailed`, préfixe d'erreur défini à un seul
     endroit).
-- **Essai de modèles de code sur le Mac (après le jalon 35).** Décision de
+- **Essai de modèles de code sur le Mac (après le jalon 35) : fait,
+  Devstral Small 2 retenu.** Décision de
   l'utilisateur : essais sur le Mac, "pas besoin de vitesse, juste de
   résultat". Candidats argumentés (scores publiés par les éditeurs) :
   **Qwen3.6-27B** (dense, SWE-bench Verified 77,2, Apache 2.0, 262k de
@@ -2347,6 +2348,36 @@ spécifique à `localhost`.
     **normes vérifiées par des tests** pour les défauts récurrents (cf.
     jalon 9 ; le test de garde ci-dessus l'aurait arrêté), une relecture
     visuelle (capture + modèle de vision).
+- **Jalon 37 — bascule des modèles par profil : fait, en attente de
+  validation utilisateur.** Les modèles de documents (VLM + Qwen3-8B,
+  ~12 Go) et Devstral (~16 Go) ne tiennent pas ensemble sur le Mac :
+  Jarvis charge le bon profil selon le travail.
+  - `internal/models` (nouveau) : `Switcher.Use(profil)` arrête d'abord les
+    serveurs des autres profils (la mémoire ne tient pas les deux), démarre
+    ceux du profil qui ne répondent pas, attend `/health` ; déjà chargé :
+    rien ; serveur mort : relancé ; serveur commun à deux profils : gardé.
+    `ProcessRunner` : `llama-server` détaché (son propre groupe : il survit
+    à un redémarrage de jarvisapp), arrêt par le port (`lsof`, SIGTERM puis
+    SIGKILL) — un serveur lancé à la main est géré pareil. Testé avec de
+    vrais processus (le binaire de test joue un faux serveur).
+  - `gate.Gate.AcquireFor(profil)` : la bascule a lieu pendant qu'on détient
+    la file, donc jamais pendant un autre traitement. Documents →
+    « documents » ; analyse et développement des tickets → « code » ; une
+    bascule impossible fait échouer avec la raison. `Acquire()` (attente du
+    calme avant un déploiement) ne bascule pas.
+  - **Lanceur** : `code_model_path` (+ `code_mmproj_path`, `code_model`,
+    `code_port`) dans `launcher.json` → il écrit les profils dans
+    `~/.jarvis/models.json`, **ne démarre plus lui-même les serveurs de
+    modèles** (sinon il prendrait l'arrêt d'un serveur lors d'une bascule
+    pour une panne et fermerait tout) et passe à jarvisapp `--models-file`
+    et les réglages de l'agent mesurés sur Devstral (32k de contexte,
+    sorties d'outils 12000, 12288 jetons, température 0,15). Sans modèle de
+    code : comportement d'avant. jarvisapp charge « documents » au
+    démarrage (dans la file) ; l'essai à blanc d'un déploiement ne gère
+    jamais les modèles (`--models-file ""`).
+  - Mesuré : Devstral **avec son module de vision** (mmproj F16, 0,9 Go)
+    tient avec 32k de contexte ; il lit une capture (« le champ de date se
+    trouve en dessous du cadre bleu ») — base de la relecture visuelle.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

@@ -206,7 +206,14 @@ type runFunc func(ctx context.Context, path string, onProgress pipeline.Progress
 // (zip, dmg...) se terminent sans conversion ni pipeline.
 func (m *JobManager) process(job Job, run runFunc) {
 	ctx := context.Background()
-	release := m.acquire()
+	release, err := m.acquire(ctx)
+	if err != nil {
+		// Bascule vers les modèles de documents impossible (jalon 37) :
+		// la raison plutôt qu'une connexion refusée plus loin.
+		job.StartedAt = time.Now()
+		m.finish(ctx, job, pipeline.Result{}, fmt.Errorf("modèles de documents indisponibles : %w", err))
+		return
+	}
 	defer release()
 
 	job.Status = StatusRunning
@@ -239,11 +246,11 @@ func (m *JobManager) process(job Job, run runFunc) {
 	m.finish(ctx, job, result, err)
 }
 
-// acquire réserve une place dans la file globale et retourne la fonction
-// qui la libère.
-func (m *JobManager) acquire() func() {
+// acquire réserve une place dans la file globale (et y charge les
+// modèles de documents, jalon 37) et retourne la fonction qui la libère.
+func (m *JobManager) acquire(ctx context.Context) (func(), error) {
 	if m.Gate != nil {
-		return m.Gate.Acquire()
+		return m.Gate.AcquireFor(ctx, gate.Documents)
 	}
 	m.semOnce.Do(func() {
 		n := m.Concurrency
@@ -253,7 +260,7 @@ func (m *JobManager) acquire() func() {
 		m.sem = make(chan struct{}, n)
 	})
 	m.sem <- struct{}{}
-	return func() { <-m.sem }
+	return func() { <-m.sem }, nil
 }
 
 // familyOf retourne la famille du fichier d'un job ; un job antérieur au

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/JulianAndrieux/Jarvis/internal/gate"
 )
 
 // Jalon 36 : un relecteur (agent) relit le diff vérifié avant la revue
@@ -130,5 +132,28 @@ func TestReview_DiffWithoutGeneratedFiles(t *testing.T) {
 	got := withoutGenerated(diff)
 	if strings.Contains(got, "templ_7745") || !strings.Contains(got, "+<div>") || !strings.Contains(got, "+x := 1") {
 		t.Errorf("withoutGenerated =\n%s", got)
+	}
+}
+
+// Jalon 37 : l'analyse et le développement chargent le profil « code » ;
+// une bascule impossible fait échouer le ticket avec la raison.
+func TestManager_SwitchesToCodeModels(t *testing.T) {
+	m, s := newManager(&fakeAnalyst{plan: "## Étapes\n1. x"})
+	g := gate.New(1)
+	var profiles []string
+	g.Switch = func(ctx context.Context, p string) error { profiles = append(profiles, p); return nil }
+	m.Gate = g
+	tk, _ := m.Create(context.Background(), "t", "besoin", "")
+	m.StartAnalysis(context.Background(), tk.ID)
+	waitTicket(t, s, tk.ID, PlanReady)
+	if len(profiles) != 1 || profiles[0] != gate.Code {
+		t.Errorf("profiles = %v", profiles)
+	}
+	g.Switch = func(ctx context.Context, p string) error { return errors.New("Devstral jamais prêt") }
+	tk2, _ := m.Create(context.Background(), "t2", "besoin", "")
+	m.StartAnalysis(context.Background(), tk2.ID)
+	failed := waitTicket(t, s, tk2.ID, Failed)
+	if last := failed.Events[len(failed.Events)-1]; !strings.Contains(last.Text, "Devstral jamais prêt") {
+		t.Errorf("last event = %+v", last)
 	}
 }

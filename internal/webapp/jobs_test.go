@@ -1088,3 +1088,27 @@ func TestConversionFailed(t *testing.T) {
 		}
 	}
 }
+
+// Jalon 37 : un document charge le profil « documents » avant son
+// traitement ; si la bascule échoue, le document échoue avec la raison
+// (plutôt qu'une connexion refusée plus loin).
+func TestJobManager_SwitchesToDocumentModels(t *testing.T) {
+	store := NewFakeStore()
+	g := gate.New(1)
+	var profiles []string
+	g.Switch = func(ctx context.Context, p string) error { profiles = append(profiles, p); return nil }
+	m := NewJobManager(store, &fakeRunner{result: pipeline.Result{DocType: "facture"}})
+	m.WorkDir, m.Gate = t.TempDir(), g
+	job, _ := m.Submit(context.Background(), "a.pdf", []byte("%PDF"))
+	waitStatus(t, store, job.ID, StatusDone)
+	if len(profiles) != 1 || profiles[0] != gate.Documents {
+		t.Errorf("profiles = %v", profiles)
+	}
+
+	g.Switch = func(ctx context.Context, p string) error { return errors.New("VLM jamais prêt") }
+	job, _ = m.Submit(context.Background(), "b.pdf", []byte("%PDF"))
+	failed := waitStatus(t, store, job.ID, StatusFailed)
+	if !strings.Contains(failed.Err, "VLM jamais prêt") {
+		t.Errorf("err = %q", failed.Err)
+	}
+}

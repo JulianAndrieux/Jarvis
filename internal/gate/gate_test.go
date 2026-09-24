@@ -1,6 +1,8 @@
 package gate
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -46,4 +48,43 @@ func TestGate_ZeroMeansOne(t *testing.T) {
 	}
 	release()
 	<-done
+}
+
+// Jalon 37 : AcquireFor charge le profil de modèles demandé pendant qu'on
+// détient la porte (jamais pendant un autre traitement).
+func TestGate_AcquireForSwitchesWhileHeld(t *testing.T) {
+	g := New(1)
+	var got []string
+	g.Switch = func(ctx context.Context, profile string) error {
+		got = append(got, profile)
+		return nil
+	}
+	release, err := g.AcquireFor(context.Background(), Code)
+	if err != nil || len(got) != 1 || got[0] != Code {
+		t.Fatalf("err = %v, switched = %v", err, got)
+	}
+	release()
+	// Sans bascule configurée : simple acquisition.
+	plain := New(1)
+	r, err := plain.AcquireFor(context.Background(), Documents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r()
+}
+
+// Bascule impossible : la porte est rendue et l'erreur remonte.
+func TestGate_AcquireForReleasesOnSwitchError(t *testing.T) {
+	g := New(1)
+	g.Switch = func(ctx context.Context, profile string) error { return errors.New("modèle introuvable") }
+	if _, err := g.AcquireFor(context.Background(), Documents); err == nil {
+		t.Fatal("error swallowed")
+	}
+	done := make(chan struct{})
+	go func() { g.Acquire()(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("gate still held after a failed switch")
+	}
 }
