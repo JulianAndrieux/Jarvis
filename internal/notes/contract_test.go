@@ -43,7 +43,7 @@ func storeContract(t *testing.T, s Store, stamp string) {
 	// recherche insensible à la casse sur titre, texte et tags.
 	for _, x := range []Note{
 		{ID: id("n2"), Title: "Idées " + stamp, Body: "Voyage au JAPON", UpdatedAt: at(9), CreatedAt: at(1)},
-		{ID: id("n3"), Title: "Réunion " + stamp, Tags: []string{"travail"}, UpdatedAt: at(7), CreatedAt: at(2), DocIDs: []string{"doc-2"}},
+		{ID: id("n3"), Title: "Réunion " + stamp, Tags: []string{"travail"}, UpdatedAt: at(7), CreatedAt: at(2), DocIDs: []string{"doc-2"}, MailID: "mail-" + stamp},
 	} {
 		if err := s.CreateNote(ctx, x); err != nil {
 			t.Fatal(err)
@@ -68,6 +68,7 @@ func storeContract(t *testing.T, s Store, stamp string) {
 		{Search: stamp, Tag: "travail"}: "n3",
 		{Search: "MAISON"}:              "n1", // un tag
 		{Search: stamp, DocID: "doc-2"}: "n3",
+		{MailID: "mail-" + stamp}:       "n3",
 	} {
 		ns, err := s.ListNotes(ctx, q)
 		if err != nil {
@@ -87,7 +88,7 @@ func storeContract(t *testing.T, s Store, stamp string) {
 	// Tâches : aller-retour, filtres par note et document.
 	tasks := []Task{
 		{ID: id("t1"), Title: "Acheter du lait", Due: "2026-09-24", Priority: High, NoteID: n.ID, CreatedAt: at(0)},
-		{ID: id("t2"), Title: "Relire le devis", DocID: "doc-2", CreatedAt: at(1)},
+		{ID: id("t2"), Title: "Relire le devis", DocID: "doc-2", MailID: "mail-" + stamp, CreatedAt: at(1)},
 	}
 	for _, x := range tasks {
 		if err := s.CreateTask(ctx, x); err != nil {
@@ -107,8 +108,9 @@ func storeContract(t *testing.T, s Store, stamp string) {
 	}
 	byNote, _ := s.ListTasks(ctx, TaskQuery{NoteID: n.ID})
 	byDoc, _ := s.ListTasks(ctx, TaskQuery{DocID: "doc-2"})
-	if len(byNote) != 1 || byNote[0].ID != id("t1") || len(byDoc) < 1 {
-		t.Errorf("ListTasks by note = %+v, by doc = %+v", byNote, byDoc)
+	byMail, _ := s.ListTasks(ctx, TaskQuery{MailID: "mail-" + stamp})
+	if len(byNote) != 1 || byNote[0].ID != id("t1") || len(byDoc) < 1 || len(byMail) != 1 || byMail[0].ID != id("t2") {
+		t.Errorf("ListTasks by note = %+v, by doc = %+v, by mail = %+v", byNote, byDoc, byMail)
 	}
 	if err := s.UpdateTask(ctx, Task{ID: id("absente")}); err == nil {
 		t.Error("UpdateTask(unknown) = nil")

@@ -6,12 +6,14 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
 	"github.com/JulianAndrieux/Jarvis/internal/extraction"
+	"github.com/JulianAndrieux/Jarvis/internal/mail"
 )
 
 // Identifiants des agents (clé MongoDB, URL /agents/{id}).
 const (
 	Classification = "classification"
 	Extraction     = "extraction"
+	MailTriage     = "mail_triage"
 	Analysis       = "analysis"
 	Development    = "development"
 	Review         = "review"
@@ -42,6 +44,13 @@ func Defaults(m Models) []Definition {
 			DefaultPrompt: extraction.DefaultPromptTemplate,
 			Placeholders:  []Placeholder{{Name: trim(extraction.TypePlaceholder), Meaning: "la description du type de document"}},
 			Appended:      "Le texte de la page et le schéma JSON dérivé du type de document. Le prompt envoyé est conservé dans chaque résultat.",
+		},
+		{
+			ID: MailTriage, Name: "Tri des emails", Group: "Emails",
+			Role:          "Classe chaque nouvel email (à traiter, document, information, notification, newsletter), le résume et propose la tâche à inscrire dans la todo s'il demande une action. La réponse est contrainte par un schéma.",
+			Model:         m.Documents,
+			DefaultPrompt: mail.DefaultTriagePrompt,
+			Appended:      "L'expéditeur, l'objet, la date, les noms des pièces jointes et le début du corps (5000 caractères), puis le schéma JSON de la réponse. Le prompt utilisé est conservé avec le tri.",
 		},
 		{
 			ID: Analysis, Name: "Analyse de ticket", Group: "Tickets",

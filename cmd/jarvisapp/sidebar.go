@@ -8,13 +8,14 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
+	"github.com/JulianAndrieux/Jarvis/internal/mail"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
 // Barre latérale de l'application (jalon 34) : tâches de la semaine,
-// traitements en cours, erreurs à suivre. Chargée à part par chaque page
+// emails à traiter (jalon 39), traitements en cours, erreurs à suivre. Chargée à part par chaque page
 // de l'application et rafraîchie toute seule.
 
 // sidebarMax : éléments affichés par bloc (au-delà : « + N »).
@@ -41,9 +42,13 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 	if s.Tickets != nil {
 		tks, _ = s.Tickets.Store.List(ctx, "")
 	}
+	var mails []mail.Mail
+	if s.Mail != nil {
+		mails, _ = s.Mail.Store.List(ctx, mail.Query{Category: mail.Action, Limit: 50})
+	}
 	// Une source illisible laisse son bloc vide plutôt que de casser la
 	// barre (affichée sur toutes les pages).
-	v := buildSidebar(now, tasks, active, failed, tks)
+	v := buildSidebar(now, tasks, active, failed, tks, mails)
 	w.Header().Set("Cache-Control", "no-store")
 	renderPage(w, r, http.StatusOK, templates.Sidebar(v), "sidebar")
 }
@@ -62,8 +67,26 @@ func (s *Server) handleSidebarToggle(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildSidebar choisit ce que la barre affiche.
-func buildSidebar(now time.Time, tasks []notes.Task, active, failed []webapp.Job, tks []tickets.Ticket) templates.SidebarView {
+func buildSidebar(now time.Time, tasks []notes.Task, active, failed []webapp.Job, tks []tickets.Ticket, mails []mail.Mail) templates.SidebarView {
 	var v templates.SidebarView
+
+	// Emails à traiter de la semaine, sauf ceux déjà devenus une tâche.
+	handled := map[string]bool{}
+	for _, t := range tasks {
+		if t.MailID != "" {
+			handled[t.MailID] = true
+		}
+	}
+	for _, m := range mails {
+		if m.Triage.Category != mail.Action || handled[m.ID] || m.Date.Before(now.AddDate(0, 0, -weekDays)) || len(v.Mails) == sidebarMax {
+			continue
+		}
+		from := m.From.Name
+		if from == "" {
+			from = m.From.Email
+		}
+		v.Mails = append(v.Mails, templates.SideItem{Href: "/emails/" + m.ID, Icon: "📧", Title: m.Subject, Detail: from, Full: m.Triage.Summary})
+	}
 
 	horizon := notes.DateOf(now.AddDate(0, 0, weekDays))
 	var week []notes.Task

@@ -35,6 +35,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/gate"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
+	"github.com/JulianAndrieux/Jarvis/internal/mail"
 	"github.com/JulianAndrieux/Jarvis/internal/models"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
@@ -88,6 +89,11 @@ func main() {
 	agentsCollection := flag.String("agents-collection", "agents", "Collection MongoDB des prompts des agents (onglet Agents)")
 	notesCollection := flag.String("notes-collection", "notes", "Collection MongoDB des notes (onglet Notes)")
 	tasksCollection := flag.String("tasks-collection", "tasks", "Collection MongoDB des tâches (onglet Tâches)")
+	mailCollection := flag.String("mail-collection", "emails", "Collection MongoDB des emails relevés (onglet Emails)")
+	mailFilesCollection := flag.String("mail-files-collection", "email_files", "Collection MongoDB du contenu des pièces jointes")
+	mailConfig := flag.String("mail-config", defaultMailConfig(), "Configuration de la boîte mail (serveur, adresse, mot de passe d'application — fichier local 0600, jamais dans Atlas, rempli depuis l'onglet Emails) ; vide = pas de relève ni de tri")
+	mailInterval := flag.Duration("mail-interval", 5*time.Minute, "Intervalle entre deux relèves de la boîte mail")
+	mailDays := flag.Int("mail-days", 30, "Première relève : les emails des N derniers jours")
 	agentTimeout := flag.Duration("agent-timeout", 15*time.Minute, "Délai d'un appel au modèle de l'agent — un tour qui écrit un fichier entier peut prendre plusieurs minutes sur un modèle local lent")
 	agentDev := flag.Bool("agent-dev", true, "Développement automatique des tickets au plan validé (copie de travail git isolée, vérification complète, diff à relire)")
 	worktreesDir := flag.String("worktrees-dir", "", "Dossier des copies de travail des tickets ; vide = ~/.jarvis/worktrees")
@@ -136,6 +142,13 @@ func main() {
 	cancelNotes()
 	if err != nil {
 		log.Fatalf("jarvisapp: notes : %v", err)
+	}
+	// Emails (jalon 39), copiés dans Atlas (décision de l'utilisateur).
+	mailCtx, cancelMail := context.WithTimeout(context.Background(), 10*time.Second)
+	mailStore, err := mail.NewMongoStore(mailCtx, mongoConn, *mongoDB, *mailCollection, *mailFilesCollection)
+	cancelMail()
+	if err != nil {
+		log.Fatalf("jarvisapp: emails : %v", err)
 	}
 
 	registry := doctype.NewDefaultRegistry()
@@ -278,6 +291,25 @@ func main() {
 		log.Printf("jarvisapp: bascule des modèles activée (%s)", *modelsFile)
 	}
 	jobs.Gate = modelGate
+	// Emails : relève périodique, tri par le LLM des documents dans la
+	// file des modèles (profil documents).
+	mailService := &mail.Service{
+		Store:   mailStore,
+		Syncer:  &mail.Syncer{Store: mailStore, Connect: mail.ConnectIMAP, Days: *mailDays},
+		Triager: &mail.Triager{LLM: llmClient, Model: *llmModel, Prompt: agentRegistry.PromptFunc(agents.MailTriage)},
+		Acquire: func(ctx context.Context) (func(), error) {
+			return modelGate.AcquireFor(ctx, gate.Documents)
+		},
+		ConfigPath: *mailConfig,
+		Interval:   *mailInterval,
+		Log:        log.Printf,
+	}
+	if *mailConfig != "" {
+		go mailService.Run(context.Background())
+		log.Printf("jarvisapp: emails : relève toutes les %s (configuration %s)", *mailInterval, *mailConfig)
+	} else {
+		log.Printf("jarvisapp: emails : relève désactivée (--mail-config vide)")
+	}
 	ticketsCtx, cancelTickets := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelTickets()
 	ticketStore, err := tickets.NewMongoStore(ticketsCtx, mongoConn, *mongoDB, *ticketsCollection)
@@ -386,7 +418,7 @@ func main() {
 	}
 	log.Printf("jarvisapp: agent des tickets -> %s (%s)", *agentURL, *agentModel)
 
-	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore}}
+	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore}, Mail: mailService}
 	if *agentDev {
 		srv.Unpushed = git.Unpushed
 	}
@@ -473,6 +505,16 @@ func persistJobLocally(outDir string) func(webapp.Job) {
 			fmt.Fprintf(os.Stderr, "jarvisapp: append run log for %s: %v\n", job.Filename, err)
 		}
 	}
+}
+
+// defaultMailConfig : ~/.jarvis/mail.json ("" si le dossier personnel est
+// inconnu : relève désactivée).
+func defaultMailConfig() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".jarvis", "mail.json")
 }
 
 // mongoURI : l'option --mongo-uri si elle est donnée, sinon MONGO_URI.

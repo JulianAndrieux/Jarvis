@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/mail"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
@@ -25,7 +26,7 @@ func TestBuildSidebar_WeekTasks(t *testing.T) {
 		{ID: "sans", Title: "Sans échéance"},
 		{ID: "faite", Title: "Faite", Due: "2026-09-24", Done: true},
 	}
-	v := buildSidebar(notesNow, tasks, nil, nil, nil)
+	v := buildSidebar(notesNow, tasks, nil, nil, nil, nil)
 	var ids []string
 	for _, t := range v.Week {
 		ids = append(ids, t.ID)
@@ -43,7 +44,7 @@ func TestBuildSidebar_LimitsWithOverflowCount(t *testing.T) {
 	for i := 0; i < sidebarMax+3; i++ {
 		tasks = append(tasks, notes.Task{ID: fmt.Sprint(i), Title: "t", Due: "2026-09-24"})
 	}
-	v := buildSidebar(notesNow, tasks, nil, nil, nil)
+	v := buildSidebar(notesNow, tasks, nil, nil, nil, nil)
 	if len(v.Week) != sidebarMax || v.WeekMore != 3 {
 		t.Errorf("week = %d (+%d), want %d (+3)", len(v.Week), v.WeekMore, sidebarMax)
 	}
@@ -62,7 +63,7 @@ func TestBuildSidebar_RunningAndErrors(t *testing.T) {
 		{ID: "t4", Title: "Fini", Status: tickets.Deployed},
 		{ID: "t5", Title: "Brouillon", Status: tickets.Draft},
 	}
-	v := buildSidebar(notesNow, nil, active, failed, tks)
+	v := buildSidebar(notesNow, nil, active, failed, tks, nil)
 
 	running := map[string]string{}
 	for _, it := range v.Running {
@@ -133,5 +134,21 @@ func TestSidebar_ToggleTask(t *testing.T) {
 	}
 	if tk, _, _ := store.GetTask(context.Background(), task.ID); !tk.Done {
 		t.Error("task not done")
+	}
+}
+
+// Emails à traiter (jalon 39) : de la semaine, et pas encore devenus une
+// tâche.
+func TestBuildSidebar_MailsToHandle(t *testing.T) {
+	mails := []mail.Mail{
+		{ID: "m1", Subject: "Facture Acme", From: mail.Address{Name: "Acme"}, Date: notesNow.Add(-time.Hour), Triage: mail.Triage{Category: mail.Action}},
+		{ID: "m2", Subject: "Déjà une tâche", Date: notesNow.Add(-time.Hour), Triage: mail.Triage{Category: mail.Action}},
+		{ID: "m3", Subject: "Vieux", Date: notesNow.AddDate(0, 0, -10), Triage: mail.Triage{Category: mail.Action}},
+		{ID: "m4", Subject: "Promo", Date: notesNow, Triage: mail.Triage{Category: mail.Newsletter}},
+	}
+	tasks := []notes.Task{{ID: "t", Title: "Répondre", MailID: "m2"}}
+	v := buildSidebar(notesNow, tasks, nil, nil, nil, mails)
+	if len(v.Mails) != 1 || v.Mails[0].Href != "/emails/m1" || v.Mails[0].Title != "Facture Acme" || v.Mails[0].Detail != "Acme" {
+		t.Errorf("Mails = %+v", v.Mails)
 	}
 }

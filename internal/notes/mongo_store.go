@@ -70,6 +70,9 @@ func (s *MongoStore) ListNotes(ctx context.Context, q NoteQuery) ([]Note, error)
 	if q.DocID != "" {
 		and = append(and, bson.M{"doc_ids": q.DocID})
 	}
+	if q.MailID != "" {
+		and = append(and, bson.M{"mail_id": q.MailID})
+	}
 	filter := bson.M{}
 	if len(and) > 0 {
 		filter["$and"] = and
@@ -120,6 +123,9 @@ func (s *MongoStore) ListTasks(ctx context.Context, q TaskQuery) ([]Task, error)
 	}
 	if q.DocID != "" {
 		filter["doc_id"] = q.DocID
+	}
+	if q.MailID != "" {
+		filter["mail_id"] = q.MailID
 	}
 	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(2000)
 	cur, err := s.Tasks.Find(ctx, filter, opts)

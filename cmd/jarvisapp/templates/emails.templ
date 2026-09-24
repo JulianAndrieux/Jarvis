@@ -1,0 +1,203 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/JulianAndrieux/Jarvis/internal/mail"
+)
+
+// EmailsPage : la boîte de réception, triée par le modèle local.
+templ EmailsPage(v MailListView) {
+	@Layout("Jarvis — emails", "emails") {
+		<div class="page-wide">
+			<div class="page-title">
+				<h2>Emails</h2>
+				<div class="field-row">
+					if v.Status.Configured {
+						<form method="post" action="/emails/sync">
+							<button type="submit" class="button-primary">↻ Relever maintenant</button>
+						</form>
+					}
+					<a class="button button-ghost" href="/emails/settings">⚙ Boîte mail</a>
+				</div>
+			</div>
+			if !v.Status.Configured {
+				<div class="card mail-connect">
+					<p>Aucune boîte mail connectée : Jarvis ne relève rien pour l'instant.</p>
+					<a class="button button-primary" href="/emails/settings">Connecter ma boîte</a>
+				</div>
+			} else {
+				<p class="muted mail-status">
+					{ v.Status.Account } · { mailStatusLine(v.Status) }
+				</p>
+			}
+			if v.Status.LastError != "" {
+				<p class="form-error">{ v.Status.LastError }</p>
+			}
+			if v.Status.Configured || len(v.Rows) > 0 || v.Search != "" || v.Category != "" {
+				<form class="search-bar" method="get" action="/emails">
+					<input type="text" name="q" value={ v.Search } placeholder="Rechercher dans l'objet, l'expéditeur, le texte et les résumés…"/>
+					if v.Category != "" {
+						<input type="hidden" name="cat" value={ v.Category }/>
+					}
+					<button type="submit">Rechercher</button>
+				</form>
+				<div class="type-filters">
+					for _, f := range v.Filters {
+						<a class={ "chip", "filter-chip", templ.KV("active", f.Active) } href={ templ.SafeURL(f.Href) }>{ f.Label }</a>
+					}
+				</div>
+				if len(v.Rows) == 0 {
+					<div class="empty-state"><p>Aucun email.</p></div>
+				} else {
+					<ul class="mail-list">
+						for _, m := range v.Rows {
+							<li>
+								<a class={ "mail-row", templ.KV("mail-unread", m.Unread) } href={ templ.SafeURL("/emails/" + m.ID) }>
+									<span class="mail-from">{ m.From }</span>
+									<span class="mail-main">
+										<span class="mail-subject">{ m.Subject }</span>
+										if m.Summary != "" {
+											<span class="mail-summary">{ m.Summary }</span>
+										}
+									</span>
+									<span class="mail-side">
+										<span class={ categoryChip(m.Category) }>{ mail.CategoryLabel(m.Category) }</span>
+										if m.TriageError {
+											<span class="chip chip-failed" title="Le modèle n'a pas pu trier cet email">!</span>
+										}
+										if m.Attachments > 0 {
+											<span class="muted" title="Pièces jointes">📎 { fmt.Sprint(m.Attachments) }</span>
+										}
+										<span class="doc-date">{ m.Date }</span>
+									</span>
+								</a>
+							</li>
+						}
+					</ul>
+				}
+			}
+		</div>
+	}
+}
+
+// EmailPage : un email ouvert, son tri et ce qu'on peut en faire.
+templ EmailPage(v MailView) {
+	@Layout("Jarvis — "+v.Mail.Subject, "emails") {
+		<div class="page-wide note-page">
+			<a class="panel-back" href="/emails">← Emails</a>
+			<div class="page-title">
+				<h2>{ v.Mail.Subject }</h2>
+			</div>
+			<dl class="agent-facts mail-headers">
+				<dt>De</dt>
+				<dd>{ v.Mail.From.String() }</dd>
+				if v.To != "" {
+					<dt>À</dt>
+					<dd>{ v.To }</dd>
+				}
+				if v.Cc != "" {
+					<dt>Cc</dt>
+					<dd>{ v.Cc }</dd>
+				}
+				<dt>Date</dt>
+				<dd>{ v.Date }</dd>
+			</dl>
+			<div class="card mail-triage">
+				<div class="agent-card-head">
+					<span class={ categoryChip(v.Mail.Triage.Category) }>{ mail.CategoryLabel(v.Mail.Triage.Category) }</span>
+					<form class="inline-form" method="post" action={ templ.SafeURL("/emails/" + v.Mail.ID + "/retriage") }>
+						<button type="submit" class="button-ghost" title="Refaire le tri avec les consignes en vigueur">↻ Retrier</button>
+					</form>
+				</div>
+				if v.Mail.Triage.Error != "" {
+					<p class="form-error">Tri impossible : { v.Mail.Triage.Error }</p>
+				} else if v.Mail.Triage.Category == "" {
+					<p class="muted">Pas encore trié : le modèle local s'en charge après la relève.</p>
+				} else {
+					<p>{ v.Mail.Triage.Summary }</p>
+					<p class="muted">Trié par { v.Mail.Triage.Model } le { v.Mail.Triage.At.Local().Format("02/01/2006 15:04") }</p>
+				}
+			</div>
+			<div class="section-title">Tâches de cet email</div>
+			<form class="quick-add" method="post" action={ templ.SafeURL("/emails/" + v.Mail.ID + "/task") }>
+				<input type="text" name="input" value={ v.TaskInput } aria-label="Nouvelle tâche"/>
+				<button type="submit" class="button-primary">+ Créer la tâche</button>
+			</form>
+			<p class="muted quick-help">{ quickAddHelp }</p>
+			@taskGroups(v.Tasks, "/emails/"+v.Mail.ID)
+			<div class="section-title">Notes</div>
+			if len(v.Notes) > 0 {
+				<ul class="link-list">
+					for _, n := range v.Notes {
+						<li><a href={ templ.SafeURL("/notes/" + n.ID) }>📝 { n.Title }</a></li>
+					}
+				</ul>
+			}
+			<form method="post" action={ templ.SafeURL("/emails/" + v.Mail.ID + "/note") }>
+				<button type="submit">+ Note sur cet email</button>
+			</form>
+			if len(v.Attachments) > 0 {
+				<div class="section-title">Pièces jointes</div>
+				<ul class="task-list">
+					for _, a := range v.Attachments {
+						<li class="task-row">
+							<span class="task-title">📎 { a.Filename } <span class="muted">{ a.Size }</span></span>
+							if !a.Stored {
+								<span class="muted">trop volumineuse pour être copiée : à ouvrir dans la boîte mail</span>
+							} else {
+								<a class="button button-ghost" href={ templ.SafeURL(fmt.Sprintf("/emails/%s/attachments/%d", v.Mail.ID, a.Index)) }>Télécharger</a>
+								if a.DocID != "" {
+									<a class="chip" href={ templ.SafeURL("/documents/" + a.DocID) }>📄 { a.DocName }</a>
+								} else {
+									<form class="inline-form" method="post" action={ templ.SafeURL(fmt.Sprintf("/emails/%s/attachments/%d/import", v.Mail.ID, a.Index)) }>
+										<button type="submit">→ Envoyer dans Documents</button>
+									</form>
+								}
+							}
+						</li>
+					}
+				</ul>
+			}
+			<div class="section-title">Message</div>
+			<pre class="card mail-body">{ v.Mail.Text }</pre>
+		</div>
+	}
+}
+
+// EmailSettingsPage : connecter la boîte mail.
+templ EmailSettingsPage(v MailSettingsView) {
+	@Layout("Jarvis — boîte mail", "emails") {
+		<div class="page-narrow">
+			<a class="panel-back" href="/emails">← Emails</a>
+			<div class="page-title">
+				<h2>Boîte mail</h2>
+			</div>
+			<form class="card note-editor" method="post" action="/emails/settings">
+				if v.Error != "" {
+					<p class="form-error">Connexion refusée : { v.Error }</p>
+				}
+				<label for="user">Adresse email</label>
+				<input type="text" id="user" name="user" value={ v.User } autocomplete="username"/>
+				<label for="password">Mot de passe d'application</label>
+				<input type="password" id="password" name="password" autocomplete="new-password" placeholder={ passwordPlaceholder(v.Configured) }/>
+				<label for="host">Serveur IMAP</label>
+				<input type="text" id="host" name="host" value={ v.Host }/>
+				<div class="field-row agent-actions">
+					<button type="submit" class="button-primary">Vérifier et enregistrer</button>
+				</div>
+			</form>
+			<div class="card">
+				<p><strong>Gmail</strong> demande un <em>mot de passe d'application</em> (la validation en deux étapes doit être active) : crée-le sur <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">myaccount.google.com/apppasswords</a>, puis colle les 16 lettres ici.</p>
+				<p class="muted">Jarvis vérifie la connexion avant d'enregistrer. Le mot de passe reste sur ce Mac (~/.jarvis/mail.json, lisible par toi seul), jamais dans Atlas. Les emails, eux, sont copiés dans Atlas comme les documents ; la boîte est lue sans rien y modifier (aucun email n'est marqué comme lu). Relève toutes les 5 minutes, les 30 derniers jours la première fois.</p>
+			</div>
+		</div>
+	}
+}
+
+func passwordPlaceholder(configured bool) string {
+	if configured {
+		return "déjà enregistré — laisser vide pour le garder"
+	}
+	return "16 lettres"
+}

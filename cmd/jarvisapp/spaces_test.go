@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/JulianAndrieux/Jarvis/internal/agents"
+	"github.com/JulianAndrieux/Jarvis/internal/mail"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 )
 
 // Jalon 33 : deux espaces — l'application (thème clair : Importer,
-// Documents, Notes, Tâches, Tickets) et l'Admin (thème sombre, sous
+// Documents, Emails, Notes, Tâches, Tickets) et l'Admin (thème sombre, sous
 // /admin : Agents, Architecture, Classes, Modèle, Tests).
 
 func spacesServer(t *testing.T) *Server {
@@ -24,6 +25,7 @@ func spacesServer(t *testing.T) *Server {
 	s.model = newCodeTestServer().model
 	s.Tickets = &tickets.Manager{Store: tickets.NewFakeStore()}
 	s.Notes = &notes.Service{Store: notes.NewFakeStore()}
+	s.Mail = &mail.Service{Store: mail.NewFakeStore()}
 	reg, _ := agents.NewRegistry(context.Background(), agents.NewFakeStore(), agents.Defaults(agents.Models{Documents: "m", Tickets: "m"}))
 	s.Agents = reg
 	return s
@@ -48,13 +50,13 @@ func navLinks(body string) string {
 
 func TestSpaces_UserPagesAreLightWithUserNav(t *testing.T) {
 	s := spacesServer(t)
-	for _, path := range []string{"/", "/documents", "/notes", "/tasks", "/tickets"} {
+	for _, path := range []string{"/", "/documents", "/emails", "/notes", "/tasks", "/tickets"} {
 		body := page(t, s, path)
 		if !strings.Contains(body, `class="theme-user"`) || strings.Contains(body, "prefers-color-scheme") {
 			t.Errorf("%s: not the light user theme (whatever the system setting)", path)
 		}
 		nav := navLinks(body)
-		for _, want := range []string{`href="/"`, `href="/documents"`, `href="/notes"`, `href="/tasks"`, `href="/tickets"`} {
+		for _, want := range []string{`href="/"`, `href="/documents"`, `href="/emails"`, `href="/notes"`, `href="/tasks"`, `href="/tickets"`} {
 			if !strings.Contains(nav, want) {
 				t.Errorf("%s: user nav lacks %s", path, want)
 			}

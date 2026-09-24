@@ -38,6 +38,9 @@ type TaskView struct {
 	NoteTitle string
 	DocID     string
 	DocName   string
+	// MailID, MailSubject : l'email d'où vient la tâche (jalon 39).
+	MailID      string
+	MailSubject string
 }
 
 // TaskGroupView : un groupe de la todo.
@@ -56,6 +59,8 @@ type NoteView struct {
 	Edit     bool
 	// Choices : documents proposés pour un nouveau lien.
 	Choices []DocLink
+	// MailSubject : l'objet de l'email d'où vient la note (Note.MailID).
+	MailSubject string
 }
 
 // TaskEditView : le formulaire d'une tâche.

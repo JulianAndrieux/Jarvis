@@ -69,6 +69,9 @@ func (s *FakeStore) ListNotes(ctx context.Context, q NoteQuery) ([]Note, error) 
 		if q.DocID != "" && !slices.Contains(n.DocIDs, q.DocID) {
 			continue
 		}
+		if q.MailID != "" && n.MailID != q.MailID {
+			continue
+		}
 		if search != "" && !noteMatches(n, search) {
 			continue
 		}
@@ -137,7 +140,7 @@ func (s *FakeStore) ListTasks(ctx context.Context, q TaskQuery) ([]Task, error) 
 	defer s.mu.Unlock()
 	var out []Task
 	for _, t := range s.tasks {
-		if (q.NoteID == "" || t.NoteID == q.NoteID) && (q.DocID == "" || t.DocID == q.DocID) {
+		if (q.NoteID == "" || t.NoteID == q.NoteID) && (q.DocID == "" || t.DocID == q.DocID) && (q.MailID == "" || t.MailID == q.MailID) {
 			out = append(out, t)
 		}
 	}

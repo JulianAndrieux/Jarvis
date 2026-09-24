@@ -120,3 +120,29 @@ func TestService_SaveTaskValidatesDue(t *testing.T) {
 		t.Errorf("cleared = %+v", cleared)
 	}
 }
+
+// Depuis un email (jalon 39) : la tâche et la note gardent le lien, qui
+// survit à une modification de la tâche.
+func TestService_FromMail(t *testing.T) {
+	s, store, _ := newTestService()
+	ctx := context.Background()
+	tk, err := s.AddMailTask(ctx, "Payer la facture Acme demain !", "mail-1")
+	if err != nil || tk.MailID != "mail-1" || tk.Title != "Payer la facture Acme" || tk.Due == "" || tk.Priority != High {
+		t.Fatalf("AddMailTask = %+v, %v", tk, err)
+	}
+	if tk, err = s.SaveTask(ctx, tk.ID, "Payer Acme", "", "", "", ""); err != nil || tk.MailID != "mail-1" {
+		t.Errorf("SaveTask = %+v, %v, want the mail link kept", tk, err)
+	}
+	n, err := s.NewMailNote(ctx, "mail-1", "Facture Acme", "> Bonjour")
+	if err != nil || n.MailID != "mail-1" || n.Title != "Facture Acme" || n.Body != "> Bonjour" {
+		t.Fatalf("NewMailNote = %+v, %v", n, err)
+	}
+	notes, _ := store.ListNotes(ctx, NoteQuery{MailID: "mail-1"})
+	tasks, _ := store.ListTasks(ctx, TaskQuery{MailID: "mail-1"})
+	if len(notes) != 1 || len(tasks) != 1 {
+		t.Errorf("linked to mail-1: %d notes, %d tasks", len(notes), len(tasks))
+	}
+	if _, err := s.AddMailTask(ctx, "  ", "mail-1"); err == nil {
+		t.Error("AddMailTask(empty) = nil")
+	}
+}

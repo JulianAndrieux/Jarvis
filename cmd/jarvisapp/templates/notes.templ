@@ -93,6 +93,9 @@ templ NotePage(v NoteView) {
 					for _, tg := range v.Note.Tags {
 						<a class="chip" href={ templ.SafeURL("/notes?tag=" + urlQuery(tg)) }>{ tg }</a>
 					}
+					if v.Note.MailID != "" {
+						<a class="chip" href={ templ.SafeURL("/emails/" + v.Note.MailID) }>📧 { v.MailSubject }</a>
+					}
 					<span class="muted">modifiée le { v.Note.UpdatedAt.Local().Format("02/01/2006 15:04") }</span>
 				</div>
 				<div class="card markdown">
@@ -209,6 +212,9 @@ templ taskRow(t TaskView, back string) {
 		}
 		if t.DocID != "" {
 			<a class="chip" href={ templ.SafeURL("/documents/" + t.DocID) }>📄 { t.DocName }</a>
+		}
+		if t.MailID != "" {
+			<a class="chip" href={ templ.SafeURL("/emails/" + t.MailID) }>📧 { t.MailSubject }</a>
 		}
 	</li>
 }

@@ -119,10 +119,11 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 	}
 	names := s.docNames(ctx, n.DocIDs)
 	v := templates.NoteView{
-		Note:     n,
-		BodyHTML: projectinfo.RenderMarkdown(n.Body),
-		Edit:     r.URL.Query().Get("edit") != "",
-		Tasks:    s.taskGroups(ctx, tasks, taskContext{noteID: n.ID}),
+		MailSubject: s.mailSubjects(ctx, nonEmpty(n.MailID))[n.MailID],
+		Note:        n,
+		BodyHTML:    projectinfo.RenderMarkdown(n.Body),
+		Edit:        r.URL.Query().Get("edit") != "",
+		Tasks:       s.taskGroups(ctx, tasks, taskContext{noteID: n.ID}),
 	}
 	for _, id := range n.DocIDs {
 		v.Docs = append(v.Docs, templates.DocLink{ID: id, Name: names[id]})
@@ -298,11 +299,11 @@ func (s *Server) handleDocumentLinks(w http.ResponseWriter, r *http.Request) {
 // taskContext : la page qui affiche les tâches — sur la page d'une note
 // (ou d'un document), le lien vers cette même note (ce même document)
 // n'est pas répété sur chaque tâche.
-type taskContext struct{ noteID, docID string }
+type taskContext struct{ noteID, docID, mailID string }
 
 func (s *Server) taskGroups(ctx context.Context, tasks []notes.Task, here taskContext) []templates.TaskGroupView {
 	now := s.Notes.Clock()
-	var noteIDs, docIDs []string
+	var noteIDs, docIDs, mailIDs []string
 	for _, t := range tasks {
 		if t.NoteID != "" {
 			noteIDs = append(noteIDs, t.NoteID)
@@ -310,9 +311,13 @@ func (s *Server) taskGroups(ctx context.Context, tasks []notes.Task, here taskCo
 		if t.DocID != "" {
 			docIDs = append(docIDs, t.DocID)
 		}
+		if t.MailID != "" && t.MailID != here.mailID {
+			mailIDs = append(mailIDs, t.MailID)
+		}
 	}
 	noteTitles := s.noteTitles(ctx, noteIDs)
 	docNames := s.docNames(ctx, docIDs)
+	mailSubjects := s.mailSubjects(ctx, mailIDs)
 	var out []templates.TaskGroupView
 	for _, g := range notes.GroupTasks(tasks, now) {
 		gv := templates.TaskGroupView{Bucket: g.Bucket, Label: g.Bucket.Label()}
@@ -323,12 +328,16 @@ func (s *Server) taskGroups(ctx context.Context, tasks []notes.Task, here taskCo
 			if here.docID != "" && t.DocID == here.docID {
 				t.DocID = ""
 			}
+			if here.mailID != "" && t.MailID == here.mailID {
+				t.MailID = ""
+			}
 			gv.Tasks = append(gv.Tasks, templates.TaskView{
 				ID: t.ID, Title: t.Title, Done: t.Done, Due: t.Due,
 				DueLabel: notes.DueLabel(t.Due, now), Overdue: notes.BucketOf(t, now) == notes.Overdue,
 				Priority: t.Priority,
 				NoteID:   t.NoteID, NoteTitle: noteTitles[t.NoteID],
 				DocID: t.DocID, DocName: docNames[t.DocID],
+				MailID: t.MailID, MailSubject: mailSubjects[t.MailID],
 			})
 		}
 		out = append(out, gv)
@@ -391,6 +400,14 @@ func (s *Server) recentDocs(ctx context.Context) []templates.DocLink {
 		out = append(out, templates.DocLink{ID: j.ID, Name: j.Filename})
 	}
 	return out
+}
+
+// nonEmpty : id seul, ou rien s'il est vide.
+func nonEmpty(id string) []string {
+	if id == "" {
+		return nil
+	}
+	return []string{id}
 }
 
 func noteCards(ns []notes.Note) []templates.NoteCard {

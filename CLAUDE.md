@@ -41,6 +41,12 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
      MongoDB Atlas, comme les documents.** Décision explicite de
      l'utilisateur (question posée : Atlas ou disque local), pour la même
      raison de simplicité et un accès futur depuis une app hébergée.
+  4. **Emails (`internal/mail`, jalon 39) : copiés dans MongoDB Atlas**
+     (corps en texte, pièces jointes jusqu'à 15 Mo), comme les documents.
+     Décision explicite de l'utilisateur (question posée : lus à la
+     demande ou copie dans Atlas). Le mot de passe de la boîte, lui, ne
+     quitte pas la machine (`~/.jarvis/mail.json`, 0600) ; le tri reste
+     fait par le modèle local.
 - TDD strict : chaque paquet a ses tests avant son implémentation. Pas de
   code non testé.
 - Construire à partir de primitives ; éviter les frameworks lourds et les
@@ -232,7 +238,7 @@ anciens binaires `cmd/jarvisweb` (upload/suivi) et `cmd/codebrowser`
 (navigateur de code/tests), fusionnés sous une nav commune (Importer ·
 Documents · Tickets · Classes · Modèle · Tests · Architecture — renommée au jalon 22,
 Modèle ajouté au jalon 24, Tickets au jalon 26, Architecture au jalon 29 ; depuis
-le jalon 33, deux espaces : l'application — Importer, Documents, Notes, Tâches,
+le jalon 33, deux espaces : l'application — Importer, Documents, Emails (jalon 39), Notes, Tâches,
 Tickets — et l'Admin sous /admin — Agents, Architecture, Classes, Modèle, Tests). Voir "État des jalons" plus bas pour le détail de la
 fusion, et "Atelier de code" pour le détail du navigateur de code/tests
 lui-même (moteurs inchangés par la fusion).
@@ -2411,6 +2417,70 @@ spécifique à `localhost`.
     (dates dans le formulaire, ligne pleine largeur dessous) →
     « correctement déplacé en dessous », acceptable, page d'accueil jugée
     intacte (3 min). Captures vérifiées à l'œil : jugements fondés.
+- **Jalon 39 — emails dans Jarvis : fait, validé sur une instance séparée
+  (interface) et contre le vrai serveur de Gmail (connexion TLS), en
+  attente de validation utilisateur avec sa boîte.** Demandé : "avoir accès
+  à mes emails depuis Jarvis". Décisions de l'utilisateur : IMAP avec un
+  mot de passe d'application ; périmètre : lire la boîte, pièces jointes →
+  Documents, liens notes/tâches, tri et résumé par le modèle local ;
+  **copie des emails dans Atlas** (cf. contraintes, exception 4).
+  - **`internal/imap`** (nouveau, bibliothèque standard) : client IMAP4rev1
+    minimal — TLS, LOGIN (argument avec retour à la ligne refusé : il
+    injecterait une commande), **EXAMINE** (lecture seule), UID SEARCH
+    (SINCE, et « n:* » filtré : le serveur y renvoie toujours le dernier
+    message, même plus ancien), UID FETCH du message brut en **BODY.PEEK**
+    (rien n'est marqué lu). Lecteur de réponses : atomes à crochets,
+    chaînes échappées, littéraux (bornés à 64 Mo), listes. L'échéance du
+    contexte vaut pour toute la session. Testé contre un faux serveur
+    scripté (ordre d'éléments quelconque, corps contenant une parenthèse).
+  - **`internal/mail`** (nouveau) : `Mail` (expéditeur, destinataires,
+    objet, date, corps en texte — le HTML converti par `internal/email`,
+    jamais affiché tel quel —, pièces jointes, tri). Identifiant = compte +
+    **Message-ID** (sinon UIDVALIDITY/UID) : une nouvelle UIDVALIDITY fait
+    repartir de la fenêtre de dates sans doublon. `Syncer` : première
+    relève sur 30 jours, puis les UID au-delà du dernier enregistré, par
+    lots de 10, du plus ancien au plus récent ; un email illisible est
+    gardé (« (email illisible) », raison dans le texte). Pièces jointes
+    stockées à part (un document par pièce, ≤ 15 Mo : limite de 16 Mo d'un
+    document MongoDB) ; au-delà, seule la fiche. `Store` : `FakeStore` et
+    `MongoStore` (collections `emails`, `email_files`) passent **le même
+    contrat** ; recherche littérale.
+  - **Tri** (`Triager`) : catégorie (à traiter, document/facture,
+    information, notification, newsletter/promo), résumé, **tâche
+    suggérée** ; LLM des documents, réponse contrainte par un schéma, prompt
+    et modèle gardés avec le tri. Agent « Tri des emails » dans l'onglet
+    Agents (prompt modifiable). Une réponse inutilisable est notée sur
+    l'email ; un modèle indisponible arrête le tri sans rien noter (repris
+    plus tard).
+  - **`Service`** : **deux boucles** — relève toutes les 5 min (ou à la
+    demande) ; tri à côté, dans la file des modèles (profil documents),
+    lot après lot. Vu en capture : dans une seule boucle, un ticket qui
+    tient la file une heure aurait aussi arrêté la relève (testé : la
+    relève continue pendant que le tri attend). `Configure` **vérifie la
+    connexion avant d'enregistrer** ; mot de passe d'application Google
+    accepté avec ses espaces. Configuration locale `~/.jarvis/mail.json`
+    (0600), jamais envoyée à la page.
+  - **UI** : onglet **Emails** (liste du plus récent : expéditeur, objet,
+    résumé, catégorie, non lu en gras, 📎 ; filtres par catégorie,
+    recherche ; « Relever maintenant » ; état de la relève et erreurs),
+    fiche d'un email (en-têtes, tri et « Retrier », **créer la tâche**
+    pré-remplie avec l'action suggérée — saisie rapide, échéance comprise
+    —, note avec résumé et texte cité, pièces jointes : télécharger — servi
+    en `application/octet-stream`, `nosniff` — ou **envoyer dans
+    Documents**, une seule fois, tag `email`), réglages (mot de passe
+    d'application expliqué). Tâches et notes nées d'un email portent un lien
+    📧 vers lui (`MailID`). Barre latérale : **Emails à traiter** de la
+    semaine pas encore devenus une tâche.
+  - Isolement : l'essai à blanc d'un déploiement et la relecture visuelle
+    lancent Jarvis sans configuration de boîte et sur des collections
+    `emails_check` (testé) — ils ne relèvent ni ne trient jamais.
+  - Validé : contrats Mongo sur Atlas (emails, notes/tâches avec lien) ;
+    accueil TLS du vrai `imap.gmail.com:993` (sans identifiants) ; instance
+    séparée (:8091, collections jetables, emails d'exemple) : liste, fiche,
+    tâche, note, pièce jointe envoyée dans Documents, réglages, captures.
+    Trois défauts vus ainsi et corrigés : emails déjà relevés masqués tant
+    que la boîte n'est pas connectée, préfixe d'erreur répété, champ mot de
+    passe sans style.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

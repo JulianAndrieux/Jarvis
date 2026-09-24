@@ -20,7 +20,7 @@ import (
 // du processus courant, mais port libre, collections jetables, et rien qui
 // agisse (modèles, dossier surveillé, copie locale, tickets).
 func visualArgs(current []string, addr, jobsCollection, ticketsCollection string) []string {
-	return deploy.OverrideFlags(current, map[string]string{
+	return deploy.OverrideFlags(current, withMailIsolation(map[string]string{
 		"addr":               addr,
 		"mongo-collection":   jobsCollection + "_visualcheck",
 		"tickets-collection": ticketsCollection + "_visualcheck",
@@ -30,7 +30,17 @@ func visualArgs(current []string, addr, jobsCollection, ticketsCollection string
 		"agent-dev":          "false",
 		"deploy":             "false",
 		"deploy-marker":      filepath.Join(os.TempDir(), "jarvis-visualcheck.json"),
-	})
+	}))
+}
+
+// withMailIsolation : une instance de contrôle (essai à blanc, capture)
+// ne relève jamais la boîte mail et ne lit ni ne trie les vrais emails
+// (jalon 39).
+func withMailIsolation(overrides map[string]string) map[string]string {
+	overrides["mail-config"] = ""
+	overrides["mail-collection"] = "emails_check"
+	overrides["mail-files-collection"] = "email_files_check"
+	return overrides
 }
 
 // launchIsolated démarre binary pour des captures et attend qu'il réponde.

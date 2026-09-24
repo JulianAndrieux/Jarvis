@@ -18,7 +18,9 @@ type Note struct {
 	// Pinned : affichée en tête de liste.
 	Pinned bool `bson:"pinned"`
 	// DocIDs : documents de la bibliothèque liés à la note.
-	DocIDs    []string  `bson:"doc_ids"`
+	DocIDs []string `bson:"doc_ids"`
+	// MailID : l'email d'où vient la note ("" : aucun ; jalon 39).
+	MailID    string    `bson:"mail_id"`
 	CreatedAt time.Time `bson:"created_at"`
 	UpdatedAt time.Time `bson:"updated_at"`
 }
@@ -73,9 +75,10 @@ type Task struct {
 	Due      string   `bson:"due"`
 	Priority Priority `bson:"priority"`
 	Done     bool     `bson:"done"`
-	// NoteID, DocID : note et document liés ("" : aucun).
+	// NoteID, DocID, MailID : note, document et email liés ("" : aucun).
 	NoteID    string    `bson:"note_id"`
 	DocID     string    `bson:"doc_id"`
+	MailID    string    `bson:"mail_id"`
 	CreatedAt time.Time `bson:"created_at"`
 	DoneAt    time.Time `bson:"done_at"`
 }
@@ -87,12 +90,14 @@ type NoteQuery struct {
 	Search string
 	Tag    string
 	DocID  string
+	MailID string
 }
 
 // TaskQuery filtre une liste de tâches.
 type TaskQuery struct {
 	NoteID string
 	DocID  string
+	MailID string
 }
 
 // Store persiste notes et tâches (MongoStore en production, FakeStore en

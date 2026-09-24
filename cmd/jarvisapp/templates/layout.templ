@@ -108,7 +108,7 @@ templ Layout(title string, active string) {
 				.button-danger { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); color: var(--danger); }
 				.button-danger:hover { background: var(--danger-soft); }
 				label { display: block; margin-bottom: .35rem; font-weight: 600; font-size: .85rem; color: var(--text-2); }
-				input[type=text], select, textarea { font: inherit; font-size: .92rem; padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); width: 100%; }
+				input[type=text], input[type=password], select, textarea { font: inherit; font-size: .92rem; padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); width: 100%; }
 				textarea { resize: vertical; line-height: 1.45; }
 				/* Relecture des diffs (jalon 36) */
 				.review-block.review-ok { border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
@@ -176,6 +176,27 @@ templ Layout(title string, active string) {
 				.inline-form { display: inline; margin: 0; }
 				.link-list { list-style: none; padding: 0; margin: 0 0 .6rem; }
 				.link-list li { display: flex; align-items: center; gap: .4rem; padding: .2rem 0; }
+				/* Emails (jalon 39) */
+				.mail-status { margin: -.6rem 0 1rem; }
+				.mail-connect { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 0; }
+				.mail-connect p { margin: 0; }
+				.mail-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+				.mail-list li + li { border-top: 1px solid var(--border); }
+				.mail-row { display: grid; grid-template-columns: minmax(8rem, 13rem) 1fr auto; gap: .9rem; align-items: center; padding: .6rem .9rem; color: var(--text); }
+				.mail-row:hover { background: var(--surface-2); text-decoration: none; }
+				.mail-from, .mail-subject { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+				.mail-main { display: flex; flex-direction: column; min-width: 0; }
+				.mail-summary { color: var(--text-2); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+				.mail-unread .mail-from, .mail-unread .mail-subject { font-weight: 700; }
+				.mail-side { display: flex; align-items: center; gap: .5rem; justify-content: flex-end; }
+				@media (max-width: 760px) { .mail-row { grid-template-columns: 1fr; gap: .2rem; } .mail-side { justify-content: flex-start; } }
+				.chip-cat-a_traiter { background: var(--danger-soft); color: var(--danger); }
+				.chip-cat-document { background: var(--accent-soft); color: var(--accent); }
+				.chip-cat-information { background: var(--ok-soft); color: var(--ok); }
+				.chip-cat-notification { background: var(--surface-2); color: var(--text-2); }
+				.chip-cat-newsletter { background: var(--warn-soft); color: var(--warn); }
+				.mail-headers { margin: 0 0 1rem; }
+				.mail-body { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: .92rem; line-height: 1.5; }
 				/* Onglet Agents */
 				.agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 1rem; }
 				.agent-card { display: block; margin: 0; color: var(--text); }
@@ -191,7 +212,7 @@ templ Layout(title string, active string) {
 				.placeholder-list { margin: .25rem 0 .75rem; padding-left: 1.2rem; }
 				.form-error { color: var(--danger); background: var(--danger-soft); padding: .5rem .75rem; border-radius: 8px; }
 				.comment-actions { margin-top: .5rem; }
-				input[type=text]:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+				input[type=text]:focus, input[type=password]:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 				.field-row { display: flex; gap: .5rem; align-items: center; }
 				.field-row > input, .field-row > select { flex: 1; }
 
@@ -613,6 +634,7 @@ templ Layout(title string, active string) {
 					<nav class="app-nav">
 						<a href="/" class={ templ.KV("active", active == "upload") }><span class="nav-icon">⬆️</span>Importer</a>
 						<a href="/documents" class={ templ.KV("active", active == "documents") }><span class="nav-icon">📄</span>Documents</a>
+						<a href="/emails" class={ templ.KV("active", active == "emails") }><span class="nav-icon">📧</span>Emails</a>
 						<a href="/notes" class={ templ.KV("active", active == "notes") }><span class="nav-icon">📝</span>Notes</a>
 						<a href="/tasks" class={ templ.KV("active", active == "tasks") }><span class="nav-icon">✅</span>Tâches</a>
 						<a href="/tickets" class={ templ.KV("active", active == "tickets") }><span class="nav-icon">🎫</span>Tickets</a>

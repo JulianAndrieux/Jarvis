@@ -32,6 +32,12 @@ templ Sidebar(v SidebarView) {
 			Toutes les tâches →
 		</a>
 	</section>
+	if len(v.Mails) > 0 {
+		<section class="side-block">
+			<div class="side-title">📧 Emails à traiter <span class="count">{ fmt.Sprint(len(v.Mails)) }</span></div>
+			@sideItems(v.Mails, false)
+		</section>
+	}
 	<section class="side-block">
 		<div class="side-title">⏳ En cours <span class="count">{ fmt.Sprint(len(v.Running)) }</span></div>
 		if len(v.Running) == 0 {

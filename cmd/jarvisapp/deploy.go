@@ -68,20 +68,25 @@ func smokeTest(jobsCollection, ticketsCollection string) func(ctx context.Contex
 		if err != nil {
 			return "", err
 		}
-		args := deploy.OverrideFlags(os.Args[1:], map[string]string{
-			"addr":               addr,
-			"mongo-collection":   jobsCollection + "_deploycheck",
-			"tickets-collection": ticketsCollection + "_deploycheck",
-			"watch-dir":          "",
-			"out-dir":            "",
-			"deploy-marker":      filepath.Join(os.TempDir(), "jarvis-deploycheck.json"),
-			// Jalon 37 : l'essai à blanc ne touche jamais aux modèles (il
-			// arrêterait ceux de l'application en service).
-			"models-file": "",
-		})
+		args := smokeArgs(os.Args[1:], addr, jobsCollection, ticketsCollection)
 		s := deploy.Smoke{Args: args, Env: os.Environ(), Addr: addr, Paths: []string{"/", "/documents", "/tickets", "/admin/architecture"}}
 		return s.Run(ctx, binary)
 	}
+}
+
+// smokeArgs : les options de l'essai à blanc.
+func smokeArgs(current []string, addr, jobsCollection, ticketsCollection string) []string {
+	return deploy.OverrideFlags(current, withMailIsolation(map[string]string{
+		"addr":               addr,
+		"mongo-collection":   jobsCollection + "_deploycheck",
+		"tickets-collection": ticketsCollection + "_deploycheck",
+		"watch-dir":          "",
+		"out-dir":            "",
+		"deploy-marker":      filepath.Join(os.TempDir(), "jarvis-deploycheck.json"),
+		// Jalon 37 : l'essai à blanc ne touche jamais aux modèles (il
+		// arrêterait ceux de l'application en service).
+		"models-file": "",
+	}))
 }
 
 // busyReason : pourquoi l'application ne peut pas redémarrer maintenant.

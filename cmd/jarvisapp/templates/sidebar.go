@@ -14,6 +14,7 @@ type SideItem struct {
 type SidebarView struct {
 	Week     []TaskView // tâches en retard ou à échéance dans les 7 jours
 	WeekMore int        // tâches de la semaine non affichées
+	Mails    []SideItem // emails « à traiter » de la semaine sans tâche
 	Running  []SideItem
 	Errors   []SideItem
 }

@@ -109,6 +109,36 @@ func (s *Service) AddTask(ctx context.Context, input, noteID, docID string) (Tas
 	return t, s.Store.CreateTask(ctx, t)
 }
 
+// AddMailTask crée une tâche depuis un email (saisie rapide, cf.
+// ParseQuickAdd), liée à cet email.
+func (s *Service) AddMailTask(ctx context.Context, input, mailID string) (Task, error) {
+	now := s.now()
+	q := ParseQuickAdd(input, now)
+	if q.Title == "" {
+		return Task{}, fmt.Errorf("la tâche est vide")
+	}
+	id, err := newID()
+	if err != nil {
+		return Task{}, err
+	}
+	t := Task{ID: id, Title: q.Title, Due: q.Due, Priority: q.Priority, MailID: mailID, CreatedAt: now}
+	return t, s.Store.CreateTask(ctx, t)
+}
+
+// NewMailNote crée une note depuis un email, liée à cet email.
+func (s *Service) NewMailNote(ctx context.Context, mailID, title, body string) (Note, error) {
+	id, err := newID()
+	if err != nil {
+		return Note{}, err
+	}
+	now := s.now()
+	if title = strings.TrimSpace(title); title == "" {
+		title = untitled
+	}
+	n := Note{ID: id, Title: title, Body: body, MailID: mailID, CreatedAt: now, UpdatedAt: now}
+	return n, s.Store.CreateNote(ctx, n)
+}
+
 // ToggleTask coche ou décoche une tâche.
 func (s *Service) ToggleTask(ctx context.Context, id string) (Task, error) {
 	t, err := s.task(ctx, id)

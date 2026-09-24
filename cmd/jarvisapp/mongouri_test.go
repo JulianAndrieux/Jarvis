@@ -25,3 +25,11 @@ func TestMongoURI_FlagThenEnvironment(t *testing.T) {
 		}
 	}
 }
+
+// La configuration de la boîte mail est cherchée dans ~/.jarvis (jalon 39).
+func TestDefaultMailConfig(t *testing.T) {
+	t.Setenv("HOME", "/home/moi")
+	if got := defaultMailConfig(); got != "/home/moi/.jarvis/mail.json" {
+		t.Errorf("defaultMailConfig = %q", got)
+	}
+}
