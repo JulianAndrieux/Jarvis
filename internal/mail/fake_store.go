@@ -45,20 +45,7 @@ func (s *FakeStore) Get(ctx context.Context, id string) (Mail, bool, error) {
 func (s *FakeStore) List(ctx context.Context, q Query) ([]Mail, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	search := strings.ToLower(q.Search)
-	var out []Mail
-	for _, m := range s.mails {
-		if q.Category != "" && m.Triage.Category != q.Category {
-			continue
-		}
-		if q.Untriaged && (m.Triage.Category != "" || m.Triage.Error != "") {
-			continue
-		}
-		if search != "" && !strings.Contains(strings.ToLower(strings.Join([]string{m.Subject, m.From.Name, m.From.Email, m.Text, m.Triage.Summary}, "\x00")), search) {
-			continue
-		}
-		out = append(out, clone(m))
-	}
+	out := s.matching(q)
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].Date.Equal(out[j].Date) {
 			return out[i].Date.After(out[j].Date)
@@ -73,6 +60,35 @@ func (s *FakeStore) List(ctx context.Context, q Query) ([]Mail, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (s *FakeStore) Count(ctx context.Context, q Query) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.matching(q)), nil
+}
+
+// matching : les emails correspondant à q, dans le désordre (verrou pris).
+func (s *FakeStore) matching(q Query) []Mail {
+	search := strings.ToLower(q.Search)
+	var out []Mail
+	for _, m := range s.mails {
+		if q.Category != "" && m.Triage.Category != q.Category {
+			continue
+		}
+		if q.Reply && !m.Triage.Reply {
+			continue
+		}
+		pending := (m.Triage.Category == "" && m.Triage.Error == "") || m.Triage.Version < TriageVersion
+		if q.Untriaged && !pending {
+			continue
+		}
+		if search != "" && !strings.Contains(strings.ToLower(strings.Join([]string{m.Subject, m.From.Name, m.From.Email, m.Text, m.Triage.Summary}, "\x00")), search) {
+			continue
+		}
+		out = append(out, clone(m))
+	}
+	return out
 }
 
 func (s *FakeStore) SetTriage(ctx context.Context, id string, t Triage) error {

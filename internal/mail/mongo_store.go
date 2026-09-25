@@ -80,7 +80,8 @@ func (s *MongoStore) Get(ctx context.Context, id string) (Mail, bool, error) {
 	return m, true, nil
 }
 
-func (s *MongoStore) List(ctx context.Context, q Query) ([]Mail, error) {
+// filter : le filtre MongoDB de q.
+func filter(q Query) bson.M {
 	var and bson.A
 	if q.Search != "" {
 		// Recherche littérale : le texte saisi n'est jamais une expression
@@ -94,19 +95,38 @@ func (s *MongoStore) List(ctx context.Context, q Query) ([]Mail, error) {
 	if q.Category != "" {
 		and = append(and, bson.M{"triage.category": q.Category})
 	}
+	if q.Reply {
+		and = append(and, bson.M{"triage.reply": true})
+	}
 	if q.Untriaged {
-		and = append(and, bson.M{"triage.category": "", "triage.error": ""})
+		// $not/$gte : un tri enregistré avant la version 2 n'a pas le champ.
+		and = append(and, bson.M{"$or": bson.A{
+			bson.M{"triage.category": "", "triage.error": ""},
+			bson.M{"triage.version": bson.M{"$not": bson.M{"$gte": TriageVersion}}},
+		}})
 	}
-	filter := bson.M{}
+	f := bson.M{}
 	if len(and) > 0 {
-		filter["$and"] = and
+		f["$and"] = and
 	}
+	return f
+}
+
+func (s *MongoStore) Count(ctx context.Context, q Query) (int, error) {
+	n, err := s.Mails.CountDocuments(ctx, filter(q))
+	if err != nil {
+		return 0, fmt.Errorf("mail: count: %w", err)
+	}
+	return int(n), nil
+}
+
+func (s *MongoStore) List(ctx context.Context, q Query) ([]Mail, error) {
 	limit := q.Limit
 	if limit <= 0 {
 		limit = DefaultLimit
 	}
 	opts := options.Find().SetSort(bson.D{{Key: "date", Value: -1}, {Key: "_id", Value: 1}}).SetLimit(int64(limit))
-	cur, err := s.Mails.Find(ctx, filter, opts)
+	cur, err := s.Mails.Find(ctx, filter(q), opts)
 	if err != nil {
 		return nil, fmt.Errorf("mail: list: %w", err)
 	}

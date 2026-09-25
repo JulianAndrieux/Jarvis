@@ -78,17 +78,29 @@ func CategoryLabel(c Category) string {
 	return string(c)
 }
 
+// TriageVersion : la version en vigueur du tri. Un email trié par une
+// version plus ancienne est retrié (la 2 ajoute les emails à répondre).
+const TriageVersion = 2
+
 // Triage : catégorie, résumé et action suggérée, avec leur provenance
 // (modèle, prompt) — cf. la contrainte de reproductibilité.
 type Triage struct {
 	Category Category `bson:"category"`
 	Summary  string   `bson:"summary"`
 	// Action : la tâche suggérée ("" : rien à faire).
-	Action string    `bson:"action"`
-	Model  string    `bson:"model"`
-	Prompt string    `bson:"prompt"`
-	Error  string    `bson:"error"` // tri impossible : pas retenté seul
-	At     time.Time `bson:"at"`
+	Action string `bson:"action"`
+	// Reply : l'expéditeur attend une réponse de l'utilisateur ; Question :
+	// ce qu'il lui demande, en une phrase. Les autres emails sont masqués
+	// de la vue par défaut.
+	Reply    bool   `bson:"reply"`
+	Question string `bson:"question"`
+	// Version : TriageVersion au moment du tri (0 : pas trié, ou trié avant
+	// la version 2).
+	Version int       `bson:"version"`
+	Model   string    `bson:"model"`
+	Prompt  string    `bson:"prompt"`
+	Error   string    `bson:"error"` // tri impossible : pas retenté seul
+	At      time.Time `bson:"at"`
 }
 
 // Mail : un email relevé.
@@ -118,8 +130,11 @@ type Query struct {
 	// l'expéditeur, du texte ou du résumé.
 	Search   string
 	Category Category
-	// Untriaged : seulement ceux que le modèle n'a pas encore triés (un tri
-	// en erreur n'y est plus).
+	// Reply : seulement ceux qui attendent une réponse de l'utilisateur.
+	Reply bool
+	// Untriaged : seulement ceux que le modèle n'a pas encore triés, ou
+	// triés par une version plus ancienne que TriageVersion (un tri en
+	// erreur de la version en vigueur n'y est plus).
 	Untriaged bool
 	Limit     int // 0 : DefaultLimit
 }
@@ -135,6 +150,8 @@ type Store interface {
 	Get(ctx context.Context, id string) (Mail, bool, error)
 	// List : du plus récent au plus ancien.
 	List(ctx context.Context, q Query) ([]Mail, error)
+	// Count : le nombre d'emails correspondant à q (Limit ignoré).
+	Count(ctx context.Context, q Query) (int, error)
 	SetTriage(ctx context.Context, id string, t Triage) error
 	SetAttachmentDoc(ctx context.Context, id string, index int, docID string) error
 	Attachment(ctx context.Context, id string, index int) ([]byte, bool, error)

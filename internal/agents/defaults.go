@@ -47,10 +47,10 @@ func Defaults(m Models) []Definition {
 		},
 		{
 			ID: MailTriage, Name: "Tri des emails", Group: "Emails",
-			Role:          "Classe chaque nouvel email (à traiter, document, information, notification, newsletter), le résume et propose la tâche à inscrire dans la todo s'il demande une action. La réponse est contrainte par un schéma.",
+			Role:          "Classe chaque nouvel email (à traiter, document, information, notification, newsletter), le résume, propose la tâche à inscrire dans la todo s'il demande une action, et dit si l'expéditeur attend une réponse (seuls ces emails sont affichés par défaut). Un expéditeur automatique (no-reply, notifications) n'attend jamais de réponse, quoi que dise le modèle. La réponse est contrainte par un schéma.",
 			Model:         m.Documents,
 			DefaultPrompt: mail.DefaultTriagePrompt,
-			Appended:      "L'expéditeur, l'objet, la date, les noms des pièces jointes et le début du corps (5000 caractères), puis le schéma JSON de la réponse. Le prompt utilisé est conservé avec le tri.",
+			Appended:      "L'expéditeur, les destinataires (et si l'utilisateur est destinataire direct, en copie ou absent), l'objet, la date, les noms des pièces jointes et le début du corps (5000 caractères), puis le schéma JSON de la réponse. Le prompt utilisé est conservé avec le tri.",
 		},
 		{
 			ID: Analysis, Name: "Analyse de ticket", Group: "Tickets",

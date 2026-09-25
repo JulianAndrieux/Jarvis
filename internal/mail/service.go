@@ -263,7 +263,7 @@ func (s *Service) triagePending(ctx context.Context) (more bool, err error) {
 		t, err := s.Triager.Triage(ctx, m)
 		release()
 		if errors.Is(err, errBadReply) {
-			t = Triage{Error: err.Error(), Model: s.Triager.Model, At: s.now()}
+			t = Triage{Error: err.Error(), Model: s.Triager.Model, At: s.now(), Version: TriageVersion}
 		} else if err != nil {
 			return false, err
 		}

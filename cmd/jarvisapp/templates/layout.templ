@@ -188,6 +188,10 @@ templ Layout(title string, active string) {
 				.mail-main { display: flex; flex-direction: column; min-width: 0; }
 				.mail-summary { color: var(--text-2); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 				.mail-unread .mail-from, .mail-unread .mail-subject { font-weight: 700; }
+				.mail-question { color: var(--danger); font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+				p.mail-question { white-space: normal; }
+				.mail-hidden { margin: -.4rem 0 .8rem; }
+				.chip-reply { background: var(--danger-soft); color: var(--danger); }
 				.mail-side { display: flex; align-items: center; gap: .5rem; justify-content: flex-end; }
 				@media (max-width: 760px) { .mail-row { grid-template-columns: 1fr; gap: .2rem; } .mail-side { justify-content: flex-start; } }
 				.chip-cat-a_traiter { background: var(--danger-soft); color: var(--danger); }

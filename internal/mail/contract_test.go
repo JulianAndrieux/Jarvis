@@ -69,11 +69,11 @@ func storeContract(t *testing.T, s Store, stamp string) {
 	if err != nil || len(pending) != 3 {
 		t.Fatalf("List(untriaged) = %d, %v", len(pending), err)
 	}
-	tr := Triage{Category: Action, Summary: "Payer la facture", Action: "Payer la facture", Model: "qwen3-8b", At: at(4)}
+	tr := Triage{Category: Action, Summary: "Payer la facture", Action: "Payer la facture", Model: "qwen3-8b", At: at(4), Version: TriageVersion}
 	if err := s.SetTriage(ctx, facture.ID, tr); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetTriage(ctx, stamp+"-promo", Triage{Error: "modèle indisponible", At: at(4)}); err != nil {
+	if err := s.SetTriage(ctx, stamp+"-promo", Triage{Error: "modèle indisponible", At: at(4), Version: TriageVersion}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetTriage(ctx, stamp+"-absent", tr); err == nil {
@@ -84,6 +84,30 @@ func storeContract(t *testing.T, s Store, stamp string) {
 		t.Errorf("List(untriaged) after triage = %+v, want only réunion (an error is not pending)", pending)
 	}
 	if got, _, _ := s.Get(ctx, facture.ID); got.Triage.Category != Action || got.Triage.Summary != "Payer la facture" || got.Triage.Model != "qwen3-8b" {
+		t.Errorf("triage = %+v", got.Triage)
+	}
+
+	// Emails à répondre ; un tri d'une version plus ancienne (sans cette
+	// analyse) est à refaire.
+	if err := s.SetTriage(ctx, stamp+"-réunion", Triage{Category: Info, Summary: "Réunion jeudi", Reply: true, Question: "Confirmer jeudi", Version: TriageVersion}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.Count(ctx, Query{Search: stamp, Untriaged: true}); err != nil || n != 0 {
+		t.Errorf("Count(untriaged) = %d, %v, want 0", n, err)
+	}
+	if err := s.SetTriage(ctx, stamp+"-promo", Triage{Category: Newsletter, Summary: "Promo"}); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := s.List(ctx, Query{Search: stamp, Untriaged: true}); len(pending) != 1 || pending[0].ID != stamp+"-promo" {
+		t.Errorf("List(untriaged) = %+v, want the mail triaged by an older version", pending)
+	}
+	if n, err := s.Count(ctx, Query{Search: stamp}); err != nil || n != 3 {
+		t.Errorf("Count = %d, %v, want 3", n, err)
+	}
+	if n, err := s.Count(ctx, Query{Search: stamp, Reply: true}); err != nil || n != 1 {
+		t.Errorf("Count(reply) = %d, %v, want 1", n, err)
+	}
+	if got, _, _ := s.Get(ctx, stamp+"-réunion"); !got.Triage.Reply || got.Triage.Question != "Confirmer jeudi" || got.Triage.Version != TriageVersion {
 		t.Errorf("triage = %+v", got.Triage)
 	}
 
@@ -105,6 +129,7 @@ func storeContract(t *testing.T, s Store, stamp string) {
 		{Search: "corps de promo"}:        "promo",
 		{Search: stamp + " ("}:            "",
 		{Search: stamp, Limit: 1}:         "réunion",
+		{Search: stamp, Reply: true}:      "réunion",
 	} {
 		ms, err := s.List(ctx, q)
 		if err != nil {

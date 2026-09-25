@@ -96,3 +96,57 @@ func TestCategoryLabels(t *testing.T) {
 		t.Errorf("CategoryLabel(\"\") = %q", CategoryLabel(""))
 	}
 }
+
+// Emails à répondre : le modèle dit si une réponse est attendue et ce
+// qu'on demande ; il lit pour cela la place de l'utilisateur parmi les
+// destinataires.
+func TestTriager_DetectsExpectedReply(t *testing.T) {
+	model := &scriptedLLM{reply: `{"category":"a_traiter","summary":"Alice propose une réunion.","action":"Répondre à Alice","question":"Confirmer la réunion de jeudi","reply":true}`}
+	tr := Triager{LLM: model}
+	m := Mail{Account: "moi@gmail.com", From: Address{Name: "Alice", Email: "alice@example.com"}, To: []Address{{Email: "Moi@gmail.com"}}, Cc: []Address{{Email: "bob@example.com"}}, Subject: "Réunion", Text: "Tu es dispo jeudi ?"}
+	got, err := tr.Triage(context.Background(), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Reply || got.Question != "Confirmer la réunion de jeudi" || got.Version != TriageVersion {
+		t.Errorf("Triage = %+v, want a reply expected", got)
+	}
+	for _, want := range []string{"À : Moi@gmail.com", "Cc : bob@example.com", "destinataire direct"} {
+		if !strings.Contains(model.got.Text, want) {
+			t.Errorf("text sent to the model lacks %q:\n%s", want, model.got.Text)
+		}
+	}
+	if !strings.Contains(string(model.got.Schema), `"reply"`) || !strings.Contains(string(model.got.Schema), `"question"`) {
+		t.Errorf("schema lacks reply/question: %s", model.got.Schema)
+	}
+
+	m.To, m.Cc = []Address{{Email: "alice@example.com"}}, []Address{{Email: "moi@gmail.com"}}
+	tr.Triage(context.Background(), m)
+	if !strings.Contains(model.got.Text, "seulement en copie") {
+		t.Errorf("Cc only not said to the model:\n%s", model.got.Text)
+	}
+	m.Cc = nil
+	tr.Triage(context.Background(), m)
+	if !strings.Contains(model.got.Text, "n'apparaît pas") {
+		t.Errorf("absent recipient not said to the model:\n%s", model.got.Text)
+	}
+}
+
+// Un expéditeur automatique n'attend jamais de réponse, quoi que dise le
+// modèle (un modèle local de 8B se laisse prendre aux « Répondez avant le… »).
+func TestTriager_AutomatedSenderNeverExpectsAReply(t *testing.T) {
+	for _, from := range []string{"no-reply@amazon.fr", "noreply@github.com", "Ne-Pas-Repondre@impots.gouv.fr", "donotreply@sncf.fr", "notifications@linkedin.com", "MAILER-DAEMON@google.com"} {
+		model := &scriptedLLM{reply: `{"category":"a_traiter","summary":"s","action":"","question":"Confirmer","reply":true}`}
+		got, err := Triager{LLM: model}.Triage(context.Background(), Mail{From: Address{Email: from}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Reply || got.Question != "" {
+			t.Errorf("%s: Reply = %v, question %q, want no reply expected", from, got.Reply, got.Question)
+		}
+	}
+	model := &scriptedLLM{reply: `{"category":"a_traiter","summary":"s","action":"","question":"Confirmer","reply":true}`}
+	if got, _ := (Triager{LLM: model}).Triage(context.Background(), Mail{From: Address{Email: "noemie@replyco.fr"}}); !got.Reply {
+		t.Error("a person's address was taken for an automated sender")
+	}
+}

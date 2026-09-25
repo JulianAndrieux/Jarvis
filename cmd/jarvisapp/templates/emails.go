@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
 )
@@ -19,6 +20,9 @@ type MailRow struct {
 	Unread      bool
 	Attachments int
 	TriageError bool
+	// Reply : une réponse est attendue ; Question : ce qui est demandé.
+	Reply    bool
+	Question string
 }
 
 // MailFilter : un filtre par catégorie.
@@ -34,8 +38,34 @@ type MailListView struct {
 	Rows    []MailRow
 	Search  string
 	Filters []MailFilter
-	// Category : le filtre en cours ("" : tous), gardé par la recherche.
+	// Category : le filtre choisi ("" : la vue par défaut), gardé par la
+	// recherche.
 	Category string
+	// ReplyView : seulement les emails à répondre ; Hidden : les autres,
+	// triés et masqués ; Pending : ceux que le modèle n'a pas encore
+	// analysés (masqués aussi).
+	ReplyView bool
+	Hidden    int
+	Pending   int
+}
+
+// hiddenLine : ce que la vue « à répondre » masque.
+func hiddenLine(v MailListView) string {
+	var parts []string
+	if v.Hidden > 0 {
+		parts = append(parts, plural(v.Hidden, "email masqué", "emails masqués")+" : pas de réponse attendue")
+	}
+	if v.Pending > 0 {
+		parts = append(parts, plural(v.Pending, "email", "emails")+" en cours d'analyse par le modèle local")
+	}
+	return strings.Join(parts, " · ")
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }
 
 // MailAttachmentView : une pièce jointe.

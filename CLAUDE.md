@@ -2495,6 +2495,36 @@ spécifique à `localhost`.
     `FakeStore` se comporte pareil), et `save` ne relit plus le job.
     Testé : `FakeStore`, `JobManager` (aucun passage par `Update`), contrat
     Mongo sur Atlas (une copie ancienne passée à `Update` n'efface rien).
+- **Jalon 40 — emails à répondre : fait, testé sur de vrais emails.**
+  Demandé : "utiliser un llm local pour analyser les emails pour lesquels
+  je dois répondre et les isoler. Il faudra masquer tous les autres".
+  - Tri (`mail.Triager`, même appel au LLM des documents) : deux champs
+    en plus, `question` (ce que l'expéditeur demande, une phrase) puis
+    `reply` (booléen) — dans cet ordre de génération (clés triées du
+    schéma) pour que le modèle formule la demande avant de trancher. Le
+    modèle lit aussi À/Cc et la place de l'utilisateur (destinataire
+    direct, seulement en copie, absent : liste de diffusion). Consigne :
+    dans le doute, pour une personne qui écrit directement, reply = true
+    (un email masqué à tort est l'erreur coûteuse).
+  - **Garde-fou déterministe** : expéditeur automatique (partie locale
+    contenant noreply, donotreply, nepasrepondre, notification,
+    mailerdaemon, tirets/points/soulignés ignorés) → jamais à répondre,
+    quoi que dise le modèle.
+  - `mail.TriageVersion` (2) enregistré avec chaque tri : un tri plus
+    ancien est à refaire (`Query.Untriaged`, `$not: {$gte: 2}` côté Mongo,
+    le champ manquant compte). `Query.Reply`, `Store.Count`.
+  - UI : l'onglet Emails n'affiche par défaut que les emails à répondre
+    (demande en rouge sous l'objet) ; ligne « N emails masqués : pas de
+    réponse attendue · M en cours d'analyse · Tout afficher » ; filtres
+    « ↩ À répondre », « Tous », catégories ; une recherche depuis la vue
+    par défaut porte sur toute la boîte. Fiche : « Réponse attendue :
+    … » ou « Pas de réponse attendue ».
+  - Constat : sur ce Mac (M3 de base), ~13-19 s par email (Qwen3-8B,
+    ~8 tokens/s en génération) ; première relève de 1343 emails sur 30
+    jours → plusieurs heures d'analyse, du plus récent au plus ancien.
+  - Validé : contrat des stores (Fake + Atlas), 12 vrais emails de la
+    boîte analysés hors file (11 newsletters/services masqués, 1 échange
+    sur un devis gardé).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

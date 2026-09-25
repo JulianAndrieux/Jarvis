@@ -28,11 +28,16 @@ func newMailServer(t *testing.T) (*Server, *mail.FakeStore, *notes.FakeStore) {
 		To: []mail.Address{{Email: "moi@gmail.com"}}, Subject: "Votre facture n° 42", Date: at(1),
 		Text:        "Bonjour,\nci-joint la facture.\n<script>alert(1)</script>",
 		Attachments: []mail.Attachment{{Index: 0, Filename: "facture 42.pdf", ContentType: "application/pdf", Size: 5, Stored: true}, {Index: 1, Filename: "énorme.zip", Size: 40 << 20}},
-		Triage:      mail.Triage{Category: mail.Action, Summary: "Acme envoie la facture 42 (120 €).", Action: "Payer la facture Acme", Model: "qwen3-8b"},
+		Triage:      mail.Triage{Category: mail.Action, Summary: "Acme envoie la facture 42 (120 €).", Action: "Payer la facture Acme", Model: "qwen3-8b", Version: mail.TriageVersion},
 	}, map[int][]byte{0: []byte("%PDF-")})
 	store.Save(ctx, mail.Mail{
 		ID: "m-promo", Account: "moi@gmail.com", From: mail.Address{Email: "news@shop.fr"}, Subject: "Soldes d'automne",
-		Date: at(2), Seen: true, Text: "-50 %", Triage: mail.Triage{Category: mail.Newsletter, Summary: "Promotions."},
+		Date: at(2), Seen: true, Text: "-50 %", Triage: mail.Triage{Category: mail.Newsletter, Summary: "Promotions.", Version: mail.TriageVersion},
+	}, nil)
+	store.Save(ctx, mail.Mail{
+		ID: "m-alice", Account: "moi@gmail.com", From: mail.Address{Name: "Alice", Email: "alice@example.com"},
+		To: []mail.Address{{Email: "moi@gmail.com"}}, Subject: "Dîner samedi ?", Date: at(4), Text: "Tu es libre samedi soir ?",
+		Triage: mail.Triage{Category: mail.Info, Summary: "Alice propose un dîner samedi.", Reply: true, Question: "Dire à Alice si samedi soir convient", Model: "qwen3-8b", Version: mail.TriageVersion},
 	}, nil)
 	store.Save(ctx, mail.Mail{ID: "m-new", Subject: "Pas encore trié", Date: at(3), Text: "..."}, nil)
 	s.Mail = &mail.Service{
@@ -48,7 +53,7 @@ func newMailServer(t *testing.T) (*Server, *mail.FakeStore, *notes.FakeStore) {
 
 func TestEmails_ListShowsTriageAndFilters(t *testing.T) {
 	s, _, _ := newMailServer(t)
-	page := do(s, http.MethodGet, "/emails", nil).Body.String()
+	page := do(s, http.MethodGet, "/emails?cat=tous", nil).Body.String()
 	for _, want := range []string{"Votre facture n° 42", "Acme", "Acme envoie la facture 42 (120 €).", "À traiter", "Soldes d&#39;automne", "Newsletter / promo", "Pas encore trié", "À trier", "moi@gmail.com", `href="/emails/m-facture"`, "📎"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("list lacks %q", want)
@@ -67,6 +72,52 @@ func TestEmails_ListShowsTriageAndFilters(t *testing.T) {
 	}
 }
 
+// Vue par défaut : seulement les emails qui attendent une réponse ; les
+// autres sont masqués (comptés, accessibles par « Tous »), jamais perdus.
+func TestEmails_DefaultViewShowsOnlyMailsAwaitingAReply(t *testing.T) {
+	s, _, _ := newMailServer(t)
+	page := do(s, http.MethodGet, "/emails", nil).Body.String()
+	for _, want := range []string{"Dîner samedi ?", "Dire à Alice si samedi soir convient", "À répondre", "2 emails masqués", "1 email en cours d&#39;analyse", `href="/emails?cat=tous"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("default view lacks %q", want)
+		}
+	}
+	for _, hidden := range []string{"Votre facture", "Soldes", "Pas encore trié"} {
+		if strings.Contains(page, hidden) {
+			t.Errorf("default view shows %q, which awaits no reply", hidden)
+		}
+	}
+	all := do(s, http.MethodGet, "/emails?cat=tous", nil).Body.String()
+	for _, want := range []string{"Dîner samedi ?", "Votre facture", "Soldes", "Pas encore trié"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("« Tous » lacks %q", want)
+		}
+	}
+	if strings.Contains(all, "emails masqués") {
+		t.Error("« Tous » still says mails are hidden")
+	}
+	// Une recherche depuis la vue par défaut porte sur toute la boîte.
+	if found := do(s, http.MethodGet, "/emails?q=soldes", nil).Body.String(); !strings.Contains(found, "Soldes") {
+		t.Error("search from the default view skipped the hidden mails")
+	}
+
+	s.Mail.Store.(*mail.FakeStore).SetTriage(context.Background(), "m-alice", mail.Triage{Category: mail.Info, Version: mail.TriageVersion})
+	if empty := do(s, http.MethodGet, "/emails", nil).Body.String(); !strings.Contains(empty, "attend de réponse de ta part") {
+		t.Error("empty default view not explained")
+	}
+}
+
+func TestEmails_DetailSaysWhetherAReplyIsExpected(t *testing.T) {
+	s, _, _ := newMailServer(t)
+	page := do(s, http.MethodGet, "/emails/m-alice", nil).Body.String()
+	if !strings.Contains(page, "Réponse attendue") || !strings.Contains(page, "Dire à Alice si samedi soir convient") {
+		t.Error("detail does not show the expected reply")
+	}
+	if page := do(s, http.MethodGet, "/emails/m-promo", nil).Body.String(); !strings.Contains(page, "Pas de réponse attendue") {
+		t.Error("detail does not say no reply is expected")
+	}
+}
+
 func TestEmails_NotConfiguredInvitesToConnect(t *testing.T) {
 	s, _, _ := newMailServer(t)
 	s.Mail.ConfigPath = filepath.Join(t.TempDir(), "absent.json")
@@ -74,7 +125,7 @@ func TestEmails_NotConfiguredInvitesToConnect(t *testing.T) {
 	if !strings.Contains(page, `href="/emails/settings"`) || !strings.Contains(page, "Connecter ma boîte") {
 		t.Error("no invitation to configure the mailbox")
 	}
-	if !strings.Contains(page, "Votre facture n° 42") {
+	if !strings.Contains(page, "Dîner samedi ?") {
 		t.Error("mails already stored hidden while the mailbox is not configured")
 	}
 }

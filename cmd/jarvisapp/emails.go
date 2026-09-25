@@ -39,32 +39,77 @@ func (s *Server) mailEnabled(w http.ResponseWriter) bool {
 	return true
 }
 
+// Filtres de la liste, en plus des catégories : la vue par défaut ne
+// montre que les emails qui attendent une réponse, les autres sont
+// masqués (« Tous » les montre).
+const (
+	filterReply = "repondre"
+	filterAll   = "tous"
+)
+
 func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 	if !s.mailEnabled(w) {
 		return
 	}
+	ctx := r.Context()
 	search, cat := r.URL.Query().Get("q"), r.URL.Query().Get("cat")
-	list, err := s.Mail.Store.List(r.Context(), mail.Query{Search: search, Category: mail.Category(cat)})
+	// Sans filtre choisi : les emails à répondre, sauf pour une recherche
+	// (elle porte alors sur toute la boîte).
+	view := cat
+	if view == "" {
+		view = filterReply
+		if search != "" {
+			view = filterAll
+		}
+	}
+	q := mail.Query{Search: search}
+	switch view {
+	case filterReply:
+		q.Reply = true
+	case filterAll:
+	default:
+		q.Category = mail.Category(view)
+	}
+	list, err := s.Mail.Store.List(ctx, q)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
-	v := templates.MailListView{Status: s.Mail.Status(), Search: search, Category: cat}
+	v := templates.MailListView{Status: s.Mail.Status(), Search: search, Category: cat, ReplyView: view == filterReply}
+	if v.ReplyView {
+		all, err := s.Mail.Store.Count(ctx, mail.Query{Search: search})
+		if err != nil {
+			serverError(w, err)
+			return
+		}
+		pending, err := s.Mail.Store.Count(ctx, mail.Query{Search: search, Untriaged: true})
+		if err != nil {
+			serverError(w, err)
+			return
+		}
+		// Un email en cours d'analyse (retrié par une nouvelle version)
+		// peut encore porter Reply : ne pas le compter deux fois.
+		shownPending := 0
+		for _, m := range list {
+			if m.Triage.Version < mail.TriageVersion {
+				shownPending++
+			}
+		}
+		v.Pending = pending - shownPending
+		v.Hidden = max(all-len(list)-v.Pending, 0)
+		if len(list) == mail.DefaultLimit {
+			v.Hidden = 0 // liste tronquée : le compte serait faux
+		}
+	}
 	filter := func(label, value string) templates.MailFilter {
 		q := url.Values{}
 		if search != "" {
 			q.Set("q", search)
 		}
-		if value != "" {
-			q.Set("cat", value)
-		}
-		href := "/emails"
-		if len(q) > 0 {
-			href += "?" + q.Encode()
-		}
-		return templates.MailFilter{Label: label, Href: href, Active: cat == value}
+		q.Set("cat", value)
+		return templates.MailFilter{Label: label, Href: "/emails?" + q.Encode(), Active: view == value}
 	}
-	v.Filters = append(v.Filters, filter("Tous", ""))
+	v.Filters = append(v.Filters, filter("↩ À répondre", filterReply), filter("Tous", filterAll))
 	for _, c := range mail.Categories {
 		v.Filters = append(v.Filters, filter(mail.CategoryLabel(c), string(c)))
 	}
@@ -77,6 +122,7 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 			ID: m.ID, From: from, Subject: m.Subject, Summary: m.Triage.Summary,
 			Date: m.Date.Local().Format("02/01 15:04"), Category: m.Triage.Category,
 			Unread: !m.Seen, Attachments: len(m.Attachments), TriageError: m.Triage.Error != "",
+			Reply: m.Triage.Reply, Question: m.Triage.Question,
 		})
 	}
 	renderPage(w, r, http.StatusOK, templates.EmailsPage(v), "emails")

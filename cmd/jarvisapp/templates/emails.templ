@@ -47,8 +47,17 @@ templ EmailsPage(v MailListView) {
 						<a class={ "chip", "filter-chip", templ.KV("active", f.Active) } href={ templ.SafeURL(f.Href) }>{ f.Label }</a>
 					}
 				</div>
+				if v.ReplyView && hiddenLine(v) != "" {
+					<p class="muted mail-hidden">
+						{ hiddenLine(v) } · <a href="/emails?cat=tous">Tout afficher</a>
+					</p>
+				}
 				if len(v.Rows) == 0 {
-					<div class="empty-state"><p>Aucun email.</p></div>
+					if v.ReplyView {
+						<div class="empty-state"><p>Aucun email n'attend de réponse de ta part.</p></div>
+					} else {
+						<div class="empty-state"><p>Aucun email.</p></div>
+					}
 				} else {
 					<ul class="mail-list">
 						for _, m := range v.Rows {
@@ -57,11 +66,17 @@ templ EmailsPage(v MailListView) {
 									<span class="mail-from">{ m.From }</span>
 									<span class="mail-main">
 										<span class="mail-subject">{ m.Subject }</span>
+										if m.Reply && m.Question != "" {
+											<span class="mail-question">↩ { m.Question }</span>
+										}
 										if m.Summary != "" {
 											<span class="mail-summary">{ m.Summary }</span>
 										}
 									</span>
 									<span class="mail-side">
+										if m.Reply && !v.ReplyView {
+											<span class="chip chip-reply">↩ À répondre</span>
+										}
 										<span class={ categoryChip(m.Category) }>{ mail.CategoryLabel(m.Category) }</span>
 										if m.TriageError {
 											<span class="chip chip-failed" title="Le modèle n'a pas pu trier cet email">!</span>
@@ -115,6 +130,15 @@ templ EmailPage(v MailView) {
 				} else if v.Mail.Triage.Category == "" {
 					<p class="muted">Pas encore trié : le modèle local s'en charge après la relève.</p>
 				} else {
+					if v.Mail.Triage.Reply {
+						<p class="mail-question"><strong>↩ Réponse attendue</strong>
+							if v.Mail.Triage.Question != "" {
+								: { v.Mail.Triage.Question }
+							}
+						</p>
+					} else if v.Mail.Triage.Version >= mail.TriageVersion {
+						<p class="muted">Pas de réponse attendue.</p>
+					}
 					<p>{ v.Mail.Triage.Summary }</p>
 					<p class="muted">Trié par { v.Mail.Triage.Model } le { v.Mail.Triage.At.Local().Format("02/01/2006 15:04") }</p>
 				}

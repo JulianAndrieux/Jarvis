@@ -116,6 +116,9 @@ func TestService_TriageFailures(t *testing.T) {
 			t.Errorf("%s: want the bad reply noted", m.Subject)
 		}
 	}
+	if pending, _ := store.List(context.Background(), Query{Untriaged: true}); len(pending) != 0 {
+		t.Errorf("pending = %d, want a noted bad reply not retried", len(pending))
+	}
 
 	s2, store2 := newService(t, oneMailbox(), &scriptedLLM{err: errors.New("connection refused")})
 	SaveConfig(s2.ConfigPath, cfg)
