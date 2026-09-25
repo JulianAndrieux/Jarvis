@@ -76,7 +76,7 @@ func smokeTest(jobsCollection, ticketsCollection string) func(ctx context.Contex
 
 // smokeArgs : les options de l'essai à blanc.
 func smokeArgs(current []string, addr, jobsCollection, ticketsCollection string) []string {
-	return deploy.OverrideFlags(current, withMailIsolation(map[string]string{
+	return deploy.OverrideFlags(current, withDataIsolation(map[string]string{
 		"addr":               addr,
 		"mongo-collection":   jobsCollection + "_deploycheck",
 		"tickets-collection": ticketsCollection + "_deploycheck",

@@ -17,9 +17,10 @@ const MaxPages = 3
 
 // pageOf : la page principale de chaque gabarit de cmd/jarvisapp.
 var pageOf = map[string]string{
-	"upload":       "/",
+	"dashboard":    "/",
 	"layout":       "/",
-	"job":          "/",
+	"upload":       "/import",
+	"job":          "/import",
 	"documents":    "/documents",
 	"notes":        "/notes",
 	"sidebar":      "/tasks",

@@ -114,8 +114,15 @@ func readModulePath(moduleDir string) string {
 func (s *Server) Routes() chi.Router {
 	r := chi.NewRouter()
 
+	// Tableau de bord : la page d'accueil de l'application (ticket "Revoir
+	// ordre des sections") — l'import vit désormais sur /import. La page
+	// ne lit aucune base (contrôle de santé du lanceur) ; les
+	// statistiques sont chargées à part.
+	r.Get("/", s.handleDashboard)
+	r.Get("/dashboard/stats", s.handleDashboardStats)
+
 	// Upload / suivi de documents (ex-cmd/jarvisweb).
-	r.Get("/", s.handleIndex)
+	r.Get("/import", s.handleIndex)
 	r.Post("/jobs", s.handleSubmitFiles)
 	r.Get("/jobs/{id}", s.handleJobStatus)
 
@@ -173,11 +180,13 @@ func redirectToAdmin(w http.ResponseWriter, r *http.Request) {
 
 // --- Upload / suivi de documents ---
 
+// handleIndex sert la page d'import (/import depuis le tableau de bord —
+// le contrôle de santé du lanceur vise « / », donc le tableau de bord).
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// Réponse déjà commencée : une erreur de rendu (typiquement le
-	// contrôle de santé du lanceur qui ferme la connexion) se journalise,
-	// un http.Error arriverait trop tard ("superfluous WriteHeader").
+	// Réponse déjà commencée : une erreur de rendu (le client qui ferme la
+	// connexion) se journalise, un http.Error arriverait trop tard
+	// ("superfluous WriteHeader").
 	if err := templates.Upload(s.Registry.Names()).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render index: %v\n", err)
 	}
@@ -229,21 +238,28 @@ func (s *Server) handleDocuments(w http.ResponseWriter, r *http.Request) {
 
 	rows := make([]templates.DocumentRow, len(jobs))
 	for i, j := range jobs {
-		fam := familyOf(j)
-		ext := strings.ToUpper(strings.TrimPrefix(fileExt(j.Filename), "."))
-		rows[i] = templates.DocumentRow{
-			ID: j.ID, Filename: j.Filename, DocType: j.DocType,
-			Status: string(j.Status), Tags: j.Tags,
-			CreatedAt:    j.CreatedAt.Local().Format("2006-01-02 15:04"),
-			Family:       fam,
-			Ext:          ext,
-			HasThumbnail: fam.Pipeline(),
-		}
+		rows[i] = documentRow(j, "2006-01-02 15:04")
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.DocumentsPage(rows, filters, typeFilters(typeFilter)).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render documents: %v\n", err)
+	}
+}
+
+// documentRow : l'entrée d'un job dans une grille de documents
+// (bibliothèque, tableau de bord). dateLayout laisse chaque page choisir
+// la longueur de sa date ; l'heure est toujours locale (MongoDB rend les
+// dates en UTC).
+func documentRow(j webapp.Job, dateLayout string) templates.DocumentRow {
+	fam := familyOf(j)
+	return templates.DocumentRow{
+		ID: j.ID, Filename: j.Filename, DocType: j.DocType,
+		Status: string(j.Status), Tags: j.Tags,
+		CreatedAt:    j.CreatedAt.Local().Format(dateLayout),
+		Family:       fam,
+		Ext:          strings.ToUpper(strings.TrimPrefix(fileExt(j.Filename), ".")),
+		HasThumbnail: fam.Pipeline(),
 	}
 }
 

@@ -77,7 +77,7 @@ func (s *MongoStore) ListNotes(ctx context.Context, q NoteQuery) ([]Note, error)
 	if len(and) > 0 {
 		filter["$and"] = and
 	}
-	opts := options.Find().SetSort(bson.D{{Key: "pinned", Value: -1}, {Key: "updated_at", Value: -1}}).SetLimit(500)
+	opts := options.Find().SetSort(bson.D{{Key: "pinned", Value: -1}, {Key: "updated_at", Value: -1}}).SetLimit(MaxListNotes)
 	cur, err := s.Notes.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, fmt.Errorf("notes: list notes: %w", err)
@@ -127,7 +127,7 @@ func (s *MongoStore) ListTasks(ctx context.Context, q TaskQuery) ([]Task, error)
 	if q.MailID != "" {
 		filter["mail_id"] = q.MailID
 	}
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(2000)
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(MaxListTasks)
 	cur, err := s.Tasks.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, fmt.Errorf("notes: list tasks: %w", err)

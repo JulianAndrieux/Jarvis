@@ -11,6 +11,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
+	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
 // Jalon 33 : deux espaces — l'application (thème clair : Importer,
@@ -19,7 +20,15 @@ import (
 
 func spacesServer(t *testing.T) *Server {
 	t.Helper()
-	s, _ := newTestServer(t, &blockingRunner{})
+	s, _ := spacesServerWithStore(t)
+	return s
+}
+
+// spacesServerWithStore : le même serveur, plus la fake de jobs (le
+// tableau de bord compte des documents).
+func spacesServerWithStore(t *testing.T) (*Server, *webapp.FakeStore) {
+	t.Helper()
+	s, store := newTestServer(t, &blockingRunner{})
 	// Modèle de code d'exemple (Classes, Modèle), comme les tests du
 	// navigateur de code.
 	s.model = newCodeTestServer().model
@@ -28,7 +37,7 @@ func spacesServer(t *testing.T) *Server {
 	s.Mail = &mail.Service{Store: mail.NewFakeStore()}
 	reg, _ := agents.NewRegistry(context.Background(), agents.NewFakeStore(), agents.Defaults(agents.Models{Documents: "m", Tickets: "m"}))
 	s.Agents = reg
-	return s
+	return s, store
 }
 
 func page(t *testing.T, s *Server, path string) string {
@@ -50,13 +59,13 @@ func navLinks(body string) string {
 
 func TestSpaces_UserPagesAreLightWithUserNav(t *testing.T) {
 	s := spacesServer(t)
-	for _, path := range []string{"/", "/documents", "/emails", "/notes", "/tasks", "/tickets"} {
+	for _, path := range []string{"/", "/import", "/documents", "/emails", "/notes", "/tasks", "/tickets"} {
 		body := page(t, s, path)
 		if !strings.Contains(body, `class="theme-user"`) || strings.Contains(body, "prefers-color-scheme") {
 			t.Errorf("%s: not the light user theme (whatever the system setting)", path)
 		}
 		nav := navLinks(body)
-		for _, want := range []string{`href="/"`, `href="/documents"`, `href="/emails"`, `href="/notes"`, `href="/tasks"`, `href="/tickets"`} {
+		for _, want := range []string{`href="/"`, `href="/import"`, `href="/documents"`, `href="/emails"`, `href="/notes"`, `href="/tasks"`, `href="/tickets"`} {
 			if !strings.Contains(nav, want) {
 				t.Errorf("%s: user nav lacks %s", path, want)
 			}
@@ -69,6 +78,26 @@ func TestSpaces_UserPagesAreLightWithUserNav(t *testing.T) {
 		if !strings.Contains(body, `href="/admin"`) {
 			t.Errorf("%s: no way to the admin space", path)
 		}
+	}
+}
+
+// L'ordre demandé par le ticket "Revoir ordre des sections" : Tableau de
+// bord, Notes, Emails, Documents, Tâches, Tickets, Importer.
+func TestSpaces_UserNavOrder(t *testing.T) {
+	nav := navLinks(page(t, spacesServer(t), "/"))
+	// Le tableau de bord est cherché par son libellé : href="/" est un
+	// préfixe de tous les autres liens.
+	want := []string{">Tableau de bord<", `href="/notes"`, `href="/emails"`, `href="/documents"`, `href="/tasks"`, `href="/tickets"`, `href="/import"`}
+	prev := -1
+	for _, marker := range want {
+		at := strings.Index(nav, marker)
+		if at < 0 {
+			t.Fatalf("la navigation n'a pas %s : %s", marker, nav)
+		}
+		if at <= prev {
+			t.Errorf("%s arrive trop tôt dans la navigation : %s", marker, nav)
+		}
+		prev = at
 	}
 }
 

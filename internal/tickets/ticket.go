@@ -170,6 +170,11 @@ type Ticket struct {
 	Events    []Event       `bson:"events,omitempty"`
 }
 
+// MaxList borne ce que List ramène : un appelant qui reçoit autant de
+// tickets sait que la liste est tronquée, et qu'un compte tiré de sa
+// longueur est un minimum, pas un total.
+const MaxList = 500
+
 // Store est le port de persistance des tickets.
 type Store interface {
 	Create(ctx context.Context, t Ticket) error

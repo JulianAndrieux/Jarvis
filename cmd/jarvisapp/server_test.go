@@ -77,9 +77,11 @@ func multipartUpload(t *testing.T, filename string, content []byte) (*bytes.Buff
 	return &body, w.FormDataContentType()
 }
 
-func TestHandleIndex_MentionsRecognizedDocTypes(t *testing.T) {
+// La page d'import vit sur /import depuis que « / » est le tableau de
+// bord (ticket "Revoir ordre des sections").
+func TestHandleImport_MentionsRecognizedDocTypes(t *testing.T) {
 	s, _ := newTestServer(t, &blockingRunner{})
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/import", nil)
 	rec := httptest.NewRecorder()
 
 	s.Routes().ServeHTTP(rec, req)
@@ -92,6 +94,26 @@ func TestHandleIndex_MentionsRecognizedDocTypes(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "<select") {
 		t.Errorf("body still has a doc-type selector, want none (classification is automatic): %s", rec.Body.String())
+	}
+}
+
+// Les boutons d'import de la bibliothèque mènent à /import, plus à « / »
+// (devenu le tableau de bord).
+func TestDocumentsPage_ImportLinksPointToImport(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/documents", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /documents = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `href="/import"`) {
+		t.Errorf("la bibliothèque n'a pas de lien vers /import : %s", body)
+	}
+	// « / » ne subsiste que comme lien de la marque et de la navigation,
+	// jamais comme bouton d'import.
+	if strings.Contains(body, `class="button button-primary" href="/"`) {
+		t.Errorf("un bouton d'import pointe encore vers « / »")
 	}
 }
 

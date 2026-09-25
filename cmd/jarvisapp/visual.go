@@ -20,7 +20,7 @@ import (
 // du processus courant, mais port libre, collections jetables, et rien qui
 // agisse (modèles, dossier surveillé, copie locale, tickets).
 func visualArgs(current []string, addr, jobsCollection, ticketsCollection string) []string {
-	return deploy.OverrideFlags(current, withMailIsolation(map[string]string{
+	return deploy.OverrideFlags(current, withDataIsolation(map[string]string{
 		"addr":               addr,
 		"mongo-collection":   jobsCollection + "_visualcheck",
 		"tickets-collection": ticketsCollection + "_visualcheck",
@@ -34,13 +34,17 @@ func visualArgs(current []string, addr, jobsCollection, ticketsCollection string
 	}))
 }
 
-// withMailIsolation : une instance de contrôle (essai à blanc, capture)
-// ne relève jamais la boîte mail et ne lit ni ne trie les vrais emails
-// (jalon 39).
-func withMailIsolation(overrides map[string]string) map[string]string {
+// withDataIsolation : une instance de contrôle (essai à blanc, capture)
+// ne touche jamais aux vraies données — elle ne relève pas la boîte mail
+// et ne lit ni ne trie les vrais emails (jalon 39), ni les vraies notes
+// et tâches (le tableau de bord, première page visitée, les lit depuis le
+// ticket "Revoir ordre des sections").
+func withDataIsolation(overrides map[string]string) map[string]string {
 	overrides["mail-config"] = ""
 	overrides["mail-collection"] = "emails_check"
 	overrides["mail-files-collection"] = "email_files_check"
+	overrides["notes-collection"] = "notes_check"
+	overrides["tasks-collection"] = "tasks_check"
 	return overrides
 }
 

@@ -100,6 +100,15 @@ type TaskQuery struct {
 	MailID string
 }
 
+// MaxListNotes et MaxListTasks bornent ce que ListNotes et ListTasks
+// ramènent : un appelant qui reçoit autant d'éléments sait que la liste
+// est tronquée, et qu'un compte tiré de sa longueur est un minimum, pas
+// un total.
+const (
+	MaxListNotes = 500
+	MaxListTasks = 2000
+)
+
 // Store persiste notes et tâches (MongoStore en production, FakeStore en
 // test). Get : ok=false si l'élément n'existe pas ; Update et Delete
 // échouent sur un élément inconnu.

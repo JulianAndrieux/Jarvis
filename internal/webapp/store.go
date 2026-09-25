@@ -72,6 +72,10 @@ type Store interface {
 	// plus ancien (CreatedAt décroissant) — la bibliothèque de documents,
 	// jalon 17.
 	List(ctx context.Context, q ListQuery) ([]Job, error)
+	// Count : le nombre de jobs correspondant à q (Limit et SummaryOnly
+	// ignorés) — le tableau de bord veut un total, sans charger les jobs
+	// eux-mêmes. Mêmes filtres que List, exactement.
+	Count(ctx context.Context, q ListQuery) (int, error)
 	// Delete supprime définitivement le job id — jalon 18. Une erreur
 	// est retournée si id n'existe pas (jamais un succès silencieux sur
 	// rien à supprimer).

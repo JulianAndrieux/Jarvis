@@ -101,24 +101,13 @@ func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 
 	matched := make([]Job, 0, len(s.jobs))
 	for _, j := range s.jobs {
-		if q.Status != "" && j.Status != q.Status {
+		if !matchesQuery(j, q, search) {
 			continue
 		}
-		if q.Format != "" && string(familyOf(j)) != q.Format {
-			continue
+		if q.SummaryOnly {
+			j.Content, j.Result, j.Thumbnail, j.Progress = nil, nil, nil, nil
 		}
-		if !q.CreatedFrom.IsZero() && j.CreatedAt.Before(q.CreatedFrom) {
-			continue
-		}
-		if !q.CreatedBefore.IsZero() && !j.CreatedAt.Before(q.CreatedBefore) {
-			continue
-		}
-		if search == "" || jobMatchesSearch(j, search) {
-			if q.SummaryOnly {
-				j.Content, j.Result, j.Thumbnail, j.Progress = nil, nil, nil, nil
-			}
-			matched = append(matched, j)
-		}
+		matched = append(matched, j)
 	}
 
 	sort.Slice(matched, func(i, k int) bool { return matched[i].CreatedAt.After(matched[k].CreatedAt) })
@@ -127,6 +116,40 @@ func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 		matched = matched[:limit]
 	}
 	return matched, nil
+}
+
+// Count, comme MongoStore : les filtres de List, sans Limit ni tri.
+func (s *FakeStore) Count(ctx context.Context, q ListQuery) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	search := strings.ToLower(q.Search)
+	n := 0
+	for _, j := range s.jobs {
+		if matchesQuery(j, q, search) {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// matchesQuery : la condition partagée par List et Count (search est déjà
+// en minuscules) — une seule copie, pour qu'elles ne puissent pas
+// diverger l'une de l'autre.
+func matchesQuery(j Job, q ListQuery, search string) bool {
+	if q.Status != "" && j.Status != q.Status {
+		return false
+	}
+	if q.Format != "" && string(familyOf(j)) != q.Format {
+		return false
+	}
+	if !q.CreatedFrom.IsZero() && j.CreatedAt.Before(q.CreatedFrom) {
+		return false
+	}
+	if !q.CreatedBefore.IsZero() && !j.CreatedAt.Before(q.CreatedBefore) {
+		return false
+	}
+	return search == "" || jobMatchesSearch(j, search)
 }
 
 func (s *FakeStore) SetThumbnail(ctx context.Context, id string, png []byte) error {

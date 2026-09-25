@@ -93,7 +93,9 @@ templ Layout(title string, active string) {
 				.brand { display: flex; align-items: center; gap: .55rem; font-weight: 700; font-size: 1.02rem; color: var(--text); letter-spacing: -.01em; }
 				.brand:hover { text-decoration: none; }
 				.brand-mark { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), #9a5bd5); display: grid; place-items: center; color: #fff; font-size: .8rem; font-weight: 800; }
-				.app-nav { display: flex; gap: .25rem; }
+				/* Sept entrées depuis le tableau de bord : la barre passe à la
+				   ligne plutôt que d'élargir toute la page en largeur étroite. */
+				.app-nav { display: flex; flex-wrap: wrap; gap: .25rem; }
 				.app-nav a { padding: .38rem .8rem; border-radius: 8px; color: var(--text-2); font-weight: 550; font-size: .92rem; }
 				.app-nav a:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
 				.app-nav a.active { background: var(--accent-soft); color: var(--accent); }
@@ -227,6 +229,15 @@ templ Layout(title string, active string) {
 				.page-title { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
 				.page-title h2 { margin: 0; font-size: 1.5rem; letter-spacing: -.02em; }
 				.card { border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.25rem; margin: 1rem 0; background: var(--surface); box-shadow: var(--shadow); }
+
+				/* Tableau de bord (ticket "Revoir ordre des sections") */
+				.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 1rem; margin-bottom: 2rem; }
+				.stat-card { display: flex; flex-direction: column; gap: .2rem; padding: 1rem 1.1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); color: var(--text); }
+				.stat-card:hover { box-shadow: var(--shadow-hover); text-decoration: none; }
+				.stat-label { font-size: .85rem; color: var(--text-2); font-weight: 600; }
+				.stat-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+				.stat-card.alert .stat-value { color: var(--danger); }
+				.stat-detail { font-size: .8rem; color: var(--muted); }
 
 				/* Pastilles, badges */
 				.chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; font-weight: 600; padding: .15rem .55rem; border-radius: 999px; background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
@@ -637,12 +648,13 @@ templ Layout(title string, active string) {
 				} else {
 					<a href="/" class="brand"><span class="brand-mark">J</span>Jarvis</a>
 					<nav class="app-nav">
-						<a href="/" class={ templ.KV("active", active == "upload") }><span class="nav-icon">⬆️</span>Importer</a>
-						<a href="/documents" class={ templ.KV("active", active == "documents") }><span class="nav-icon">📄</span>Documents</a>
-						<a href="/emails" class={ templ.KV("active", active == "emails") }><span class="nav-icon">📧</span>Emails</a>
+						<a href="/" class={ templ.KV("active", active == "dashboard") }><span class="nav-icon">📊</span>Tableau de bord</a>
 						<a href="/notes" class={ templ.KV("active", active == "notes") }><span class="nav-icon">📝</span>Notes</a>
+						<a href="/emails" class={ templ.KV("active", active == "emails") }><span class="nav-icon">📧</span>Emails</a>
+						<a href="/documents" class={ templ.KV("active", active == "documents") }><span class="nav-icon">📄</span>Documents</a>
 						<a href="/tasks" class={ templ.KV("active", active == "tasks") }><span class="nav-icon">✅</span>Tâches</a>
 						<a href="/tickets" class={ templ.KV("active", active == "tickets") }><span class="nav-icon">🎫</span>Tickets</a>
+						<a href="/import" class={ templ.KV("active", active == "upload") }><span class="nav-icon">⬆️</span>Importer</a>
 					</nav>
 					<button type="button" class="button-ghost sidebar-toggle" title="Afficher / masquer la barre latérale" onclick="jarvisToggleSidebar()">☰</button>
 					<a href="/admin" class="space-link" title="Agents, architecture, code et tests">⚙ Admin</a>

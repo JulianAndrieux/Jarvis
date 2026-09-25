@@ -287,7 +287,41 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	if limit == 0 {
 		limit = int64(DefaultListLimit)
 	}
+	filter := jobFilter(q)
+	// Le contenu inline des jobs d'avant le jalon 25 n'est jamais rechargé
+	// par une liste.
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit).SetProjection(bson.M{"content": 0})
+	if q.SummaryOnly {
+		opts.SetProjection(bson.M{"content": 0, "result_json": 0, "thumbnail": 0, "progress_json": 0})
+	}
+	cur, err := s.Collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("webapp: mongo list: %w", err)
+	}
+	defer cur.Close(ctx)
 
+	var jobs []Job
+	for cur.Next(ctx) {
+		var doc mongoJobDoc
+		if err := cur.Decode(&doc); err != nil {
+			return nil, fmt.Errorf("webapp: mongo list: decode: %w", err)
+		}
+		job, err := docToJob(doc)
+		if err != nil {
+			return nil, fmt.Errorf("webapp: mongo list: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+	if err := cur.Err(); err != nil {
+		return nil, fmt.Errorf("webapp: mongo list: %w", err)
+	}
+	return jobs, nil
+}
+
+// jobFilter : le filtre BSON d'une ListQuery, partagé par List et Count —
+// une seule copie, pour qu'un compte ne puisse pas porter sur d'autres
+// documents que la liste correspondante.
+func jobFilter(q ListQuery) bson.M {
 	var and bson.A
 	if q.Search != "" {
 		re := bson.M{"$regex": q.Search, "$options": "i"}
@@ -324,35 +358,17 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	if len(and) > 0 {
 		filter["$and"] = and
 	}
+	return filter
+}
 
-	// Le contenu inline des jobs d'avant le jalon 25 n'est jamais rechargé
-	// par une liste.
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(limit).SetProjection(bson.M{"content": 0})
-	if q.SummaryOnly {
-		opts.SetProjection(bson.M{"content": 0, "result_json": 0, "thumbnail": 0, "progress_json": 0})
-	}
-	cur, err := s.Collection.Find(ctx, filter, opts)
+// Count compte côté serveur (CountDocuments) : le tableau de bord veut
+// des totaux, jamais les jobs eux-mêmes.
+func (s *MongoStore) Count(ctx context.Context, q ListQuery) (int, error) {
+	n, err := s.Collection.CountDocuments(ctx, jobFilter(q))
 	if err != nil {
-		return nil, fmt.Errorf("webapp: mongo list: %w", err)
+		return 0, fmt.Errorf("webapp: mongo count: %w", err)
 	}
-	defer cur.Close(ctx)
-
-	var jobs []Job
-	for cur.Next(ctx) {
-		var doc mongoJobDoc
-		if err := cur.Decode(&doc); err != nil {
-			return nil, fmt.Errorf("webapp: mongo list: decode: %w", err)
-		}
-		job, err := docToJob(doc)
-		if err != nil {
-			return nil, fmt.Errorf("webapp: mongo list: %w", err)
-		}
-		jobs = append(jobs, job)
-	}
-	if err := cur.Err(); err != nil {
-		return nil, fmt.Errorf("webapp: mongo list: %w", err)
-	}
-	return jobs, nil
+	return int(n), nil
 }
 
 // mongoJobDoc est la représentation BSON d'un Job. Result est stocké tel

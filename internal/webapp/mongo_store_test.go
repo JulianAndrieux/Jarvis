@@ -509,6 +509,46 @@ func TestMongoStore_List_FiltersByFormatIncludingLegacyPDFs(t *testing.T) {
 	}
 }
 
+// Count compte côté serveur, avec exactement les filtres de List — la
+// vraie implémentation ne doit pas diverger de la fake (ticket "Revoir
+// ordre des sections", tableau de bord).
+func TestMongoStore_Count_FiltersLikeList(t *testing.T) {
+	store := newTestMongoStore(t)
+	ctx := context.Background()
+	prefix := "count-" + time.Now().Format("150405.000000")
+	for _, j := range []Job{
+		{ID: prefix + "-a", Filename: prefix + "-a.pdf", Status: StatusDone, CreatedAt: time.Now()},
+		{ID: prefix + "-b", Filename: prefix + "-b.pdf", Status: StatusDone, CreatedAt: time.Now()},
+		{ID: prefix + "-c", Filename: prefix + "-c.pdf", Status: StatusFailed, CreatedAt: time.Now()},
+	} {
+		if _, err := store.Create(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+		defer cleanupJob(t, store, j.ID)
+	}
+
+	count := func(q ListQuery) int {
+		n, err := store.Count(ctx, q)
+		if err != nil {
+			t.Fatalf("Count(%+v) error = %v", q, err)
+		}
+		return n
+	}
+	if n := count(ListQuery{Search: prefix}); n != 3 {
+		t.Errorf("Count(Search=%s) = %d, want 3", prefix, n)
+	}
+	if n := count(ListQuery{Search: prefix, Status: StatusFailed}); n != 1 {
+		t.Errorf("Count(Search+Status=failed) = %d, want 1", n)
+	}
+	// Limit borne List, jamais Count.
+	if n := count(ListQuery{Search: prefix, Limit: 1}); n != 3 {
+		t.Errorf("Count(Limit=1) = %d, want 3 (Limit ignoré)", n)
+	}
+	if got, err := store.List(ctx, ListQuery{Search: prefix, Limit: 1}); err != nil || len(got) != 1 {
+		t.Errorf("List(Limit=1) = %d jobs err=%v, want 1 (la prémisse du test)", len(got), err)
+	}
+}
+
 // Ticket "Ajouter commentaire sur document" : le commentaire est
 // persisté, et ses mots sont trouvés par la recherche.
 func TestMongoStore_Comment_PersistsAndIsSearchable(t *testing.T) {
