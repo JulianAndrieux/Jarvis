@@ -15,7 +15,7 @@ func TestWithToolPaths_AddsHomebrewAndGoToAMinimalPath(t *testing.T) {
 	if parts[0] != "/usr/bin" {
 		t.Errorf("existing entries must keep their order first: %q", got)
 	}
-	for _, want := range []string{"/opt/homebrew/bin", "/usr/local/bin", "/usr/local/go/bin", "/Users/x/go/bin"} {
+	for _, want := range []string{"/opt/homebrew/bin", "/usr/local/bin", "/usr/local/go/bin", "/Users/x/go/bin", "/Users/x/.local/bin"} {
 		if !strings.Contains(":"+got+":", ":"+want+":") {
 			t.Errorf("PATH %q lacks %s", got, want)
 		}

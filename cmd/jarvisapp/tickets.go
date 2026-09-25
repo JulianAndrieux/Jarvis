@@ -48,6 +48,9 @@ func (s *Server) ticketRoutes(r chi.Router) {
 	r.Post("/tickets/{id}/cancel", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.Cancel(ctx, id)
 	}))
+	r.Post("/tickets/{id}/agent", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
+		return s.Tickets.SetAgent(ctx, id, tickets.AgentKind(r.FormValue("agent")))
+	}))
 	r.Post("/tickets/{id}/comment", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.Comment(ctx, id, r.FormValue("text"))
 	}))
@@ -72,7 +75,8 @@ func (s *Server) handleTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.TicketsPage(list).Render(r.Context(), w); err != nil {
+	v := templates.TicketsView{List: list, Agents: s.agentOptions(s.Tickets.DefaultAgent), Autopilot: s.Tickets.Autopilot}
+	if err := templates.TicketsPage(v).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render tickets: %v\n", err)
 	}
 }
@@ -85,7 +89,7 @@ func (s *Server) handleTicketCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "formulaire invalide : "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	t, err := s.Tickets.Create(r.Context(), r.FormValue("title"), r.FormValue("need"), r.FormValue("acceptance"))
+	t, err := s.Tickets.CreateFor(r.Context(), r.FormValue("title"), r.FormValue("need"), r.FormValue("acceptance"), tickets.AgentKind(r.FormValue("agent")))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -168,8 +172,24 @@ func (s *Server) handleTicketDelete(w http.ResponseWriter, r *http.Request) {
 
 // ticketActions : les actions possibles sur t ; pour un ticket déployé,
 // les commits de main pas encore sur GitHub.
+// agentOptions : le choix entre Claude Code et le modèle local, selected
+// présélectionné ; vide si Claude Code n'est pas configuré.
+func (s *Server) agentOptions(selected tickets.AgentKind) []templates.AgentOption {
+	if s.Tickets.Claude == nil {
+		return nil
+	}
+	if selected == "" {
+		selected = tickets.AgentLocal
+	}
+	var out []templates.AgentOption
+	for _, a := range []tickets.AgentKind{tickets.AgentClaude, tickets.AgentLocal} {
+		out = append(out, templates.AgentOption{Value: string(a), Label: a.Label(), Selected: a == selected})
+	}
+	return out
+}
+
 func (s *Server) ticketActions(ctx context.Context, t tickets.Ticket) templates.TicketActions {
-	a := templates.TicketActions{Deploy: s.Tickets.Deployer != nil, Push: s.Tickets.Pusher != nil}
+	a := templates.TicketActions{Deploy: s.Tickets.Deployer != nil, Push: s.Tickets.Pusher != nil, Agents: s.agentOptions(t.Agent), Autopilot: s.Tickets.Autopilot}
 	if t.Status == tickets.Deployed && s.Unpushed != nil {
 		a.PushKnown = true
 		pending, err := s.Unpushed(ctx)

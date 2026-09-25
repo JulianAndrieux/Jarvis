@@ -86,6 +86,8 @@ func smokeArgs(current []string, addr, jobsCollection, ticketsCollection string)
 		// Jalon 37 : l'essai à blanc ne touche jamais aux modèles (il
 		// arrêterait ceux de l'application en service).
 		"models-file": "",
+		// Jalon 41 : ni relève des tickets, ni Claude Code en essai.
+		"ticket-pickup": "0",
 	}))
 }
 

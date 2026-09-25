@@ -117,7 +117,27 @@ func renderDiff(diff string) templ.Component {
 }
 
 // TicketActions : ce que l'instance permet sur un ticket (jalon 30).
+// AgentOption : un agent proposé pour un ticket (jalon 41).
+type AgentOption struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
+// TicketsView : la liste des tickets et le formulaire de création.
+type TicketsView struct {
+	List []tickets.Ticket
+	// Agents : le choix de l'agent (vide : un seul agent, pas de choix).
+	Agents []AgentOption
+	// Autopilot : plan et déploiement sans validation humaine.
+	Autopilot bool
+}
+
 type TicketActions struct {
+	// Agents : changer l'agent du ticket (vide : pas de choix).
+	Agents []AgentOption
+	// Autopilot : pilote automatique activé.
+	Autopilot bool
 	// Deploy : déploiement automatique configuré.
 	Deploy bool
 	// Push : push vers GitHub depuis l'application configuré ; Unpushed :

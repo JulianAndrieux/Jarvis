@@ -30,6 +30,7 @@ func visualArgs(current []string, addr, jobsCollection, ticketsCollection string
 		"agent-dev":          "false",
 		"deploy":             "false",
 		"deploy-marker":      filepath.Join(os.TempDir(), "jarvis-visualcheck.json"),
+		"ticket-pickup":      "0",
 	}))
 }
 

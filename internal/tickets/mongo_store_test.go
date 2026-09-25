@@ -43,6 +43,7 @@ func TestMongoStore_TicketLifecycle(t *testing.T) {
 	}
 	tk.Status, tk.Plan = PlanReady, "1. ajouter ListQuery.Since"
 	tk.Branch, tk.Diff, tk.Report, tk.Pushed = "ticket/"+id, "+\tSince string", "ok  tous les paquets", "abc1234"
+	tk.Agent = AgentClaude
 	if err := s.Update(ctx, tk); err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +54,9 @@ func TestMongoStore_TicketLifecycle(t *testing.T) {
 	}
 	if got.Branch != "ticket/"+id || got.Diff != "+\tSince string" || got.Report == "" {
 		t.Errorf("Get() branch %q diff %q report %q (jalon 28 fields not persisted)", got.Branch, got.Diff, got.Report)
+	}
+	if got.Agent != AgentClaude {
+		t.Errorf("Get() agent %q (agent du ticket non persisté)", got.Agent)
 	}
 	if got.Pushed != "abc1234" {
 		t.Errorf("Get() pushed %q (push vers GitHub not persisted)", got.Pushed)
@@ -66,7 +70,7 @@ func TestMongoStore_TicketLifecycle(t *testing.T) {
 	}
 	found := false
 	for _, l := range list {
-		found = found || l.ID == id
+		found = found || (l.ID == id && l.Agent == AgentClaude)
 	}
 	if !found {
 		t.Error("List(PlanReady) does not include the ticket")

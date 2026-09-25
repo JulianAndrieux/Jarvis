@@ -122,6 +122,28 @@ func (m Manager) Discard(ctx context.Context, id string) error {
 	return nil
 }
 
+// Snapshot crée une copie de main en lecture, détachée (aucune branche),
+// avec les seuls fichiers versionnés — pour qu'un agent explore le code
+// sans jamais voir les données locales du dépôt (data/…). release la
+// supprime.
+func (m Manager) Snapshot(ctx context.Context) (dir string, release func(), err error) {
+	if err := os.MkdirAll(m.Root, 0o755); err != nil {
+		return "", nil, fmt.Errorf("workspace: %w", err)
+	}
+	dir, err = os.MkdirTemp(m.Root, "snapshot-")
+	if err != nil {
+		return "", nil, fmt.Errorf("workspace: %w", err)
+	}
+	os.Remove(dir) // git worktree add veut créer le dossier lui-même
+	if _, err := m.git(ctx, m.Repo, "worktree", "add", "-q", "--detach", dir, m.base()); err != nil {
+		return "", nil, err
+	}
+	return dir, func() {
+		m.git(context.Background(), m.Repo, "worktree", "remove", "--force", dir)
+		os.RemoveAll(dir)
+	}, nil
+}
+
 func (m Manager) git(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir

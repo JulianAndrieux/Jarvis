@@ -51,7 +51,7 @@ func (s *MongoStore) Update(ctx context.Context, t Ticket) error {
 		"title": t.Title, "need": t.Need, "acceptance": t.Acceptance,
 		"status": t.Status, "plan": t.Plan, "updated_at": time.Now(),
 		"branch": t.Branch, "diff": t.Diff, "report": t.Report, "pushed": t.Pushed,
-		"review": t.Review,
+		"review": t.Review, "agent": t.Agent,
 	}})
 	if err != nil {
 		return fmt.Errorf("tickets: update %s: %w", t.ID, err)

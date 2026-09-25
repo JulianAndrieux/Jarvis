@@ -49,6 +49,28 @@ type Manager struct {
 	DeployMaxWait time.Duration
 	// Pusher permet de pousser main vers GitHub depuis un ticket déployé.
 	Pusher Pusher
+
+	// Claude : les agents Claude Code (jalon 41), pour les tickets dont
+	// Agent vaut AgentClaude ; nil : Claude n'est pas proposé. Les champs
+	// Analyst, Developer et Reviewer ci-dessus sont ceux du modèle local.
+	Claude *AgentSet
+	// DefaultAgent : l'agent d'un ticket créé sans choix ("" : local).
+	DefaultAgent AgentKind
+	// Autopilot : plan validé et diff déployé sans l'utilisateur — le
+	// déploiement seulement si la vérification de Jarvis et la relecture
+	// ont réussi ; sinon le diff attend sa validation.
+	Autopilot bool
+}
+
+// agents : les agents du ticket t (ceux du modèle local, ou Claude).
+func (m *Manager) agents(t Ticket) AgentSet {
+	if t.Agent == AgentClaude {
+		if m.Claude == nil {
+			return AgentSet{}
+		}
+		return *m.Claude
+	}
+	return AgentSet{Analyst: m.Analyst, Developer: m.Developer, Reviewer: m.Reviewer}
 }
 
 // Push pousse main vers GitHub depuis un ticket déployé (action explicite
@@ -84,8 +106,19 @@ func (m *Manager) Push(ctx context.Context, id string) error {
 	return nil
 }
 
-// Create enregistre un nouveau ticket en brouillon.
+// Create enregistre un nouveau ticket en brouillon, pour l'agent par
+// défaut.
 func (m *Manager) Create(ctx context.Context, title, need, acceptance string) (Ticket, error) {
+	return m.CreateFor(ctx, title, need, acceptance, "")
+}
+
+// CreateFor enregistre un nouveau ticket en brouillon pour cet agent ("" :
+// l'agent par défaut).
+func (m *Manager) CreateFor(ctx context.Context, title, need, acceptance string, agent AgentKind) (Ticket, error) {
+	agent, err := m.checkAgent(agent)
+	if err != nil {
+		return Ticket{}, err
+	}
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Ticket{}, fmt.Errorf("tickets: le titre est obligatoire")
@@ -95,12 +128,100 @@ func (m *Manager) Create(ctx context.Context, title, need, acceptance string) (T
 		return Ticket{}, err
 	}
 	now := time.Now()
-	t := Ticket{ID: id, Title: title, Need: strings.TrimSpace(need), Acceptance: strings.TrimSpace(acceptance), Status: Draft, CreatedAt: now, UpdatedAt: now}
+	t := Ticket{ID: id, Title: title, Need: strings.TrimSpace(need), Acceptance: strings.TrimSpace(acceptance), Status: Draft, Agent: agent, CreatedAt: now, UpdatedAt: now}
 	if err := m.Store.Create(ctx, t); err != nil {
 		return Ticket{}, err
 	}
 	m.event(ctx, id, Event{Kind: EventStatus, Author: AuthorUser, Text: "Ticket créé"})
 	return t, nil
+}
+
+// checkAgent : l'agent demandé, s'il existe sur cette instance ("" :
+// l'agent par défaut).
+func (m *Manager) checkAgent(agent AgentKind) (AgentKind, error) {
+	if agent == "" {
+		agent = m.DefaultAgent
+	}
+	switch agent {
+	case "", AgentLocal:
+		return AgentLocal, nil
+	case AgentClaude:
+		if m.Claude == nil {
+			return "", fmt.Errorf("tickets: Claude Code n'est pas configuré sur cette instance")
+		}
+		return AgentClaude, nil
+	}
+	return "", fmt.Errorf("tickets: agent inconnu %q", agent)
+}
+
+// SetAgent change l'agent d'un ticket sur lequel personne ne travaille.
+func (m *Manager) SetAgent(ctx context.Context, id string, agent AgentKind) error {
+	agent, err := m.checkAgent(agent)
+	if err != nil {
+		return err
+	}
+	t, ok, err := m.Store.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("tickets: %s introuvable", id)
+	}
+	if t.Status.Active() || t.Status == Deployed || t.Status == Cancelled {
+		return fmt.Errorf("tickets: agent inchangeable à l'étape « %s »", t.Status.Label())
+	}
+	if t.Agent == agent {
+		return nil
+	}
+	t.Agent = agent
+	if err := m.Store.Update(ctx, t); err != nil {
+		return err
+	}
+	m.event(ctx, id, Event{Kind: EventStatus, Author: AuthorUser, Text: "Agent : " + agent.Label()})
+	return nil
+}
+
+// PickUp lance l'analyse du plus ancien brouillon, si aucun ticket n'est
+// en cours (analyse, développement, déploiement) — la relève automatique.
+// Retourne l'identifiant du ticket lancé ("" : rien à faire).
+func (m *Manager) PickUp(ctx context.Context) (string, error) {
+	all, err := m.Store.List(ctx, "")
+	if err != nil {
+		return "", err
+	}
+	var oldest *Ticket
+	for i := range all {
+		if all[i].Status.Active() {
+			return "", nil
+		}
+		if all[i].Status == Draft && (oldest == nil || all[i].CreatedAt.Before(oldest.CreatedAt)) {
+			oldest = &all[i]
+		}
+	}
+	if oldest == nil {
+		return "", nil
+	}
+	if err := m.startAnalysis(ctx, oldest.ID, "Pris par la relève automatique — analyse lancée"); err != nil {
+		return "", err
+	}
+	return oldest.ID, nil
+}
+
+// RunPickUp relève les brouillons à chaque intervalle, jusqu'à l'arrêt
+// de ctx.
+func (m *Manager) RunPickUp(ctx context.Context, interval time.Duration) {
+	for {
+		if id, err := m.PickUp(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "tickets: relève : %v\n", err)
+		} else if id != "" {
+			fmt.Fprintf(os.Stderr, "tickets: relève : ticket %s lancé\n", id)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+	}
 }
 
 func (m *Manager) Get(ctx context.Context, id string) (Ticket, bool, error) {
@@ -125,7 +246,11 @@ func (m *Manager) Comment(ctx context.Context, id, text string) error {
 
 // StartAnalysis lance l'analyse d'un brouillon ou d'un ticket en échec.
 func (m *Manager) StartAnalysis(ctx context.Context, id string) error {
-	t, err := m.transition(ctx, id, Analyzing, "Analyse demandée")
+	return m.startAnalysis(ctx, id, "Analyse demandée")
+}
+
+func (m *Manager) startAnalysis(ctx context.Context, id, label string) error {
+	t, err := m.transition(ctx, id, Analyzing, label)
 	if err != nil {
 		return err
 	}
@@ -151,23 +276,35 @@ func (m *Manager) RequestRevision(ctx context.Context, id, feedback string) erro
 // ApprovePlan valide le plan proposé (première validation humaine) et,
 // si le développement est configuré, le lance aussitôt.
 func (m *Manager) ApprovePlan(ctx context.Context, id string) error {
-	if _, err := m.transition(ctx, id, PlanApproved, "Plan validé"); err != nil {
+	return m.approvePlan(ctx, id, "Plan validé")
+}
+
+func (m *Manager) approvePlan(ctx context.Context, id, label string) error {
+	t, err := m.transition(ctx, id, PlanApproved, label)
+	if err != nil {
 		return err
 	}
-	if !m.canDevelop() {
+	if !m.canDevelop(t) {
 		return nil
 	}
 	return m.StartDevelopment(ctx, id, "")
 }
 
-func (m *Manager) canDevelop() bool {
-	return m.Developer != nil && m.Workspace != nil && m.Verifier != nil
+func (m *Manager) canDevelop(t Ticket) bool {
+	return m.agents(t).Developer != nil && m.Workspace != nil && m.Verifier != nil
 }
 
 // StartDevelopment lance (ou relance) le développement d'un ticket au
 // plan validé ; feedback (facultatif) est transmis à l'agent.
 func (m *Manager) StartDevelopment(ctx context.Context, id, feedback string) error {
-	if !m.canDevelop() {
+	current, ok, err := m.Store.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("tickets: %s introuvable", id)
+	}
+	if !m.canDevelop(current) {
 		return fmt.Errorf("tickets: le développement automatique n'est pas configuré")
 	}
 	t, err := m.transition(ctx, id, Developing, "Développement lancé")
@@ -390,7 +527,14 @@ func (m *Manager) transition(ctx context.Context, id string, to Status, label st
 // chaque étape de l'agent dans le fil.
 func (m *Manager) analyze(t Ticket, req AnalysisRequest) {
 	ctx := context.Background()
-	if m.Gate != nil {
+	analyst := m.agents(t).Analyst
+	if analyst == nil {
+		m.fail(ctx, t, "Aucun agent d'analyse pour « "+t.Agent.Label()+" » sur cette instance.", "")
+		return
+	}
+	// Claude Code ne passe pas par les modèles locaux : pas de bascule
+	// vers le profil code (Devstral) pour ses tickets.
+	if m.Gate != nil && t.Agent != AgentClaude {
 		release, err := m.Gate.AcquireFor(ctx, gate.Code)
 		if err != nil {
 			m.fail(ctx, t, "Modèle de code indisponible : "+err.Error(), "")
@@ -398,7 +542,7 @@ func (m *Manager) analyze(t Ticket, req AnalysisRequest) {
 		}
 		defer release()
 	}
-	plan, err := m.Analyst.Analyze(ctx, req, func(s AgentStep) {
+	plan, err := analyst.Analyze(ctx, req, func(s AgentStep) {
 		m.event(ctx, t.ID, Event{Kind: EventStep, Author: AuthorAgent, Text: s.Summary, Detail: clip(s.Detail, m.detailChars())})
 	})
 	if err != nil {
@@ -414,7 +558,14 @@ func (m *Manager) analyze(t Ticket, req AnalysisRequest) {
 		fmt.Fprintf(os.Stderr, "tickets: update %s: %v\n", t.ID, err)
 		return
 	}
-	m.event(ctx, t.ID, Event{Kind: EventPlan, Author: AuthorAgent, Text: "Plan proposé — à valider"})
+	if !m.Autopilot {
+		m.event(ctx, t.ID, Event{Kind: EventPlan, Author: AuthorAgent, Text: "Plan proposé — à valider"})
+		return
+	}
+	m.event(ctx, t.ID, Event{Kind: EventPlan, Author: AuthorAgent, Text: "Plan proposé"})
+	if err := m.approvePlan(ctx, t.ID, "Plan validé automatiquement (pilote automatique)"); err != nil {
+		m.event(ctx, t.ID, Event{Kind: EventError, Author: AuthorAgent, Text: "Pilote automatique : développement non lancé — " + err.Error()})
+	}
 }
 
 // develop mène le développement à son tour dans la file partagée : copie
@@ -423,7 +574,8 @@ func (m *Manager) analyze(t Ticket, req AnalysisRequest) {
 // l'agent avec le rapport, dans la limite de MaxAttempts.
 func (m *Manager) develop(t Ticket, feedback string) {
 	ctx := context.Background()
-	if m.Gate != nil {
+	set := m.agents(t)
+	if m.Gate != nil && t.Agent != AgentClaude {
 		release, err := m.Gate.AcquireFor(ctx, gate.Code)
 		if err != nil {
 			m.fail(ctx, t, "Modèle de code indisponible : "+err.Error(), "")
@@ -458,7 +610,7 @@ func (m *Manager) develop(t Ticket, feedback string) {
 	for attempt := 1; attempt <= attempts+reviews; attempt++ {
 		n := previous + attempt
 		m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: fmt.Sprintf("Tentative %d", n)})
-		summary, err := m.Developer.Develop(ctx, DevRequest{
+		summary, err := set.Developer.Develop(ctx, DevRequest{
 			Title: t.Title, Need: t.Need, Acceptance: t.Acceptance, Plan: t.Plan, Feedback: feedback, Dir: dir, Attempt: n,
 		}, func(s AgentStep) {
 			m.event(ctx, t.ID, Event{Kind: EventStep, Author: AuthorAgent, Text: s.Summary, Detail: clip(s.Detail, m.detailChars())})
@@ -504,8 +656,8 @@ func (m *Manager) develop(t Ticket, feedback string) {
 			feedback = "Tu as modifié du code Go sans ajouter ni modifier aucun fichier _test.go. Le projet est en TDD strict : écris les tests qui couvrent ta modification."
 			continue
 		}
-		if m.Reviewer != nil {
-			res, sendBack := m.review(ctx, t, dir, diff, reviews, maxReviews)
+		if set.Reviewer != nil {
+			res, sendBack := m.review(ctx, set.Reviewer, t, dir, diff, reviews, maxReviews)
 			if sendBack {
 				reviews++
 				feedback = "La relecture de ton diff demande des changements :\n" + FormatReview(res) + "\nCorrige ces points (read_file puis edit_file), relance les tests, puis appelle finish."
@@ -523,18 +675,42 @@ func (m *Manager) develop(t Ticket, feedback string) {
 			return
 		}
 		m.event(ctx, t.ID, Event{Kind: EventPlan, Author: AuthorAgent, Text: "Diff prêt à relire — " + summary})
+		if m.Autopilot {
+			m.autoDeploy(ctx, t)
+		}
 		return
 	}
 	m.fail(ctx, t, failure, report)
+}
+
+// autoDeploy : pilote automatique, le diff vérifié part en service si la
+// relecture l'a accepté ; sinon il attend l'utilisateur, avec la raison.
+func (m *Manager) autoDeploy(ctx context.Context, t Ticket) {
+	var why string
+	switch {
+	case t.Review == nil:
+		why = "aucune relecture n'a eu lieu"
+	case !t.Review.Approved:
+		why = "la relecture n'a pas accepté le diff"
+	case m.Deployer == nil:
+		why = "le déploiement n'est pas configuré"
+	}
+	if why != "" {
+		m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: "Pilote automatique : " + why + " — diff laissé à ta validation"})
+		return
+	}
+	if err := m.startDeployment(ctx, t.ID, "Déploiement automatique : vérification et relecture réussies (pilote automatique)"); err != nil {
+		m.event(ctx, t.ID, Event{Kind: EventError, Author: AuthorAgent, Text: "Pilote automatique : déploiement non lancé — " + err.Error()})
+	}
 }
 
 // review fait relire le diff vérifié (jalon 36). sendBack : le relecteur
 // demande des changements et il reste des allers-retours. Une relecture
 // impossible ne bloque jamais : le diff va à la revue humaine avec la
 // raison.
-func (m *Manager) review(ctx context.Context, t Ticket, dir, diff string, done, max int) (res ReviewResult, sendBack bool) {
+func (m *Manager) review(ctx context.Context, reviewer Reviewer, t Ticket, dir, diff string, done, max int) (res ReviewResult, sendBack bool) {
 	m.event(ctx, t.ID, Event{Kind: EventStatus, Author: AuthorAgent, Text: "Relecture du diff"})
-	res, err := m.Reviewer.Review(ctx, ReviewRequest{
+	res, err := reviewer.Review(ctx, ReviewRequest{
 		Title: t.Title, Need: t.Need, Acceptance: t.Acceptance, Plan: t.Plan, Diff: withoutGenerated(diff), Dir: dir,
 	}, func(s AgentStep) {
 		m.event(ctx, t.ID, Event{Kind: EventStep, Author: AuthorAgent, Text: "Relecture : " + s.Summary, Detail: clip(s.Detail, m.detailChars())})

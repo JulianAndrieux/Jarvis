@@ -165,3 +165,40 @@ func TestManager_PrepareFastForwardsAnUntouchedWorkspace(t *testing.T) {
 		t.Errorf("reused workspace not brought up to main: %v", err)
 	}
 }
+
+// Jalon 41 : l'analyse par Claude Code lit un instantané de main — les
+// fichiers versionnés seulement, jamais les données locales du dépôt
+// (data/, non versionné).
+func TestManager_SnapshotHasOnlyTrackedFiles(t *testing.T) {
+	repo := newRepo(t)
+	os.MkdirAll(filepath.Join(repo, "data"), 0o755)
+	os.WriteFile(filepath.Join(repo, "data", "facture.json"), []byte("secret"), 0o644)
+	os.WriteFile(filepath.Join(repo, "brouillon.go"), []byte("package a\n"), 0o644)
+	m := Manager{Repo: repo, Root: t.TempDir()}
+
+	dir, release, err := m.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a.go")); err != nil {
+		t.Errorf("tracked file missing from the snapshot: %v", err)
+	}
+	for _, private := range []string{"data/facture.json", "brouillon.go"} {
+		if _, err := os.Stat(filepath.Join(dir, private)); err == nil {
+			t.Errorf("snapshot contains untracked %s", private)
+		}
+	}
+	dir2, release2, err := m.Snapshot(context.Background())
+	if err != nil || dir2 == dir {
+		t.Fatalf("second snapshot = %q, %v (want its own directory)", dir2, err)
+	}
+	release()
+	release2()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("snapshot not removed: %v", err)
+	}
+	out, _ := exec.Command("git", "-C", repo, "worktree", "list").Output()
+	if strings.Count(string(out), "\n") != 1 {
+		t.Errorf("worktrees left behind:\n%s", out)
+	}
+}

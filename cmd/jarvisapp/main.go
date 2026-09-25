@@ -30,6 +30,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/agents"
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
+	"github.com/JulianAndrieux/Jarvis/internal/claudecode"
 	"github.com/JulianAndrieux/Jarvis/internal/deploy"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
@@ -95,6 +96,12 @@ func main() {
 	mailInterval := flag.Duration("mail-interval", 5*time.Minute, "Intervalle entre deux relèves de la boîte mail")
 	mailDays := flag.Int("mail-days", 30, "Première relève : les emails des N derniers jours")
 	agentTimeout := flag.Duration("agent-timeout", 15*time.Minute, "Délai d'un appel au modèle de l'agent — un tour qui écrit un fichier entier peut prendre plusieurs minutes sur un modèle local lent")
+	claudeBin := flag.String("claude-bin", "", "Claude Code (CLI claude) pour les tickets confiés à Claude (jalon 41) ; vide = cherché sur le PATH ; introuvable = tickets au modèle local seulement")
+	claudeModel := flag.String("claude-model", "", "Modèle de Claude Code pour les tickets ; vide = celui par défaut du CLI")
+	claudeTimeout := flag.Duration("claude-timeout", time.Hour, "Durée maximale d'une session de Claude Code (analyse, développement ou relecture)")
+	ticketAgent := flag.String("ticket-default-agent", "claude", "Agent proposé par défaut à la création d'un ticket : claude ou local (local si Claude Code est introuvable)")
+	ticketAutopilot := flag.Bool("ticket-autopilot", true, "Pilote automatique des tickets : plan validé sans l'utilisateur, diff déployé si la vérification et la relecture réussissent (sinon il attend la validation)")
+	ticketPickup := flag.Duration("ticket-pickup", 5*time.Minute, "Intervalle de la relève des tickets en brouillon (analyse lancée d'elle-même, un ticket à la fois) ; 0 = désactivée")
 	agentDev := flag.Bool("agent-dev", true, "Développement automatique des tickets au plan validé (copie de travail git isolée, vérification complète, diff à relire)")
 	worktreesDir := flag.String("worktrees-dir", "", "Dossier des copies de travail des tickets ; vide = ~/.jarvis/worktrees")
 	deployOn := flag.Bool("deploy", true, "Déploiement des tickets au diff accepté : fusion vérifiée dans main, essai à blanc, redémarrage sur la nouvelle version (nécessite --agent-dev)")
@@ -417,6 +424,33 @@ func main() {
 		log.Printf("jarvisapp: déploiement des tickets activé (binaire %s)", binary)
 	}
 	log.Printf("jarvisapp: agent des tickets -> %s (%s)", *agentURL, *agentModel)
+	// Claude Code (jalon 41) : mêmes étapes, même vérification par Jarvis,
+	// mais le travail d'agent part à Claude plutôt qu'au modèle local.
+	if bin, err := findClaude(*claudeBin); err == nil {
+		cli := claudecode.CLI{Binary: bin, Model: *claudeModel, Timeout: *claudeTimeout}
+		snapRoot := *worktreesDir
+		if snapRoot == "" {
+			home, _ := os.UserHomeDir()
+			snapRoot = filepath.Join(home, ".jarvis", "worktrees")
+		}
+		snapshots := workspace.Manager{Repo: dir, Root: snapRoot}
+		set := &tickets.AgentSet{Analyst: claudecode.Analyst{Runner: cli, Snapshot: snapshots.Snapshot}}
+		if ticketManager.Developer != nil {
+			set.Developer = claudecode.Developer{Runner: cli}
+			if ticketManager.Reviewer != nil {
+				set.Reviewer = claudecode.Reviewer{Runner: cli}
+			}
+		}
+		ticketManager.Claude = set
+		ticketManager.DefaultAgent = tickets.AgentKind(*ticketAgent)
+		log.Printf("jarvisapp: Claude Code pour les tickets -> %s", bin)
+	} else {
+		log.Printf("jarvisapp: Claude Code introuvable (%v) : tickets au modèle local seulement", err)
+	}
+	ticketManager.Autopilot = *ticketAutopilot
+	if *ticketAutopilot {
+		log.Printf("jarvisapp: pilote automatique des tickets activé (déploiement si vérification et relecture réussies)")
+	}
 
 	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore}, Mail: mailService}
 	if *agentDev {
@@ -465,6 +499,10 @@ func main() {
 		log.Printf("jarvisapp: tickets orphelins : %v", err)
 	} else if n > 0 {
 		log.Printf("jarvisapp: %d ticket(s) interrompu(s) par le redémarrage", n)
+	}
+	if *ticketPickup > 0 {
+		go ticketManager.RunPickUp(context.Background(), *ticketPickup)
+		log.Printf("jarvisapp: relève des tickets toutes les %s", *ticketPickup)
 	}
 	if err := http.Serve(ln, mux); err != nil {
 		log.Fatalf("jarvisapp: %v", err)
@@ -525,4 +563,18 @@ func mongoURI(flagValue string, getenv func(string) string) string {
 		return flagValue
 	}
 	return getenv("MONGO_URI")
+}
+
+// findClaude : le CLI claude demandé, sinon sur le PATH, sinon là où
+// son installateur le met (~/.local/bin) — lancé depuis le Dock, le PATH
+// est minimal.
+func findClaude(flagValue string) (string, error) {
+	if flagValue != "" {
+		return exec.LookPath(flagValue)
+	}
+	if bin, err := exec.LookPath("claude"); err == nil {
+		return bin, nil
+	}
+	home, _ := os.UserHomeDir()
+	return exec.LookPath(filepath.Join(home, ".local", "bin", "claude"))
 }

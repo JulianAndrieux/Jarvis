@@ -6,13 +6,20 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 )
 
-templ TicketsPage(list []tickets.Ticket) {
+templ TicketsPage(v TicketsView) {
 	@Layout("Jarvis — tickets", "tickets") {
 		<div class="page-wide tickets-page">
 			<div class="page-title">
 				<h2>Tickets</h2>
-				<span class="muted">Décris un changement ; l'agent local l'analyse et propose un plan à valider.</span>
+				if v.Autopilot {
+					<span class="muted">Décris un changement : l'agent l'analyse, le développe et le met en service seul.</span>
+				} else {
+					<span class="muted">Décris un changement ; l'agent l'analyse et propose un plan à valider.</span>
+				}
 			</div>
+			if v.Autopilot {
+				<p class="warn-box">Pilote automatique : les brouillons sont pris d'eux-mêmes, un à la fois ; le plan est validé sans toi et le diff part en service si la vérification de Jarvis (gofmt, vet, tests) et la relecture réussissent — sinon il attend ta validation.</p>
+			}
 			<div class="tickets-layout">
 				<form class="card ticket-form" method="post" action="/tickets">
 					<label for="title">Titre</label>
@@ -21,16 +28,21 @@ templ TicketsPage(list []tickets.Ticket) {
 					<textarea id="need" name="need" rows="6" placeholder="Décris le besoin, le contexte, ce qui te gêne aujourd'hui…"></textarea>
 					<label for="acceptance">Critères d'acceptation (un par ligne)</label>
 					<textarea id="acceptance" name="acceptance" rows="4" placeholder="Ex. /documents?since=2026-09-01 ne liste que les documents importés depuis cette date"></textarea>
+					if len(v.Agents) > 0 {
+						<label for="agent">Agent</label>
+						@agentSelect("agent", v.Agents)
+					}
 					<button type="submit" class="button-primary">Créer le ticket</button>
 				</form>
 				<div class="ticket-list">
-					if len(list) == 0 {
+					if len(v.List) == 0 {
 						<div class="empty-state"><p>Aucun ticket pour l'instant.</p></div>
 					}
-					for _, t := range list {
+					for _, t := range v.List {
 						<a class="ticket-row" href={ templ.SafeURL("/tickets/" + t.ID) }>
 							<span class="ticket-title">{ t.Title }</span>
 							<span class={ ticketChipClass(t.Status) }>{ t.Status.Label() }</span>
+							<span class="chip chip-agent">{ t.Agent.Label() }</span>
 							<span class="muted">{ t.CreatedAt.Local().Format("02/01/2006 15:04") }</span>
 						</a>
 					}
@@ -89,6 +101,12 @@ templ ticketPanelBody(t tickets.Ticket, a TicketActions) {
 			}
 			{ t.Status.Label() }
 		</span>
+		<span class="chip chip-agent">{ t.Agent.Label() }</span>
+		if len(a.Agents) > 0 && !t.Status.Active() && t.Status != tickets.Deployed && t.Status != tickets.Cancelled {
+			<form class="inline-form" hx-post={ "/tickets/" + t.ID + "/agent" } hx-target="#ticket-panel" hx-swap="outerHTML" hx-trigger="change">
+				@agentSelect("agent", a.Agents)
+			</form>
+		}
 	</div>
 	<div class="ticket-actions">
 		switch t.Status {
@@ -248,4 +266,13 @@ templ reviewBlock(r tickets.ReviewResult) {
 			</ul>
 		}
 	</div>
+}
+
+// agentSelect : le choix de l'agent d'un ticket.
+templ agentSelect(name string, options []AgentOption) {
+	<select id={ name } name={ name } aria-label="Agent du ticket">
+		for _, o := range options {
+			<option value={ o.Value } selected?={ o.Selected }>{ o.Label }</option>
+		}
+	</select>
 }

@@ -435,3 +435,70 @@ func TestTickets_VisualCapturesShown(t *testing.T) {
 		}
 	}
 }
+
+// --- Jalon 41 : Claude Code, un agent par ticket, pilote automatique ---
+
+func newClaudeTicketServer(t *testing.T) (*Server, *tickets.FakeStore) {
+	t.Helper()
+	s, store := newTicketServer(t, "## Plan local")
+	s.Tickets.Claude = &tickets.AgentSet{Analyst: stubAnalyst{plan: "## Plan de Claude"}}
+	s.Tickets.DefaultAgent = tickets.AgentClaude
+	return s, store
+}
+
+func TestTickets_AgentChosenAtCreation(t *testing.T) {
+	s, store := newClaudeTicketServer(t)
+	page := get(t, s, "/tickets").Body.String()
+	for _, want := range []string{`name="agent"`, `value="claude" selected`, "Claude Code", `value="local"`, "Modèle local"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("creation form lacks %q", want)
+		}
+	}
+	postForm(t, s, "/tickets", url.Values{"title": {"par défaut"}})
+	postForm(t, s, "/tickets", url.Values{"title": {"en local"}, "agent": {"local"}})
+	list, _ := store.List(context.Background(), "")
+	agents := map[string]tickets.AgentKind{}
+	for _, tk := range list {
+		agents[tk.Title] = tk.Agent
+	}
+	if agents["par défaut"] != tickets.AgentClaude || agents["en local"] != tickets.AgentLocal {
+		t.Errorf("agents = %v", agents)
+	}
+	if rec := postForm(t, s, "/tickets", url.Values{"title": {"x"}, "agent": {"gpt"}}); rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown agent = %d, want 400", rec.Code)
+	}
+	if page := get(t, s, "/tickets").Body.String(); !strings.Contains(page, "chip-agent") {
+		t.Error("list does not show each ticket's agent")
+	}
+}
+
+func TestTickets_AgentShownAndChangeable(t *testing.T) {
+	s, store := newClaudeTicketServer(t)
+	tk, _ := s.Tickets.CreateFor(context.Background(), "Filtre", "besoin", "", tickets.AgentLocal)
+	page := get(t, s, "/tickets/"+tk.ID).Body.String()
+	if !strings.Contains(page, "Modèle local") || !strings.Contains(page, `hx-post="/tickets/`+tk.ID+`/agent"`) {
+		t.Fatal("ticket page does not show or offer to change the agent")
+	}
+	if rec := postForm(t, s, "/tickets/"+tk.ID+"/agent", url.Values{"agent": {"claude"}}); rec.Code != http.StatusOK {
+		t.Fatalf("change agent = %d", rec.Code)
+	}
+	if got, _, _ := store.Get(context.Background(), tk.ID); got.Agent != tickets.AgentClaude {
+		t.Errorf("agent = %q", got.Agent)
+	}
+	postForm(t, s, "/tickets/"+tk.ID+"/analyze", nil)
+	waitTicketStatus(t, store, tk.ID, tickets.PlanReady)
+	if got, _, _ := store.Get(context.Background(), tk.ID); got.Plan != "## Plan de Claude" {
+		t.Errorf("plan = %q, want Claude's", got.Plan)
+	}
+}
+
+func TestTickets_WithoutClaudeNoChoiceAndAutopilotExplained(t *testing.T) {
+	s, _ := newTicketServer(t, "p")
+	if page := get(t, s, "/tickets").Body.String(); strings.Contains(page, `name="agent"`) {
+		t.Error("agent choice offered while Claude Code is not configured")
+	}
+	s.Tickets.Autopilot = true
+	if page := get(t, s, "/tickets").Body.String(); !strings.Contains(page, "Pilote automatique") {
+		t.Error("autopilot not explained on the tickets page")
+	}
+}

@@ -87,6 +87,30 @@ func (s Status) Label() string {
 // d'elle-même).
 func (s Status) Active() bool { return s == Analyzing || s == Developing || s == Deploying }
 
+// AgentKind : qui travaille sur le ticket (jalon 41) — Claude Code, ou
+// le modèle local (Devstral). Vide (tickets d'avant) : le modèle local.
+type AgentKind string
+
+const (
+	AgentLocal  AgentKind = "local"
+	AgentClaude AgentKind = "claude"
+)
+
+// Label est le libellé affiché d'un agent.
+func (a AgentKind) Label() string {
+	if a == AgentClaude {
+		return "Claude Code"
+	}
+	return "Modèle local"
+}
+
+// AgentSet : les agents d'un même moteur. Reviewer nil : pas de relecture.
+type AgentSet struct {
+	Analyst   Analyst
+	Developer Developer
+	Reviewer  Reviewer
+}
+
 // EventKind est la nature d'une entrée du fil d'un ticket.
 type EventKind string
 
@@ -127,7 +151,9 @@ type Ticket struct {
 	// c'est fait (et que les tests de l'agent devront vérifier).
 	Acceptance string `bson:"acceptance"`
 	Status     Status `bson:"status"`
-	Plan       string `bson:"plan,omitempty"`
+	// Agent : qui analyse, développe et relit ce ticket.
+	Agent AgentKind `bson:"agent,omitempty"`
+	Plan  string    `bson:"plan,omitempty"`
 	// Branch, Diff et Report : la branche git du développement (jalon
 	// 28), le diff par rapport à main soumis à la revue, et le dernier
 	// rapport de vérification (gofmt, vet, tests).

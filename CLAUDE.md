@@ -47,6 +47,18 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
      demande ou copie dans Atlas). Le mot de passe de la boîte, lui, ne
      quitte pas la machine (`~/.jarvis/mail.json`, 0600) ; le tri reste
      fait par le modèle local.
+  5. **Tickets confiés à Claude Code (`internal/claudecode`, jalon 41) :
+     le code du dépôt et le texte du ticket partent à l'API d'Anthropic.**
+     Décision explicite de l'utilisateur ("vu que le modèle local n'est pas
+     assez puissant ça serait mieux de passer par toi"), **ticket par
+     ticket** (choix de l'agent). Seul le code versionné est visible :
+     l'analyse lit un instantané git de main, le développement et la
+     relecture la copie de travail du ticket (jamais `data/`, ni rien de
+     non versionné) ; outils de fichiers bornés au dossier de travail
+     (`Read(./**)`… — sans ce motif, Claude lit toute la machine, vérifié).
+     Documents, emails, notes et identifiants ne lui sont jamais donnés.
+     Limite assumée : `go test` exécute du code écrit par Claude, sans bac à
+     sable (comme pour l'agent local, cf. jalon 28).
 - TDD strict : chaque paquet a ses tests avant son implémentation. Pas de
   code non testé.
 - Construire à partir de primitives ; éviter les frameworks lourds et les
@@ -2525,6 +2537,57 @@ spécifique à `localhost`.
   - Validé : contrat des stores (Fake + Atlas), 12 vrais emails de la
     boîte analysés hors file (11 newsletters/services masqués, 1 échange
     sur un devis gardé).
+- **Jalon 41 — tickets confiés à Claude Code, pilote automatique et
+  relève : fait, validé avec le vrai CLI, en attente de validation
+  utilisateur sur un vrai ticket.** Demandé : "que je puisse créer des
+  tickets et que tu puisses à intervalle régulier te connecter, prendre
+  les tickets et travailler dessus — le modèle local n'est pas assez
+  puissant". Décisions de l'utilisateur (questions posées) : relève
+  automatique + boutons ; **aucune validation humaine, déploiement
+  automatique** ; **agent choisi ticket par ticket**.
+  - **`internal/claudecode`** (nouveau) : `CLI` lance `claude -p` sans
+    interface (`--output-format stream-json`, `--no-session-persistence`,
+    `--strict-mcp-config` : aucun serveur MCP de l'utilisateur — Gmail,
+    Drive… —, outils autorisés explicitement, le reste refusé faute de
+    réponse possible). Le flux est suivi (`parse`) : chaque texte de Claude
+    et chaque appel d'outil (avec son résultat, erreurs et refus de
+    permission marqués ⚠) rejoint le fil du ticket, chemins relatifs même
+    à travers un lien symbolique (`/var` → `/private/var`). Trois agents
+    aux ports existants : `Analyst` (lecture seule, dans un **instantané
+    git de main** — `workspace.Manager.Snapshot`, fichiers versionnés
+    seulement, supprimé ensuite), `Developer` (copie de travail du ticket,
+    édition + `go build/test/vet`, `gofmt`, `templ generate`, `git
+    diff/status` — ni commit ni push ; résumé par sortie structurée,
+    `--json-schema`), `Reviewer` (lecture seule, verdict structuré ; une
+    remarque « bloquant » l'emporte sur `approved`).
+  - **`tickets`** : `Ticket.Agent` (`claude` / `local`, vide = local pour
+    les tickets d'avant), `AgentSet`, `Manager.Claude`, `DefaultAgent`,
+    `CreateFor`, `SetAgent` (pas pendant que l'agent travaille). Un ticket
+    Claude **ne bascule pas les modèles locaux** vers le profil code. La
+    vérification finale reste faite par Jarvis, quel que soit l'agent.
+    **Pilote automatique** (`Autopilot`) : plan validé automatiquement ;
+    diff déployé **seulement si** la vérification de Jarvis passe **et**
+    la relecture accepte — sinon (refus, pas de relecture, relecture
+    impossible, pas de déploiement configuré) le diff attend la
+    validation, la raison dans le fil. Le déploiement garde son essai à
+    blanc et son retour arrière (jalon 30) ; le push vers GitHub reste un
+    clic. **Relève** (`PickUp`/`RunPickUp`) : le plus ancien brouillon,
+    si aucun ticket n'est en analyse, développement ou déploiement.
+  - `cmd/jarvisapp` : `--claude-bin` (sinon PATH, sinon
+    `~/.local/bin/claude`), `--claude-model`, `--claude-timeout` (1 h),
+    `--ticket-default-agent` (claude), `--ticket-autopilot` (vrai),
+    `--ticket-pickup` (5 min ; coupé dans l'essai à blanc et la relecture
+    visuelle). UI : choix de l'agent à la création et sur la fiche,
+    pastille d'agent dans la liste, pilote automatique expliqué. Lanceur :
+    `~/.local/bin` ajouté au PATH.
+  - **Vérifié avec le vrai CLI** (`go test -tags=claude`, payant) : mini
+    ticket dans un module jetable — test écrit d'abord, rouge, puis code,
+    `go test` vert, relecture structurée. Trois défauts vus ainsi et
+    corrigés : un refus de permission (`message` texte, pas objet) cassait
+    la lecture du flux ; le résumé mêlait compte rendu et résumé (d'où la
+    sortie structurée) ; chemins absolus via `/private/var`. Et un constat
+    de sécurité : `Read` sans motif a lu `/etc/hosts` — motifs `./**`
+    imposés (test de garde).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 
