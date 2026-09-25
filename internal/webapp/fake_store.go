@@ -70,8 +70,10 @@ func (s *FakeStore) Update(ctx context.Context, job Job) error {
 		return fmt.Errorf("webapp: fake store: job %s not found", job.ID)
 	}
 	// Comme MongoStore : Update n'écrit ni la miniature ni l'avancement
-	// (SetThumbnail/SetProgress), ni les fichiers (Create/WriteFile).
+	// (SetThumbnail/SetProgress), ni les tags ni le commentaire
+	// (SetTags/SetComment), ni les fichiers (Create/WriteFile).
 	job.Content, job.Thumbnail, job.Progress = nil, existing.Thumbnail, existing.Progress
+	job.Tags, job.Comment = existing.Tags, existing.Comment
 	s.jobs[job.ID] = job
 	return nil
 }
@@ -135,6 +137,30 @@ func (s *FakeStore) SetThumbnail(ctx context.Context, id string, png []byte) err
 		return fmt.Errorf("webapp: fake store: job %s not found", id)
 	}
 	j.Thumbnail = png
+	s.jobs[id] = j
+	return nil
+}
+
+func (s *FakeStore) SetTags(ctx context.Context, id string, tags []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.jobs[id]
+	if !ok {
+		return fmt.Errorf("webapp: fake store: job %s not found", id)
+	}
+	j.Tags = append([]string(nil), tags...)
+	s.jobs[id] = j
+	return nil
+}
+
+func (s *FakeStore) SetComment(ctx context.Context, id, comment string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.jobs[id]
+	if !ok {
+		return fmt.Errorf("webapp: fake store: job %s not found", id)
+	}
+	j.Comment = comment
 	s.jobs[id] = j
 	return nil
 }

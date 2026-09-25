@@ -62,7 +62,8 @@ type Store interface {
 	// persistance elle-même.
 	Get(ctx context.Context, id string) (job Job, ok bool, err error)
 	// Update réécrit l'état d'un job déjà créé (statut, type de document,
-	// résultat, erreur, tags, FinishedAt...). Une implémentation est libre
+	// résultat, erreur, FinishedAt...) — jamais les tags ni le commentaire
+	// (SetTags/SetComment), ni la miniature ni l'avancement. Une implémentation est libre
 	// de ne mettre à jour que les champs qui changent réellement après
 	// création (ex. ne pas retransmettre Content à chaque appel) : Update
 	// reçoit l'état complet souhaité, pas un diff.
@@ -86,6 +87,13 @@ type Store interface {
 	// l'avancement, pour qu'un Job en mémoire (qui ne le porte pas) ne
 	// l'efface pas en terminant. Erreur si id n'existe pas.
 	SetProgress(ctx context.Context, id string, progress *pipeline.Progress) error
+	// SetTags et SetComment remplacent les tags / le commentaire du job
+	// id — écritures ciblées, comme SetThumbnail : relire puis réécrire
+	// tout le job via Update pouvait annuler une fin de traitement
+	// écrite dans la même fenêtre (constat du jalon 39). Erreur si id
+	// n'existe pas.
+	SetTags(ctx context.Context, id string, tags []string) error
+	SetComment(ctx context.Context, id, comment string) error
 
 	// WriteFile enregistre (ou remplace) le fichier name du job id —
 	// jalon 25 : les fichiers vivent à part des métadonnées (GridFS côté

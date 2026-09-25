@@ -152,7 +152,7 @@ func (s *MongoStore) Get(ctx context.Context, id string) (Job, bool, error) {
 }
 
 // Update ne réécrit que les champs qui changent réellement après création
-// (statut, type de document, résultat, erreur, tags, FinishedAt) via
+// (statut, type de document, résultat, erreur, FinishedAt) via
 // $set — pas Content : pas de raison de retransmettre le PDF source
 // (potentiellement volumineux) à chaque transition de statut.
 //
@@ -181,8 +181,6 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 		"finished_at": job.FinishedAt,
 		"result_json": resultJSON,
 		"err":         job.Err,
-		"tags":        job.Tags,
-		"comment":     job.Comment,
 		"search_text": job.SearchText,
 	}}
 
@@ -205,6 +203,26 @@ func (s *MongoStore) SetThumbnail(ctx context.Context, id string, png []byte) er
 	}
 	if res.MatchedCount == 0 {
 		return fmt.Errorf("webapp: mongo set thumbnail %s: job not found", id)
+	}
+	return nil
+}
+
+// SetTags et SetComment : $set du seul champ concerné (cf. Store).
+func (s *MongoStore) SetTags(ctx context.Context, id string, tags []string) error {
+	return s.setField(ctx, id, "tags", tags)
+}
+
+func (s *MongoStore) SetComment(ctx context.Context, id, comment string) error {
+	return s.setField(ctx, id, "comment", comment)
+}
+
+func (s *MongoStore) setField(ctx context.Context, id, field string, value any) error {
+	res, err := s.Collection.UpdateByID(ctx, id, bson.M{"$set": bson.M{field: value}})
+	if err != nil {
+		return fmt.Errorf("webapp: mongo set %s %s: %w", field, id, err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("webapp: mongo set %s %s: job not found", field, id)
 	}
 	return nil
 }

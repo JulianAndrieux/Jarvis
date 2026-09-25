@@ -1130,3 +1130,25 @@ func TestJobManager_SwitchesToDocumentModels(t *testing.T) {
 		t.Errorf("err = %q", failed.Err)
 	}
 }
+
+// Constat du jalon 39 : SetTags/SetComment relisaient puis réécrivaient
+// tout le job — une fin de traitement dans la même fenêtre était annulée
+// (statut remis à "running"), ou l'inverse. Ils passent désormais par
+// l'écriture ciblée du store, jamais par Update.
+func TestJobManager_SetTagsAndComment_NeverRewriteTheWholeJob(t *testing.T) {
+	store := &updateFailingStore{FakeStore: NewFakeStore()}
+	ctx := context.Background()
+	store.Create(ctx, Job{ID: "a", Status: StatusDone})
+	m := NewJobManager(store, &fakeRunner{})
+
+	if err := m.SetTags(ctx, "a", []string{"urgent"}); err != nil {
+		t.Errorf("SetTags() error = %v, want a targeted write (no Update)", err)
+	}
+	if err := m.SetComment(ctx, "a", " à vérifier "); err != nil {
+		t.Errorf("SetComment() error = %v, want a targeted write (no Update)", err)
+	}
+	got, _, _ := store.Get(ctx, "a")
+	if len(got.Tags) != 1 || got.Tags[0] != "urgent" || got.Comment != "à vérifier" {
+		t.Errorf("tags=%v comment=%q, want [urgent] and the trimmed comment", got.Tags, got.Comment)
+	}
+}

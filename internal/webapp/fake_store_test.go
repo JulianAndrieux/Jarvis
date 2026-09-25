@@ -423,3 +423,43 @@ func TestFakeStore_List_FiltersByCreationDate(t *testing.T) {
 		t.Errorf("avant le 10 = %s", got)
 	}
 }
+
+// Tags et commentaire : écritures ciblées, comme la miniature. Un Update
+// depuis une copie ancienne du job (prise avant qu'on les modifie) ne
+// doit pas les écraser — ni l'inverse : SetTags/SetComment ne touchent
+// qu'à leur champ.
+func TestFakeStore_SetTagsAndComment_TargetedAndSurviveUpdate(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	s.Create(ctx, Job{ID: "a", Status: StatusRunning})
+	stale, _, _ := s.Get(ctx, "a")
+
+	if err := s.SetTags(ctx, "a", []string{"urgent"}); err != nil {
+		t.Fatalf("SetTags() error = %v", err)
+	}
+	if err := s.SetComment(ctx, "a", "à vérifier"); err != nil {
+		t.Fatalf("SetComment() error = %v", err)
+	}
+	stale.Status = StatusDone
+	if err := s.Update(ctx, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _, _ := s.Get(ctx, "a")
+	if len(got.Tags) != 1 || got.Tags[0] != "urgent" || got.Comment != "à vérifier" {
+		t.Errorf("after stale Update: tags=%v comment=%q, want both kept", got.Tags, got.Comment)
+	}
+	if got.Status != StatusDone {
+		t.Errorf("Status = %s, want done (Update must still apply its own fields)", got.Status)
+	}
+}
+
+func TestFakeStore_SetTagsAndComment_UnknownJob_ReturnsError(t *testing.T) {
+	s := NewFakeStore()
+	if err := s.SetTags(context.Background(), "nope", []string{"x"}); err == nil {
+		t.Error("SetTags() error = nil, want an error for an unknown job")
+	}
+	if err := s.SetComment(context.Background(), "nope", "x"); err == nil {
+		t.Error("SetComment() error = nil, want an error for an unknown job")
+	}
+}

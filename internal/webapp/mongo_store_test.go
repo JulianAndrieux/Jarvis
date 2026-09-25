@@ -131,22 +131,30 @@ func TestMongoStore_Get_UnknownID_ReturnsFalse(t *testing.T) {
 	}
 }
 
-func TestMongoStore_Update_PersistsTags(t *testing.T) {
+// Tags et commentaire par écritures ciblées (constat du jalon 39) : un
+// Update depuis une copie ancienne du job ne les écrase plus.
+func TestMongoStore_SetTagsAndComment_TargetedAndSurviveUpdate(t *testing.T) {
 	store := newTestMongoStore(t)
 	ctx := context.Background()
 
 	job := Job{
-		ID:       "test-tags-" + time.Now().Format("20060102150405"),
-		Filename: "doc.pdf", Status: StatusPending, CreatedAt: time.Now(),
+		ID:       "test-tags-" + time.Now().Format("20060102150405.000000"),
+		Filename: "doc.pdf", Status: StatusRunning, CreatedAt: time.Now(),
 	}
 	defer cleanupJob(t, store, job.ID)
 
-	created, err := store.Create(ctx, job)
+	stale, err := store.Create(ctx, job)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	created.Tags = []string{"urgent", "a-revoir"}
-	if err := store.Update(ctx, created); err != nil {
+	if err := store.SetTags(ctx, job.ID, []string{"urgent", "a-revoir"}); err != nil {
+		t.Fatalf("SetTags() error = %v", err)
+	}
+	if err := store.SetComment(ctx, job.ID, "à vérifier"); err != nil {
+		t.Fatalf("SetComment() error = %v", err)
+	}
+	stale.Status = StatusDone
+	if err := store.Update(ctx, stale); err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
 
@@ -154,8 +162,14 @@ func TestMongoStore_Update_PersistsTags(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("Get() = %+v, %v, %v", got, ok, err)
 	}
-	if len(got.Tags) != 2 || got.Tags[0] != "urgent" || got.Tags[1] != "a-revoir" {
-		t.Errorf("Get().Tags = %v, want [urgent a-revoir]", got.Tags)
+	if len(got.Tags) != 2 || got.Tags[0] != "urgent" || got.Tags[1] != "a-revoir" || got.Comment != "à vérifier" {
+		t.Errorf("Get() tags=%v comment=%q, want [urgent a-revoir] and the comment", got.Tags, got.Comment)
+	}
+	if got.Status != StatusDone {
+		t.Errorf("Get().Status = %s, want done", got.Status)
+	}
+	if err := store.SetTags(ctx, "does-not-exist-tags", []string{"x"}); err == nil {
+		t.Error("SetTags() error = nil, want an error for an unknown id")
 	}
 }
 
@@ -509,8 +523,8 @@ func TestMongoStore_Comment_PersistsAndIsSearchable(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 	created.Comment = "Envoyer au comptable " + stamp
-	if err := store.Update(ctx, created); err != nil {
-		t.Fatalf("Update() error = %v", err)
+	if err := store.SetComment(ctx, job.ID, created.Comment); err != nil {
+		t.Fatalf("SetComment() error = %v", err)
 	}
 	got, ok, err := store.Get(ctx, job.ID)
 	if err != nil || !ok || got.Comment != created.Comment {

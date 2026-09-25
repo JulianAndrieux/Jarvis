@@ -2487,11 +2487,14 @@ spécifique à `localhost`.
     posé juste après l'envoi ; le traitement, déjà lancé et en échec
     immédiat (modèles absents), relit puis réécrit le job entier et l'a
     écrasé. `JobManager.SubmitWithTags` : tags posés **à la création**.
-    **Constat, non corrigé** : `SetTags`/`SetComment` et `save` relisent
-    puis réécrivent tout le job ; deux écritures dans la même fenêtre (quelques
-    millisecondes) peuvent encore se perdre l'une l'autre. Correctif propre :
-    écritures ciblées (`$set` des seuls tags/commentaire, comme
-    `SetThumbnail`).
+    **Constat, corrigé ensuite** : `SetTags`/`SetComment` relisaient puis
+    réécrivaient tout le job (une fin de traitement dans la même fenêtre
+    pouvait être annulée, statut remis à « running »). Désormais
+    `Store.SetTags`/`Store.SetComment` : `$set` du seul champ, comme
+    `SetThumbnail` ; `Update` n'écrit plus ni tags ni commentaire (la
+    `FakeStore` se comporte pareil), et `save` ne relit plus le job.
+    Testé : `FakeStore`, `JobManager` (aucun passage par `Update`), contrat
+    Mongo sur Atlas (une copie ancienne passée à `Update` n'efface rien).
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 

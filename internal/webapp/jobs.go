@@ -381,14 +381,11 @@ func (m *JobManager) finishStored(ctx context.Context, job Job) {
 	}
 }
 
-// save écrit l'état du traitement (statut, dates, résultat, erreur) sur
-// la version à jour du job : ce que l'utilisateur modifie pendant le
-// traitement (tags, commentaire) n'est jamais écrasé par la copie prise au démarrage
-// — bug réel, trouvé par un test devenu intermittent au jalon 27.
+// save écrit l'état du traitement (statut, dates, résultat, erreur).
+// Update ne touche ni aux tags ni au commentaire : ce que l'utilisateur
+// modifie pendant le traitement n'est jamais écrasé par la copie prise au
+// démarrage — bug réel, trouvé par un test devenu intermittent au jalon 27.
 func (m *JobManager) save(ctx context.Context, job Job) error {
-	if current, ok, err := m.store.Get(ctx, job.ID); err == nil && ok {
-		job.Tags, job.Comment = current.Tags, current.Comment
-	}
 	return m.store.Update(ctx, job)
 }
 
@@ -552,34 +549,21 @@ func (m *JobManager) List(ctx context.Context, q ListQuery) ([]Job, error) {
 }
 
 // SetTags remplace les tags du job id — n'a aucune incidence sur le
-// traitement, purement de l'organisation côté utilisateur.
+// traitement, purement de l'organisation côté utilisateur. Écriture
+// ciblée (Store.SetTags) : jamais une relecture/réécriture du job entier,
+// qui pourrait annuler une fin de traitement concurrente.
 func (m *JobManager) SetTags(ctx context.Context, id string, tags []string) error {
-	job, ok, err := m.store.Get(ctx, id)
-	if err != nil {
-		return fmt.Errorf("webapp: set tags %s: get: %w", id, err)
-	}
-	if !ok {
-		return fmt.Errorf("webapp: set tags %s: not found", id)
-	}
-	job.Tags = tags
-	if err := m.store.Update(ctx, job); err != nil {
+	if err := m.store.SetTags(ctx, id, tags); err != nil {
 		return fmt.Errorf("webapp: set tags %s: %w", id, err)
 	}
 	return nil
 }
 
 // SetComment remplace le commentaire du job id (espaces de début et de
-// fin retirés). Comme les tags, sans incidence sur le traitement.
+// fin retirés). Comme les tags, sans incidence sur le traitement, et par
+// écriture ciblée.
 func (m *JobManager) SetComment(ctx context.Context, id, comment string) error {
-	job, ok, err := m.store.Get(ctx, id)
-	if err != nil {
-		return fmt.Errorf("webapp: set comment %s: get: %w", id, err)
-	}
-	if !ok {
-		return fmt.Errorf("webapp: set comment %s: not found", id)
-	}
-	job.Comment = strings.TrimSpace(comment)
-	if err := m.store.Update(ctx, job); err != nil {
+	if err := m.store.SetComment(ctx, id, strings.TrimSpace(comment)); err != nil {
 		return fmt.Errorf("webapp: set comment %s: %w", id, err)
 	}
 	return nil
