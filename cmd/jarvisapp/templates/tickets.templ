@@ -149,6 +149,9 @@ templ ticketPanelBody(t tickets.Ticket, a TicketActions) {
 				</form>
 			case tickets.PlanApproved:
 				<p class="warn-box">Plan validé. Le développement automatique n'est pas configuré sur cette instance.</p>
+			case tickets.Cancelled:
+				<p class="warn-box">Ticket annulé : sa copie de travail et sa branche ont été supprimées. Le ressusciter le remet en brouillon (le plan est gardé, l'ancien diff et son rapport sont oubliés).</p>
+				<button class="button-primary" hx-post={ "/tickets/" + t.ID + "/resurrect" } hx-target="#ticket-panel" hx-swap="outerHTML">✚ Ressusciter le ticket</button>
 		}
 		if t.Status == tickets.Draft || t.Status == tickets.PlanReady || t.Status == tickets.Failed || t.Status == tickets.PlanApproved || t.Status == tickets.Review {
 			<button class="button-ghost" hx-post={ "/tickets/" + t.ID + "/cancel" } hx-target="#ticket-panel" hx-swap="outerHTML">Annuler le ticket</button>

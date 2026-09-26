@@ -18,6 +18,7 @@ func TestCanTransition(t *testing.T) {
 		{Failed, Analyzing},    // nouvelle tentative
 		{Draft, Cancelled},
 		{PlanReady, Cancelled},
+		{Cancelled, Draft}, // ressuscité : remis en brouillon
 	}
 	for _, c := range allowed {
 		if !CanTransition(c.from, c.to) {
@@ -28,6 +29,8 @@ func TestCanTransition(t *testing.T) {
 		{Draft, PlanApproved}, // pas de plan sans analyse
 		{Analyzing, PlanApproved},
 		{Cancelled, Analyzing}, // un ticket annulé est clos
+		{Cancelled, Review},    // seul le brouillon se ressuscite
+		{Deployed, Draft},      // un ticket déployé ne redevient pas un brouillon
 		{PlanApproved, Draft},
 	}
 	for _, c := range forbidden {

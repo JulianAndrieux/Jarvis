@@ -163,6 +163,40 @@ func TestTickets_InvalidTransitionIsAClearError(t *testing.T) {
 	}
 }
 
+// Un ticket annulé n'était plus qu'à supprimer : il se ressuscite (remis
+// en brouillon), d'où l'analyse se relance.
+func TestTickets_CancelledTicketOffersResurrect(t *testing.T) {
+	s, store := newTicketServer(t, "p")
+	tk, _ := s.Tickets.Create(context.Background(), "Annulé par erreur", "b", "")
+	if rec := postForm(t, s, "/tickets/"+tk.ID+"/cancel", nil); rec.Code != http.StatusOK {
+		t.Fatalf("cancel = %d %s", rec.Code, rec.Body.String())
+	}
+
+	body := get(t, s, "/tickets/"+tk.ID).Body.String()
+	if !strings.Contains(body, `hx-post="/tickets/`+tk.ID+`/resurrect"`) || !strings.Contains(body, "Ressusciter") {
+		t.Fatalf("cancelled ticket should offer to resurrect it: %s", body)
+	}
+	if strings.Contains(body, `hx-post="/tickets/`+tk.ID+`/analyze"`) {
+		t.Error("a cancelled ticket must not offer to start the analysis directly")
+	}
+
+	rec := postForm(t, s, "/tickets/"+tk.ID+"/resurrect", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resurrect = %d %s", rec.Code, rec.Body.String())
+	}
+	if got, _, _ := store.Get(context.Background(), tk.ID); got.Status != tickets.Draft {
+		t.Fatalf("status = %s, want brouillon", got.Status)
+	}
+	// Le volet renvoyé est celui d'un brouillon : l'analyse se relance.
+	if b := rec.Body.String(); !strings.Contains(b, "Brouillon") || !strings.Contains(b, `hx-post="/tickets/`+tk.ID+`/analyze"`) {
+		t.Errorf("resurrected panel = %s", b)
+	}
+	// Déjà en brouillon : refusé avec la raison (409).
+	if rec := postForm(t, s, "/tickets/"+tk.ID+"/resurrect", nil); rec.Code != http.StatusConflict {
+		t.Errorf("resurrecting a draft = %d, want 409", rec.Code)
+	}
+}
+
 // Trouvé sur le premier ticket réel : MongoDB rend les dates en UTC, les
 // pages les affichaient telles quelles (06:50 pour 08:50 à Paris). Toutes
 // les heures affichées sont en heure locale.

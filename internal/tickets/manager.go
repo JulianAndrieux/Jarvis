@@ -470,6 +470,31 @@ func (m *Manager) Cancel(ctx context.Context, id string) error {
 	return nil
 }
 
+// Resurrect ramène un ticket annulé en brouillon : il peut repartir de
+// zéro (analyse, agent, relève automatique) sans être retapé. La copie de
+// travail ayant été supprimée à l'annulation, branche, diff, rapport et
+// relecture sont oubliés — ils désigneraient un travail qui n'existe
+// plus ; le plan reste, mémoire de l'analyse précédente.
+func (m *Manager) Resurrect(ctx context.Context, id string) error {
+	t, ok, err := m.Store.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("tickets: %s introuvable", id)
+	}
+	if !CanTransition(t.Status, Draft) {
+		return fmt.Errorf("tickets: impossible de passer de « %s » à « %s »", t.Status.Label(), Draft.Label())
+	}
+	t.Status = Draft
+	t.Branch, t.Diff, t.Report, t.Review = "", "", "", nil
+	if err := m.Store.Update(ctx, t); err != nil {
+		return err
+	}
+	m.event(ctx, id, Event{Kind: EventStatus, Author: AuthorUser, Text: "Ticket ressuscité — remis en brouillon (branche, diff et rapport de l'ancienne tentative oubliés)"})
+	return nil
+}
+
 // RecoverOrphaned marque en échec les analyses et développements
 // interrompus par un redémarrage (la goroutine qui les menait a disparu
 // avec le process), et renvoie en revue un déploiement interrompu. À
