@@ -6,8 +6,8 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 )
 
-// NotesPage : la liste des notes, avec recherche et tags.
-templ NotesPage(cards []NoteCard, search, tag string, tags []string) {
+// NotesPage : la liste des notes, avec recherche, tags et dates.
+templ NotesPage(cards []NoteCard, f NotesFilters, tags []string) {
 	@Layout("Jarvis — notes", "notes") {
 		<div class="page-wide">
 			<div class="page-title">
@@ -17,17 +17,25 @@ templ NotesPage(cards []NoteCard, search, tag string, tags []string) {
 				</form>
 			</div>
 			<form class="search-bar" method="get" action="/notes">
-				<input type="text" name="q" value={ search } placeholder="Rechercher dans les titres, le texte et les tags…"/>
-				if tag != "" {
-					<input type="hidden" name="tag" value={ tag }/>
+				<input type="text" name="q" value={ f.Search } placeholder="Rechercher dans les titres, le texte des boîtes et les tags…"/>
+				<label class="date-field">Modifiée du <input type="date" name="from" value={ f.From }/></label>
+				<label class="date-field">au <input type="date" name="to" value={ f.To }/></label>
+				if f.Tag != "" {
+					<input type="hidden" name="tag" value={ f.Tag }/>
 				}
 				<button type="submit">Rechercher</button>
+				if f.Active() {
+					<a class="button button-ghost" href="/notes">Effacer</a>
+				}
 			</form>
+			if f.Error != "" {
+				<p class="form-error" role="alert">{ f.Error }</p>
+			}
 			if len(tags) > 0 {
 				<div class="type-filters">
-					<a class={ "chip", "filter-chip", templ.KV("active", tag == "") } href="/notes">Toutes</a>
+					<a class={ "chip", "filter-chip", templ.KV("active", f.Tag == "") } href={ templ.SafeURL(notesFilterURL("", f)) }>Toutes</a>
 					for _, tg := range tags {
-						<a class={ "chip", "filter-chip", templ.KV("active", tag == tg) } href={ templ.SafeURL("/notes?tag=" + urlQuery(tg)) }>{ tg }</a>
+						<a class={ "chip", "filter-chip", templ.KV("active", f.Tag == tg) } href={ templ.SafeURL(notesFilterURL(tg, f)) }>{ tg }</a>
 					}
 				</div>
 			}
@@ -51,7 +59,9 @@ templ NotesPage(cards []NoteCard, search, tag string, tags []string) {
 									<span class="chip">{ tg }</span>
 								}
 							</div>
-							<div class="doc-date">{ c.Updated }</div>
+							<div class="doc-date">
+								{ boxCount(c) } · { c.Updated }
+							</div>
 						</a>
 					}
 				</div>
@@ -60,34 +70,23 @@ templ NotesPage(cards []NoteCard, search, tag string, tags []string) {
 	}
 }
 
-// NotePage : une note, en lecture ou en édition.
+// NotePage : une note — son en-tête (toujours modifiable) puis sa
+// colonne de boîtes.
 templ NotePage(v NoteView) {
 	@Layout("Jarvis — "+v.Note.Title, "notes") {
 		<div class="page-wide note-page">
 			<a class="panel-back" href="/notes">← Notes</a>
-			if v.Edit {
-				<form class="card note-editor" method="post" action={ templ.SafeURL("/notes/" + v.Note.ID) }>
-					<label for="title">Titre</label>
-					<input type="text" id="title" name="title" value={ v.Note.Title }/>
-					<label for="body">Texte (Markdown : ## titre, - liste, **gras**, `code`)</label>
-					<textarea id="body" name="body" rows="16" class="mono">{ v.Note.Body }</textarea>
-					<label for="tags">Tags, séparés par des virgules</label>
-					<input type="text" id="tags" name="tags" value={ joinTags(v.Note.Tags) }/>
-					<label class="inline-check"><input type="checkbox" name="pinned" checked?={ v.Note.Pinned }/> Épingler en tête de liste</label>
-					<div class="field-row">
-						<button type="submit" class="button-primary">Enregistrer</button>
-						<a class="button button-ghost" href={ templ.SafeURL("/notes/" + v.Note.ID) }>Annuler</a>
-					</div>
-				</form>
-			} else {
-				<div class="page-title">
-					<h2>
-						if v.Note.Pinned {
-							<span title="Épinglée">📌 </span>
-						}
-						{ v.Note.Title }
-					</h2>
-					<a class="button" href={ templ.SafeURL("/notes/" + v.Note.ID + "?edit=1") }>Modifier</a>
+			<form class="card note-head" method="post" action={ templ.SafeURL("/notes/" + v.Note.ID) }>
+				<div class="note-head-row">
+					if v.Note.Pinned {
+						<span title="Épinglée">📌</span>
+					}
+					<input class="note-title-input" type="text" name="title" value={ v.Note.Title } aria-label="Titre de la note"/>
+					<button type="submit" class="button-primary">Enregistrer</button>
+				</div>
+				<div class="note-head-row">
+					<input type="text" name="tags" value={ joinTags(v.Note.Tags) } placeholder="Tags, séparés par des virgules" aria-label="Tags de la note"/>
+					<label class="inline-check"><input type="checkbox" name="pinned" checked?={ v.Note.Pinned }/> Épingler</label>
 				</div>
 				<div class="doc-meta">
 					for _, tg := range v.Note.Tags {
@@ -98,14 +97,11 @@ templ NotePage(v NoteView) {
 					}
 					<span class="muted">modifiée le { v.Note.UpdatedAt.Local().Format("02/01/2006 15:04") }</span>
 				</div>
-				<div class="card markdown">
-					if v.Note.Body == "" {
-						<p class="muted">Note vide — « Modifier » pour l'écrire.</p>
-					} else {
-						@templ.Raw(v.BodyHTML)
-					}
-				</div>
-			}
+			</form>
+			<div id="note-blocks">
+				@NoteBlocks(v.Blocks)
+			</div>
+			@noteEditorScript()
 			<div class="section-title">Tâches de cette note</div>
 			@quickAddForm(v.Note.ID, "", "/notes/"+v.Note.ID)
 			@taskGroups(v.Tasks, "/notes/"+v.Note.ID)
@@ -117,6 +113,201 @@ templ NotePage(v NoteView) {
 			</form>
 		</div>
 	}
+}
+
+// NoteBlocks : la colonne de boîtes d'une note. Seul fragment rendu par
+// les actions de boîte — un refus arrive dans v.Error (statut 200 :
+// HTMX ne remplacerait pas la cible sur une réponse 4xx).
+templ NoteBlocks(v NoteBlocksView) {
+	if v.Error != "" {
+		<p class="form-error" role="alert">{ v.Error }</p>
+	}
+	<div class="note-blocks">
+		@addBlockButton(v, "")
+		for _, b := range v.Blocks {
+			@noteBlock(b, v)
+			@addBlockButton(v, b.ID)
+		}
+	</div>
+	if v.ArchivedCount > 0 {
+		<p class="muted note-archives">
+			{ plural(v.ArchivedCount, "boîte archivée", "boîtes archivées") } —
+			if v.ShowArchived {
+				<a href="#" hx-get={ blocksURL(NoteBlocksView{NoteID: v.NoteID}, v.EditID) } hx-target="#note-blocks" hx-swap="innerHTML">Masquer</a>
+			} else {
+				<a href="#" hx-get={ blocksURL(NoteBlocksView{NoteID: v.NoteID, ShowArchived: true}, v.EditID) } hx-target="#note-blocks" hx-swap="innerHTML">Afficher</a>
+			}
+		</p>
+	}
+}
+
+// addBlockButton : « + Boîte » entre deux boîtes (after = la boîte au
+// dessus, "" = tout en haut).
+templ addBlockButton(v NoteBlocksView, after string) {
+	<form class="add-block" hx-post={ blocksURL(v, "") } hx-target="#note-blocks" hx-swap="innerHTML">
+		<input type="hidden" name="after" value={ after }/>
+		<button type="submit" class="button-ghost" title="Ajouter une boîte ici">+ Boîte</button>
+	</form>
+}
+
+templ noteBlock(b BlockView, v NoteBlocksView) {
+	<div class={ "note-block", templ.KV("archived", b.Archived), templ.KV("editing", b.Editing) }>
+		if b.Editing {
+			@noteBlockEditor(b, v)
+		} else {
+			<div class="note-block-body markdown">
+				if b.Text == "" {
+					<p class="muted">Boîte vide — « Modifier » pour l'écrire.</p>
+				} else {
+					@templ.Raw(b.HTML)
+				}
+			</div>
+			<div class="block-tags">
+				for _, tg := range b.Tags {
+					<a class="chip" href={ templ.SafeURL("/notes?tag=" + urlQuery(tg)) }>{ tg }</a>
+				}
+				if b.TaskID != "" {
+					<a class="chip chip-done" href={ templ.SafeURL("/tasks/" + b.TaskID) }>✅ { b.TaskTitle }</a>
+				}
+				if b.Archived {
+					<span class="chip">archivée le { b.ArchivedAt }</span>
+				}
+			</div>
+			<div class="note-block-actions">
+				<button class="button-ghost" hx-get={ blocksURL(v, b.ID) } hx-target="#note-blocks" hx-swap="innerHTML">Modifier</button>
+				@blockAction(v, b.ID, "move", "↑", "Monter") {
+					<input type="hidden" name="dir" value="up"/>
+				}
+				@blockAction(v, b.ID, "move", "↓", "Descendre") {
+					<input type="hidden" name="dir" value="down"/>
+				}
+				if b.TaskID == "" {
+					@blockAction(v, b.ID, "task", "→ Tâche", "Transformer en tâche") {
+					}
+				}
+				if b.Archived {
+					@blockAction(v, b.ID, "unarchive", "Désarchiver", "Remettre en place") {
+					}
+				} else {
+					<form class="inline-form block-archive" hx-post={ blockURL(v, b.ID, "archive") } hx-target="#note-blocks" hx-swap="innerHTML">
+						<input type="text" name="tags" value={ joinTags(b.Tags) } placeholder="tag…" aria-label="Tags de l'archive"/>
+						<button type="submit" class="button-ghost" title="Archiver en la taguant">Archiver</button>
+					</form>
+				}
+				<form class="inline-form" hx-post={ blockURL(v, b.ID, "delete") } hx-target="#note-blocks" hx-swap="innerHTML" hx-confirm="Supprimer cette boîte ?">
+					<button type="submit" class="button-ghost" title="Supprimer la boîte">✕</button>
+				</form>
+			</div>
+		}
+	</div>
+}
+
+// blockAction : un bouton d'action sur une boîte (les champs cachés
+// éventuels sont passés en contenu).
+templ blockAction(v NoteBlocksView, blockID, action, label, title string) {
+	<form class="inline-form" hx-post={ blockURL(v, blockID, action) } hx-target="#note-blocks" hx-swap="innerHTML">
+		{ children... }
+		<button type="submit" class="button-ghost" title={ title }>{ label }</button>
+	</form>
+}
+
+// noteBlockEditor : l'éditeur d'une boîte — barre d'outils Markdown,
+// aperçu rendu par le serveur. L'enregistrement a aussi lieu quand le
+// focus quitte la boîte : ouvrir une autre boîte ne perd pas la saisie.
+// La condition sur relatedTarget garde l'éditeur ouvert tant qu'on
+// circule dedans (texte → tags → barre d'outils).
+templ noteBlockEditor(b BlockView, v NoteBlocksView) {
+	<form
+		class="block-editor"
+		hx-post={ blockURL(v, b.ID, "") }
+		hx-target="#note-blocks"
+		hx-swap="innerHTML"
+		hx-trigger="submit, focusout[!this.contains(event.relatedTarget)]"
+	>
+		<div class="md-toolbar">
+			for _, t := range mdTools {
+				<button type="button" data-md={ t.Key } title={ t.Title } onmousedown="event.preventDefault()">{ t.Label }</button>
+			}
+		</div>
+		<textarea name="text" rows="6" class="mono" aria-label="Texte de la boîte">{ b.Text }</textarea>
+		<div class="field-row block-editor-row">
+			<input type="text" name="tags" value={ joinTags(b.Tags) } placeholder="Tags de la boîte, séparés par des virgules" aria-label="Tags de la boîte"/>
+			<button type="button" class="button-ghost" hx-post="/notes/blocks/preview" hx-include="closest form" hx-target="next .block-preview">Aperçu</button>
+			<button type="submit" class="button-primary">Enregistrer</button>
+		</div>
+		<div class="block-preview markdown"></div>
+		<p class="muted quick-help">Markdown : ## titre, - liste, **gras**, `code`. ⌘/Ctrl+B gras, ⌘/Ctrl+I italique, ⌘/Ctrl+↵ enregistre. Quitter la boîte l'enregistre aussi.</p>
+	</form>
+}
+
+// MarkdownPreview : l'aperçu d'une boîte, rendu par le serveur (aucune
+// bibliothèque Markdown chargée dans le navigateur).
+templ MarkdownPreview(html string) {
+	<div class="markdown">
+		@templ.Raw(html)
+	</div>
+}
+
+// noteEditorScript : la barre d'outils et les raccourcis de l'éditeur.
+// En délégation sur document : les boîtes sont remplacées par HTMX, un
+// écouteur posé sur elles disparaîtrait avec elles.
+templ noteEditorScript() {
+	<script>
+		(function () {
+			if (window.jarvisNoteEditor) return;
+			window.jarvisNoteEditor = true;
+			var WRAP = { bold: ["**", "**"], italic: ["*", "*"], strike: ["~~", "~~"], code: ["`", "`"] };
+			var LINE = { h: "## ", ul: "- ", ol: "1. ", quote: "> " };
+			function grow(ta) { ta.style.height = "auto"; ta.style.height = (ta.scrollHeight + 4) + "px"; }
+			function apply(ta, kind) {
+				var s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+				if (WRAP[kind]) {
+					var w = WRAP[kind];
+					ta.value = v.slice(0, s) + w[0] + v.slice(s, e) + w[1] + v.slice(e);
+					ta.selectionStart = s + w[0].length;
+					ta.selectionEnd = e + w[0].length;
+				} else if (LINE[kind]) {
+					var start = v.lastIndexOf("\n", s - 1) + 1;
+					ta.value = v.slice(0, start) + LINE[kind] + v.slice(start);
+					ta.selectionStart = ta.selectionEnd = s + LINE[kind].length;
+				}
+				grow(ta);
+				ta.focus();
+			}
+			document.addEventListener("click", function (ev) {
+				var btn = ev.target.closest("[data-md]");
+				if (!btn) return;
+				var form = btn.closest("form");
+				var ta = form && form.querySelector("textarea");
+				if (!ta) return;
+				ev.preventDefault();
+				apply(ta, btn.getAttribute("data-md"));
+			});
+			document.addEventListener("keydown", function (ev) {
+				var ta = ev.target;
+				if (!ta.matches || !ta.matches(".block-editor textarea")) return;
+				var mod = ev.metaKey || ev.ctrlKey;
+				if (mod && (ev.key === "b" || ev.key === "i")) {
+					ev.preventDefault();
+					apply(ta, ev.key === "b" ? "bold" : "italic");
+				} else if (mod && ev.key === "Enter") {
+					ev.preventDefault();
+					ta.form.requestSubmit();
+				} else if (ev.key === "Tab") {
+					ev.preventDefault();
+					var s = ta.selectionStart;
+					ta.value = ta.value.slice(0, s) + "  " + ta.value.slice(ta.selectionEnd);
+					ta.selectionStart = ta.selectionEnd = s + 2;
+				}
+			});
+			document.addEventListener("input", function (ev) {
+				if (ev.target.matches && ev.target.matches(".block-editor textarea")) grow(ev.target);
+			});
+			document.addEventListener("htmx:afterSwap", function () {
+				document.querySelectorAll(".block-editor textarea").forEach(function (ta) { grow(ta); ta.focus(); });
+			});
+		})();
+	</script>
 }
 
 templ docLinks(v NoteView) {

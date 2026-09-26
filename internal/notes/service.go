@@ -26,14 +26,19 @@ func (s *Service) now() time.Time {
 
 const untitled = "Sans titre"
 
-// NewNote crée une note vide, liée au document docID s'il est donné.
+// NewNote crée une note vide (une boîte vide, prête à écrire), liée au
+// document docID s'il est donné.
 func (s *Service) NewNote(ctx context.Context, docID string) (Note, error) {
 	id, err := newID()
 	if err != nil {
 		return Note{}, err
 	}
 	now := s.now()
-	n := Note{ID: id, Title: untitled, CreatedAt: now, UpdatedAt: now}
+	first, err := newBlock("", now)
+	if err != nil {
+		return Note{}, err
+	}
+	n := Note{ID: id, Title: untitled, Blocks: []Block{first}, CreatedAt: now, UpdatedAt: now}
 	if docID != "" {
 		n.DocIDs = []string{docID}
 	}
@@ -43,9 +48,10 @@ func (s *Service) NewNote(ctx context.Context, docID string) (Note, error) {
 	return n, nil
 }
 
-// SaveNote enregistre le contenu d'une note. tags : séparés par des
-// virgules (doublons et vides retirés).
-func (s *Service) SaveNote(ctx context.Context, id, title, body, tags string, pinned bool) (Note, error) {
+// SaveNote enregistre l'en-tête d'une note (titre, tags, épingle) : le
+// texte, lui, vit dans ses boîtes (cf. SaveBlock) et n'est pas touché
+// ici. tags : séparés par des virgules (doublons et vides retirés).
+func (s *Service) SaveNote(ctx context.Context, id, title, tags string, pinned bool) (Note, error) {
 	n, err := s.note(ctx, id)
 	if err != nil {
 		return Note{}, err
@@ -54,7 +60,7 @@ func (s *Service) SaveNote(ctx context.Context, id, title, body, tags string, pi
 	if n.Title == "" {
 		n.Title = untitled
 	}
-	n.Body, n.Tags, n.Pinned, n.UpdatedAt = body, splitTags(tags), pinned, s.now()
+	n.Tags, n.Pinned, n.UpdatedAt = splitTags(tags), pinned, s.now()
 	return n, s.Store.UpdateNote(ctx, n)
 }
 
@@ -135,7 +141,11 @@ func (s *Service) NewMailNote(ctx context.Context, mailID, title, body string) (
 	if title = strings.TrimSpace(title); title == "" {
 		title = untitled
 	}
-	n := Note{ID: id, Title: title, Body: body, MailID: mailID, CreatedAt: now, UpdatedAt: now}
+	first, err := newBlock(body, now)
+	if err != nil {
+		return Note{}, err
+	}
+	n := Note{ID: id, Title: title, Body: body, Blocks: []Block{first}, MailID: mailID, CreatedAt: now, UpdatedAt: now}
 	return n, s.Store.CreateNote(ctx, n)
 }
 

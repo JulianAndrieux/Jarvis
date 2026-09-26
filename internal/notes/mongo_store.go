@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -62,10 +63,17 @@ func (s *MongoStore) ListNotes(ctx context.Context, q NoteQuery) ([]Note, error)
 		// Recherche littérale : le texte saisi n'est jamais une expression
 		// régulière (une parenthèse la rendrait invalide).
 		re := bson.M{"$regex": regexp.QuoteMeta(q.Search), "$options": "i"}
-		and = append(and, bson.M{"$or": bson.A{bson.M{"title": re}, bson.M{"body": re}, bson.M{"tags": re}}})
+		and = append(and, bson.M{"$or": bson.A{
+			bson.M{"title": re}, bson.M{"body": re}, bson.M{"tags": re},
+			bson.M{"blocks.text": re}, bson.M{"blocks.tags": re},
+		}})
 	}
 	if q.Tag != "" {
-		and = append(and, bson.M{"tags": q.Tag})
+		// Tag de la note ou d'une de ses boîtes.
+		and = append(and, bson.M{"$or": bson.A{bson.M{"tags": q.Tag}, bson.M{"blocks.tags": q.Tag}}})
+	}
+	if updated := dateRangeFilter(q.UpdatedFrom, q.UpdatedBefore); updated != nil {
+		and = append(and, bson.M{"updated_at": updated})
 	}
 	if q.DocID != "" {
 		and = append(and, bson.M{"doc_ids": q.DocID})
@@ -87,6 +95,22 @@ func (s *MongoStore) ListNotes(ctx context.Context, q NoteQuery) ([]Note, error)
 		return nil, fmt.Errorf("notes: list notes: %w", err)
 	}
 	return out, nil
+}
+
+// dateRangeFilter : l'intervalle semi-ouvert [from, before), ou nil si
+// aucune borne n'est donnée.
+func dateRangeFilter(from, before time.Time) bson.M {
+	out := bson.M{}
+	if !from.IsZero() {
+		out["$gte"] = from
+	}
+	if !before.IsZero() {
+		out["$lt"] = before
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *MongoStore) CreateTask(ctx context.Context, t Task) error {

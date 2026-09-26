@@ -159,6 +159,35 @@ templ Layout(title string, active string) {
 				.note-page { max-width: 900px; }
 				.note-editor label { margin-top: .8rem; }
 				.note-editor textarea { font-size: .88rem; }
+				.note-dates { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+				/* Boîtes de note (layout à la Jupyter) */
+				.note-head { display: flex; flex-direction: column; gap: .6rem; }
+				.note-head-row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+				.note-head-row > input[type=text] { flex: 1 1 14rem; min-width: 0; }
+				.note-title-input { font-size: 1.25rem; font-weight: 700; }
+				.note-blocks { display: flex; flex-direction: column; }
+				.note-block { position: relative; border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); padding: .8rem 1rem; }
+				.note-block.editing { border-left-color: var(--accent); }
+				.note-block.archived { background: var(--surface-2); color: var(--text-2); }
+				.note-block-body > :first-child { margin-top: 0; }
+				.note-block-body > :last-child { margin-bottom: 0; }
+				.note-block-actions { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; margin-top: .5rem; opacity: 0; transition: opacity .15s; }
+				.note-block:hover .note-block-actions, .note-block:focus-within .note-block-actions { opacity: 1; }
+				.note-block-actions button { font-size: .78rem; padding: .2rem .5rem; }
+				.block-archive { display: inline-flex; gap: .25rem; align-items: center; }
+				.block-archive input[type=text] { font-size: .78rem; padding: .2rem .45rem; width: 7rem; }
+				.block-tags { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; margin-top: .4rem; }
+				.add-block { display: flex; align-items: center; justify-content: center; margin: 0; opacity: 0; transition: opacity .15s; }
+				.note-blocks:hover .add-block, .add-block:focus-within { opacity: 1; }
+				.add-block button { font-size: .72rem; padding: .1rem .6rem; color: var(--muted); }
+				.add-block::before, .add-block::after { content: ""; flex: 1; border-top: 1px dashed var(--border); }
+				.block-editor textarea { width: 100%; font-size: .88rem; min-height: 6rem; resize: vertical; }
+				.block-editor-row { margin-top: .5rem; flex-wrap: wrap; }
+				.md-toolbar { display: flex; gap: .25rem; margin-bottom: .4rem; flex-wrap: wrap; }
+				.md-toolbar button { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; padding: .15rem .5rem; min-width: 2rem; }
+				.block-preview:empty { display: none; }
+				.block-preview { margin-top: .6rem; padding: .6rem .8rem; border: 1px dashed var(--border); border-radius: 8px; background: var(--surface-2); }
+				.note-archives { margin: .6rem 0 0; }
 				.inline-check { display: flex; align-items: center; gap: .5rem; font-weight: 500; }
 				.markdown h4 { margin: .8rem 0 .4rem; }
 				.markdown ul, .markdown ol { padding-left: 1.3rem; }

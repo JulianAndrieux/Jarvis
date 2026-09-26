@@ -22,17 +22,20 @@ func TestService_NoteLifecycle(t *testing.T) {
 		t.Fatalf("NewNote = %+v, %v", n, err)
 	}
 	*now = now.Add(time.Hour)
-	saved, err := s.SaveNote(ctx, n.ID, "  Courses  ", "- lait", " maison, urgent ,, maison ", true)
+	if _, err := s.SaveBlock(ctx, n.ID, n.Blocks[0].ID, "- lait", ""); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := s.SaveNote(ctx, n.ID, "  Courses  ", " maison, urgent ,, maison ", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if saved.Title != "Courses" || saved.Body != "- lait" || strings.Join(saved.Tags, "|") != "maison|urgent" || !saved.Pinned || !saved.UpdatedAt.Equal(*now) || !saved.CreatedAt.Equal(wednesday) || len(saved.DocIDs) != 1 {
 		t.Errorf("SaveNote = %+v", saved)
 	}
-	if saved, _ := s.SaveNote(ctx, n.ID, " ", "", "", false); saved.Title != "Sans titre" {
+	if saved, _ := s.SaveNote(ctx, n.ID, " ", "", false); saved.Title != "Sans titre" {
 		t.Errorf("empty title = %q", saved.Title)
 	}
-	if _, err := s.SaveNote(ctx, "absente", "x", "", "", false); err == nil {
+	if _, err := s.SaveNote(ctx, "absente", "x", "", false); err == nil {
 		t.Error("SaveNote(unknown) = nil")
 	}
 }

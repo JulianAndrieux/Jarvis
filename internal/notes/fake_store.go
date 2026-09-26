@@ -63,13 +63,19 @@ func (s *FakeStore) ListNotes(ctx context.Context, q NoteQuery) ([]Note, error) 
 	search := strings.ToLower(q.Search)
 	var out []Note
 	for _, n := range s.notes {
-		if q.Tag != "" && !slices.Contains(n.Tags, q.Tag) {
+		if q.Tag != "" && !slices.Contains(n.Tags, q.Tag) && !slices.Contains(BlockTags(n.Blocks), q.Tag) {
 			continue
 		}
 		if q.DocID != "" && !slices.Contains(n.DocIDs, q.DocID) {
 			continue
 		}
 		if q.MailID != "" && n.MailID != q.MailID {
+			continue
+		}
+		if !q.UpdatedFrom.IsZero() && n.UpdatedAt.Before(q.UpdatedFrom) {
+			continue
+		}
+		if !q.UpdatedBefore.IsZero() && !n.UpdatedAt.Before(q.UpdatedBefore) {
 			continue
 		}
 		if search != "" && !noteMatches(n, search) {
@@ -93,6 +99,16 @@ func noteMatches(n Note, lowerSearch string) bool {
 	for _, tag := range n.Tags {
 		if strings.Contains(strings.ToLower(tag), lowerSearch) {
 			return true
+		}
+	}
+	for _, b := range n.Blocks {
+		if strings.Contains(strings.ToLower(b.Text), lowerSearch) {
+			return true
+		}
+		for _, tag := range b.Tags {
+			if strings.Contains(strings.ToLower(tag), lowerSearch) {
+				return true
+			}
 		}
 	}
 	return false
@@ -153,5 +169,9 @@ func (s *FakeStore) ListTasks(ctx context.Context, q TaskQuery) ([]Task, error) 
 func cloneNote(n Note) Note {
 	n.Tags = slices.Clone(n.Tags)
 	n.DocIDs = slices.Clone(n.DocIDs)
+	n.Blocks = slices.Clone(n.Blocks)
+	for i := range n.Blocks {
+		n.Blocks[i].Tags = slices.Clone(n.Blocks[i].Tags)
+	}
 	return n
 }

@@ -263,10 +263,16 @@ func documentRow(j webapp.Job, dateLayout string) templates.DocumentRow {
 	}
 }
 
-// importDateRange convertit les dates saisies (AAAA-MM-JJ, bornes
-// incluses, heure locale) en intervalle semi-ouvert [from, before) sur
-// la date d'import. Une date refusée n'est pas appliquée : msg l'explique.
+// importDateRange : l'intervalle de dates d'import de la bibliothèque.
 func importDateRange(fromStr, toStr string) (from, before time.Time, msg string) {
+	return dateRange(fromStr, toStr, "aucun document ne peut correspondre")
+}
+
+// dateRange convertit les dates saisies (AAAA-MM-JJ, bornes incluses,
+// heure locale) en intervalle semi-ouvert [from, before). Une date
+// refusée n'est pas appliquée : msg l'explique. nothingMatches nomme ce
+// qui ne peut pas correspondre quand les bornes sont inversées.
+func dateRange(fromStr, toStr, nothingMatches string) (from, before time.Time, msg string) {
 	parse := func(v string) (time.Time, bool) {
 		if v == "" {
 			return time.Time{}, true
@@ -283,7 +289,7 @@ func importDateRange(fromStr, toStr string) (from, before time.Time, msg string)
 		before = to.AddDate(0, 0, 1) // le jour de fin est inclus
 	}
 	if !from.IsZero() && !to.IsZero() && to.Before(from) {
-		msg = "La date de fin précède la date de début : aucun document ne peut correspondre."
+		msg = "La date de fin précède la date de début : " + nothingMatches + "."
 	}
 	return from, before, msg
 }

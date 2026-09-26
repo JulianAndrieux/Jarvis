@@ -9,12 +9,34 @@ import (
 	"time"
 )
 
-// Note est une note en Markdown.
+// Block est une boîte de note (layout à la Jupyter) : un morceau de
+// texte Markdown, qu'on peut transformer en tâche ou archiver en le
+// taguant.
+type Block struct {
+	ID       string   `bson:"id"`
+	Text     string   `bson:"text"`
+	Tags     []string `bson:"tags"`
+	Archived bool     `bson:"archived"`
+	// ArchivedAt : quand la boîte a été archivée (zéro : jamais).
+	ArchivedAt time.Time `bson:"archived_at"`
+	// TaskID : la tâche née de cette boîte ("" : aucune).
+	TaskID    string    `bson:"task_id"`
+	CreatedAt time.Time `bson:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at"`
+}
+
+// Note est une note en Markdown, écrite en une suite de boîtes.
 type Note struct {
-	ID    string   `bson:"_id"`
-	Title string   `bson:"title"`
-	Body  string   `bson:"body"`
-	Tags  []string `bson:"tags"`
+	ID    string `bson:"_id"`
+	Title string `bson:"title"`
+	// Body : le texte de toutes les boîtes concaténé (JoinBlocks) —
+	// dérivé, jamais saisi directement. Gardé parce que les notes
+	// d'avant les boîtes n'ont que lui (BlocksOf les lit comme une
+	// boîte unique) et parce que la recherche plein texte porte dessus.
+	Body string `bson:"body"`
+	// Blocks : les boîtes de la note (vide : note d'avant les boîtes).
+	Blocks []Block  `bson:"blocks"`
+	Tags   []string `bson:"tags"`
 	// Pinned : affichée en tête de liste.
 	Pinned bool `bson:"pinned"`
 	// DocIDs : documents de la bibliothèque liés à la note.
@@ -83,14 +105,20 @@ type Task struct {
 	DoneAt    time.Time `bson:"done_at"`
 }
 
-// NoteQuery filtre une liste de notes.
+// NoteQuery filtre une liste de notes. Types comparables seulement :
+// NoteQuery sert de clé de map dans le contrat de Store.
 type NoteQuery struct {
-	// Search : sous-chaîne (insensible à la casse) du titre, du texte ou
-	// d'un tag.
+	// Search : sous-chaîne (insensible à la casse) du titre, du texte
+	// (Body ou celui d'une boîte), d'un tag de note ou de boîte.
 	Search string
+	// Tag : tag de la note ou d'une de ses boîtes.
 	Tag    string
 	DocID  string
 	MailID string
+	// UpdatedFrom / UpdatedBefore filtrent sur la date de modification
+	// (UpdatedAt), intervalle semi-ouvert [UpdatedFrom, UpdatedBefore).
+	UpdatedFrom   time.Time
+	UpdatedBefore time.Time
 }
 
 // TaskQuery filtre une liste de tâches.
