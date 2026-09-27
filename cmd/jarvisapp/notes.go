@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/a-h/templ"
@@ -141,7 +143,25 @@ func (s *Server) handleNoteSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	if _, err := s.Notes.SaveNote(r.Context(), id, r.FormValue("title"), r.FormValue("body"), r.FormValue("tags"), r.FormValue("pinned") != ""); err != nil {
+	title, body, tags, pinned := r.FormValue("title"), r.FormValue("body"), r.FormValue("tags"), r.FormValue("pinned") != ""
+	version, _ := strconv.Atoi(r.FormValue("version"))
+
+	_, err := s.Notes.SaveNoteVersion(r.Context(), id, version, title, body, tags, pinned)
+	var conflict *notes.Conflict
+	if errors.As(err, &conflict) {
+		// Sa saisie est réaffichée telle quelle, à côté de ce qui a été
+		// enregistré entre-temps : jamais d'écrasement muet, jamais de texte
+		// perdu. La version portée devient celle du store, pour qu'un second
+		// enregistrement délibéré passe.
+		mine := conflict.Current
+		mine.Title, mine.Body, mine.Tags, mine.Pinned = title, body, splitFormTags(tags), pinned
+		other := conflict.Current
+		renderPage(w, r, http.StatusConflict, templates.NotePage(templates.NoteView{
+			Note: mine, Edit: true, Conflict: &other,
+		}), "note conflict")
+		return
+	}
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -452,4 +472,17 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// splitFormTags : les tags d'un formulaire, tels que le service les
+// découpe — pour réafficher la saisie de l'utilisateur à l'identique après
+// un conflit.
+func splitFormTags(s string) []string {
+	var out []string
+	for _, t := range strings.Split(s, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }

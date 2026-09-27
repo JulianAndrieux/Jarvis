@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,20 @@ func do(s *Server, method, target string, form url.Values) *httptest.ResponseRec
 	return serve(s, method, target, form)
 }
 
+// saveNote poste le formulaire d'une note comme le fait la page : avec la
+// version affichée. Sans elle, l'enregistrement est refusé (409) — c'est
+// voulu, un formulaire qui ne dit pas sur quoi il s'appuie ne peut pas
+// écraser sans risque.
+func saveNote(t *testing.T, s *Server, store *notes.FakeStore, id string, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	n, ok, err := store.GetNote(context.Background(), id)
+	if err != nil || !ok {
+		t.Fatalf("note %s introuvable : %v", id, err)
+	}
+	form.Set("version", strconv.Itoa(n.Version))
+	return do(s, http.MethodPost, "/notes/"+id, form)
+}
+
 // Crée une note et retourne son identifiant (lu dans la redirection).
 func createNote(t *testing.T, s *Server, form url.Values) string {
 	t.Helper()
@@ -41,12 +56,12 @@ func createNote(t *testing.T, s *Server, form url.Values) string {
 }
 
 func TestNotes_CreateEditViewAndSearch(t *testing.T) {
-	s, _ := newNotesServer(t)
+	s, store := newNotesServer(t)
 	id := createNote(t, s, url.Values{})
 	if page := do(s, http.MethodGet, "/notes/"+id+"?edit=1", nil).Body.String(); !strings.Contains(page, `name="body"`) {
 		t.Fatal("edit mode has no editor")
 	}
-	rec := do(s, http.MethodPost, "/notes/"+id, url.Values{"title": {"Courses"}, "body": {"## Liste\n- **pain**\n- <script>x</script>"}, "tags": {"maison, urgent"}, "pinned": {"on"}})
+	rec := saveNote(t, s, store, id, url.Values{"title": {"Courses"}, "body": {"## Liste\n- **pain**\n- <script>x</script>"}, "tags": {"maison, urgent"}, "pinned": {"on"}})
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/notes/"+id {
 		t.Fatalf("save: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
@@ -159,7 +174,7 @@ func TestTasks_EditValidatesAndLinks(t *testing.T) {
 func TestNotes_DocumentLinksBothWays(t *testing.T) {
 	s, store := newNotesServer(t)
 	id := createNote(t, s, url.Values{"doc": {"doc-devis"}})
-	do(s, http.MethodPost, "/notes/"+id, url.Values{"title": {"Questions sur le devis"}, "body": {"x"}})
+	saveNote(t, s, store, id, url.Values{"title": {"Questions sur le devis"}, "body": {"x"}})
 	do(s, http.MethodPost, "/tasks", url.Values{"text": {"Appeler le couvreur"}, "doc": {"doc-devis"}})
 
 	page := do(s, http.MethodGet, "/notes/"+id, nil).Body.String()
@@ -196,5 +211,60 @@ func TestTasks_BackRedirectStaysLocal(t *testing.T) {
 		if loc := rec.Header().Get("Location"); loc != "/tasks" {
 			t.Errorf("back %q → %q, want /tasks", back, loc)
 		}
+	}
+}
+
+// Un conflit d'édition réaffiche la saisie de l'utilisateur à côté de ce
+// qui a été enregistré entre-temps : ni écrasement muet, ni texte perdu.
+func TestHandleNoteSave_Conflit(t *testing.T) {
+	s, store := newNotesServer(t)
+	ctx := context.Background()
+	n, err := s.Notes.NewNote(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Quelqu'un d'autre enregistre d'abord.
+	if _, err := s.Notes.SaveNote(ctx, n.ID, "Titre de Marie", "corps <b>de Marie</b>", "", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ma soumission porte la version d'avant.
+	form := url.Values{
+		"version": {strconv.Itoa(n.Version)},
+		"title":   {"Mon titre"},
+		"body":    {"mon corps"},
+		"tags":    {"perso, urgent"},
+	}
+	req := httptest.NewRequest("POST", "http://127.0.0.1:8090/notes/"+n.ID, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("code = %d, veut 409", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"Mon titre", "mon corps", "perso", "Titre de Marie", "modifié cette note"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("la page de conflit doit contenir %q", want)
+		}
+	}
+	// Le texte de l'autre est du contenu utilisateur : affiché échappé,
+	// jamais interprété.
+	if strings.Contains(body, "<b>de Marie</b>") {
+		t.Error("le corps de l'autre version doit être échappé, pas interprété comme du HTML")
+	}
+	if !strings.Contains(body, "&lt;b&gt;de Marie") {
+		t.Error("le corps de l'autre version doit apparaître, échappé")
+	}
+
+	// Rien n'a été écrasé.
+	got, _, err := store.GetNote(ctx, n.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "Titre de Marie" {
+		t.Errorf("titre enregistré = %q : un conflit ne doit rien écrire", got.Title)
 	}
 }

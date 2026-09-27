@@ -66,7 +66,22 @@ templ NotePage(v NoteView) {
 		<div class="page-wide note-page">
 			<a class="panel-back" href="/notes">← Notes</a>
 			if v.Edit {
+				if v.Conflict != nil {
+					<div class="card conflict">
+						<strong>Quelqu'un a modifié cette note pendant ta saisie.</strong>
+						<p class="muted">
+							Ton texte est ci-dessous, intact. Voici la version
+							enregistrée entre-temps (modifiée le { v.Conflict.UpdatedAt.Local().Format("02/01/2006 15:04") }) :
+							enregistrer maintenant remplacera celle-ci.
+						</p>
+						<div class="conflict-side">
+							<div class="conflict-title">{ v.Conflict.Title }</div>
+							<pre class="mono">{ v.Conflict.Body }</pre>
+						</div>
+					</div>
+				}
 				<form class="card note-editor" method="post" action={ templ.SafeURL("/notes/" + v.Note.ID) }>
+					<input type="hidden" name="version" value={ itoa(v.Note.Version) }/>
 					<label for="title">Titre</label>
 					<input type="text" id="title" name="title" value={ v.Note.Title }/>
 					<label for="body">Texte (Markdown : ## titre, - liste, **gras**, `code`)</label>

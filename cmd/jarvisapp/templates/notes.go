@@ -2,6 +2,7 @@ package templates
 
 import (
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
@@ -61,6 +62,11 @@ type NoteView struct {
 	Choices []DocLink
 	// MailSubject : l'objet de l'email d'où vient la note (Note.MailID).
 	MailSubject string
+	// Conflict : quelqu'un a modifié la note pendant la saisie. Note porte
+	// alors ce que l'utilisateur venait d'écrire (sa saisie n'est jamais
+	// perdue), et Conflict l'état enregistré entre-temps — les deux côtés,
+	// pour qu'il choisisse.
+	Conflict *notes.Note
 }
 
 // TaskEditView : le formulaire d'une tâche.
@@ -84,3 +90,7 @@ const quickAddHelp = "En fin de saisie : aujourd'hui, demain, lundi…, 30/09 ou
 func urlQuery(s string) string { return url.QueryEscape(s) }
 
 func joinTags(tags []string) string { return strings.Join(tags, ", ") }
+
+// itoa : un entier dans un attribut de gabarit (la version de la note
+// portée par le formulaire).
+func itoa(n int) string { return strconv.Itoa(n) }

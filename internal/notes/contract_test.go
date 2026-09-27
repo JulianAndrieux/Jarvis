@@ -2,6 +2,7 @@ package notes
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -25,18 +26,42 @@ func storeContract(t *testing.T, s Store, stamp string) {
 	if err != nil || !ok || got.Title != n.Title || got.Body != n.Body || len(got.Tags) != 1 || len(got.DocIDs) != 1 || !got.CreatedAt.Equal(n.CreatedAt) {
 		t.Fatalf("GetNote = %+v, %v, %v", got, ok, err)
 	}
-	n.Body, n.Pinned, n.UpdatedAt = "modifié", true, at(5)
-	if err := s.UpdateNote(ctx, n); err != nil {
+	// Une écriture porte la version qu'elle a lue.
+	if got.Version == 0 {
+		t.Fatal("une note enregistrée doit porter une version")
+	}
+	updated := got
+	updated.Body, updated.Pinned, updated.UpdatedAt = "modifié", true, at(5)
+	if err := s.UpdateNote(ctx, updated); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := s.GetNote(ctx, n.ID); got.Body != "modifié" || !got.Pinned {
-		t.Errorf("after update = %+v", got)
+	after, _, _ := s.GetNote(ctx, n.ID)
+	if after.Body != "modifié" || !after.Pinned {
+		t.Errorf("after update = %+v", after)
 	}
+	if after.Version <= got.Version {
+		t.Errorf("version %d puis %d : elle doit monter à chaque écriture", got.Version, after.Version)
+	}
+	// La même écriture rejouée sur la version d'avant est refusée, et ne
+	// change rien : c'est ce qui empêche d'effacer en silence la
+	// modification de quelqu'un d'autre.
+	if err := s.UpdateNote(ctx, updated); !errors.Is(err, ErrConflict) {
+		t.Errorf("UpdateNote(version périmée) = %v, veut ErrConflict", err)
+	}
+	if again, _, _ := s.GetNote(ctx, n.ID); again.Version != after.Version {
+		t.Errorf("version = %d, veut %d : une écriture refusée ne doit rien changer", again.Version, after.Version)
+	}
+	n = after
 	if _, ok, err := s.GetNote(ctx, id("absente")); ok || err != nil {
 		t.Errorf("GetNote(unknown) = %v, %v", ok, err)
 	}
-	if err := s.UpdateNote(ctx, Note{ID: id("absente")}); err == nil {
+	// Une note inexistante et une version périmée ne se traitent pas
+	// pareil dans l'interface : les erreurs doivent se distinguer.
+	err = s.UpdateNote(ctx, Note{ID: id("absente"), Version: 1})
+	if err == nil {
 		t.Error("UpdateNote(unknown) = nil")
+	} else if errors.Is(err, ErrConflict) {
+		t.Errorf("UpdateNote(unknown) = %v, ne doit pas être un conflit mais un « introuvable »", err)
 	}
 
 	// Liste : épinglées d'abord, puis la plus récemment modifiée ;

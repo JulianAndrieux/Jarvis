@@ -100,6 +100,16 @@ type Job struct {
 	MIME       string
 	Size       int64
 	SourceHash string
+
+	// Version monte à chaque écriture. Contrairement aux notes et aux
+	// tâches, les écritures d'un document ne sont pas conditionnées par
+	// elle : celles de la machine (statut, avancement, résultat) et celles
+	// de l'humain (tags, commentaire) portent sur des champs disjoints, par
+	// écritures ciblées — c'est la leçon des jalons 23 et 39, et il n'y a
+	// donc pas de perte à empêcher ici. La version sert d'ancrage au rebase
+	// du changeset (jalon 49) : elle dit si le document a bougé depuis
+	// qu'une modification a été mise en attente.
+	Version int
 }
 
 // ErrNoThumbnail : le fichier n'a pas de miniature (fichier seulement

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -72,11 +73,34 @@ func (s *Service) NewNote(ctx context.Context, docID string) (Note, error) {
 
 // SaveNote enregistre le contenu d'une note. tags : séparés par des
 // virgules (doublons et vides retirés).
+//
+// Écrit sur la version qu'elle vient de lire : la fenêtre de conflit est
+// donc minuscule. Un formulaire ouvert depuis dix minutes, lui, doit
+// passer par SaveNoteVersion en portant la version qu'il a affichée —
+// sinon il écraserait sans le savoir ce qui a changé depuis.
 func (s *Service) SaveNote(ctx context.Context, id, title, body, tags string, pinned bool) (Note, error) {
 	n, err := s.note(ctx, id)
 	if err != nil {
 		return Note{}, err
 	}
+	return s.saveNote(ctx, n, title, body, tags, pinned)
+}
+
+// SaveNoteVersion enregistre une note en exigeant que rien n'ait changé
+// depuis la version affichée. En cas de conflit, rend un *Conflict portant
+// l'état courant, pour que l'interface puisse montrer les deux côtés.
+func (s *Service) SaveNoteVersion(ctx context.Context, id string, version int, title, body, tags string, pinned bool) (Note, error) {
+	n, err := s.note(ctx, id)
+	if err != nil {
+		return Note{}, err
+	}
+	if n.Version != version {
+		return Note{}, &Conflict{Current: n}
+	}
+	return s.saveNote(ctx, n, title, body, tags, pinned)
+}
+
+func (s *Service) saveNote(ctx context.Context, n Note, title, body, tags string, pinned bool) (Note, error) {
 	// L'état d'avant est capturé ici, avant toute écriture : le journal
 	// compare des champs, pas des intentions.
 	before := n
@@ -86,6 +110,13 @@ func (s *Service) SaveNote(ctx context.Context, id, title, body, tags string, pi
 	}
 	n.Body, n.Tags, n.Pinned, n.UpdatedAt = body, splitTags(tags), pinned, s.now()
 	if err := s.db(ctx).UpdateNote(ctx, n); err != nil {
+		if errors.Is(err, ErrConflict) {
+			// Quelqu'un a écrit dans la fenêtre entre la lecture et
+			// l'écriture : rendre l'état courant plutôt qu'une erreur nue.
+			if current, ok, gerr := s.db(ctx).GetNote(ctx, n.ID); gerr == nil && ok {
+				return Note{}, &Conflict{Current: current}
+			}
+		}
 		return Note{}, err
 	}
 	var ops []changes.Op

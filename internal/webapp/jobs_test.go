@@ -1148,3 +1148,44 @@ func TestJobManager_SetTagsAndComment_NeverRewriteTheWholeJob(t *testing.T) {
 		t.Errorf("tags=%v comment=%q, want [urgent] and the trimmed comment", got.Tags, got.Comment)
 	}
 }
+
+// La version d'un document monte à chaque écriture, ciblée comprise :
+// c'est l'ancrage dont le rebase du changeset (jalon 49) a besoin pour
+// dire si le document a bougé depuis qu'une modification a été mise en
+// attente.
+func TestJob_VersionMonteAChaqueEcriture(t *testing.T) {
+	store := NewFakeStore()
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	ctx := context.Background()
+
+	job, err := store.Create(ctx, Job{ID: "j1", Filename: "f.pdf", Status: StatusDone, CreatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, _, _ := store.Get(ctx, job.ID)
+	if created.Version == 0 {
+		t.Fatal("un document créé doit porter une version")
+	}
+
+	steps := []struct {
+		name string
+		call func() error
+	}{
+		{"SetTags", func() error { return store.SetTags(ctx, job.ID, []string{"urgent"}) }},
+		{"SetComment", func() error { return store.SetComment(ctx, job.ID, "à relire") }},
+		{"SetThumbnail", func() error { return store.SetThumbnail(ctx, job.ID, []byte("png")) }},
+		{"Update", func() error { return store.Update(ctx, Job{ID: job.ID, Status: StatusFailed}) }},
+	}
+	last := created.Version
+	for _, st := range steps {
+		if err := st.call(); err != nil {
+			t.Fatalf("%s : %v", st.name, err)
+		}
+		got, _, _ := store.Get(ctx, job.ID)
+		if got.Version <= last {
+			t.Errorf("%s : version %d puis %d, elle doit monter", st.name, last, got.Version)
+		}
+		last = got.Version
+	}
+}

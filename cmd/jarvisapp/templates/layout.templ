@@ -229,6 +229,10 @@ templ Layout(title string, active string) {
 				.card { border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.25rem; margin: 1rem 0; background: var(--surface); box-shadow: var(--shadow); }
 
 				/* Pastilles, badges */
+				.conflict { border-color: var(--danger); background: var(--danger-soft); }
+				.conflict .conflict-side { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .6rem .8rem; }
+				.conflict .conflict-title { font-weight: 650; margin-bottom: .35rem; }
+				.conflict pre { margin: 0; white-space: pre-wrap; font-size: .85rem; }
 				.chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; font-weight: 600; padding: .15rem .55rem; border-radius: 999px; background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
 				.chip-type { background: var(--accent-soft); color: var(--accent); }
 				.chip-done { background: var(--ok-soft); color: var(--ok); }

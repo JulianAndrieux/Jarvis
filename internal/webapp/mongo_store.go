@@ -251,7 +251,7 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 		resultJSON = b
 	}
 
-	update := bson.M{"$set": bson.M{
+	update := bson.M{"$inc": bson.M{"version": 1}, "$set": bson.M{
 		"status":      string(job.Status),
 		"doc_type":    job.DocType,
 		"started_at":  job.StartedAt,
@@ -277,7 +277,7 @@ func (s *MongoStore) SetThumbnail(ctx context.Context, id string, png []byte) er
 	if err := s.ensure(); err != nil {
 		return err
 	}
-	res, err := s.Collection.UpdateOne(ctx, s.key(id), bson.M{"$set": bson.M{"thumbnail": png}})
+	res, err := s.Collection.UpdateOne(ctx, s.key(id), bson.M{"$inc": bson.M{"version": 1}, "$set": bson.M{"thumbnail": png}})
 	if err != nil {
 		return fmt.Errorf("webapp: mongo set thumbnail %s: %w", id, err)
 	}
@@ -300,7 +300,7 @@ func (s *MongoStore) setField(ctx context.Context, id, field string, value any) 
 	if err := s.ensure(); err != nil {
 		return err
 	}
-	res, err := s.Collection.UpdateOne(ctx, s.key(id), bson.M{"$set": bson.M{field: value}})
+	res, err := s.Collection.UpdateOne(ctx, s.key(id), bson.M{"$inc": bson.M{"version": 1}, "$set": bson.M{field: value}})
 	if err != nil {
 		return fmt.Errorf("webapp: mongo set %s %s: %w", field, id, err)
 	}
@@ -314,13 +314,13 @@ func (s *MongoStore) SetProgress(ctx context.Context, id string, progress *pipel
 	if err := s.ensure(); err != nil {
 		return err
 	}
-	update := bson.M{"$unset": bson.M{"progress_json": ""}}
+	update := bson.M{"$inc": bson.M{"version": 1}, "$unset": bson.M{"progress_json": ""}}
 	if progress != nil {
 		b, err := json.Marshal(progress)
 		if err != nil {
 			return fmt.Errorf("webapp: mongo set progress %s: marshal: %w", id, err)
 		}
-		update = bson.M{"$set": bson.M{"progress_json": b}}
+		update = bson.M{"$inc": bson.M{"version": 1}, "$set": bson.M{"progress_json": b}}
 	}
 	res, err := s.Collection.UpdateOne(ctx, s.key(id), update)
 	if err != nil {
@@ -481,6 +481,8 @@ type mongoJobDoc struct {
 	// principe que ResultJSON.
 	ProgressJSON []byte `bson:"progress_json,omitempty"`
 
+	// Version : voir Job.Version.
+	Version    int    `bson:"version,omitempty"`
 	Format     string `bson:"format,omitempty"`
 	MIME       string `bson:"mime,omitempty"`
 	Size       int64  `bson:"size,omitempty"`
@@ -494,6 +496,7 @@ func jobToDoc(env tenancy.EnvID, job Job) (mongoJobDoc, error) {
 		CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, FinishedAt: job.FinishedAt, Err: job.Err,
 		Tags: job.Tags, Comment: job.Comment, SearchText: job.SearchText, Thumbnail: job.Thumbnail,
 		Format: job.Format, MIME: job.MIME, Size: job.Size, SourceHash: job.SourceHash,
+		Version: 1,
 	}
 	if job.Result != nil {
 		b, err := json.Marshal(job.Result)
@@ -519,6 +522,7 @@ func docToJob(doc mongoJobDoc) (Job, error) {
 		CreatedAt: doc.CreatedAt, StartedAt: doc.StartedAt, FinishedAt: doc.FinishedAt, Err: doc.Err,
 		Tags: doc.Tags, Comment: doc.Comment, SearchText: doc.SearchText, Thumbnail: doc.Thumbnail,
 		Format: doc.Format, MIME: doc.MIME, Size: doc.Size, SourceHash: doc.SourceHash,
+		Version: doc.Version,
 	}
 	if len(doc.ResultJSON) > 0 {
 		var result pipeline.Result

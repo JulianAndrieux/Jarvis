@@ -77,6 +77,7 @@ func (s *FakeStore) Create(ctx context.Context, job Job) (Job, error) {
 	stored := job
 	stored.Content = nil
 	stored.Env = s.scope.Env
+	stored.Version = 1
 	s.shared.jobs[k] = stored
 	return job, nil
 }
@@ -131,6 +132,7 @@ func (s *FakeStore) Update(ctx context.Context, job Job) error {
 	job.Content, job.Thumbnail, job.Progress = nil, existing.Thumbnail, existing.Progress
 	job.Tags, job.Comment = existing.Tags, existing.Comment
 	job.Env = s.scope.Env
+	job.Version = existing.Version + 1
 	s.shared.jobs[s.key(job.ID)] = job
 	return nil
 }
@@ -219,6 +221,7 @@ func (s *FakeStore) mutate(id string, apply func(*Job)) error {
 		return fmt.Errorf("webapp: fake store: job %s not found", id)
 	}
 	apply(&j)
+	j.Version++
 	s.shared.jobs[s.key(id)] = j
 	return nil
 }

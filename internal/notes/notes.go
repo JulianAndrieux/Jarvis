@@ -6,6 +6,8 @@ package notes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
@@ -28,6 +30,12 @@ type Note struct {
 	MailID    string    `bson:"mail_id"`
 	CreatedAt time.Time `bson:"created_at"`
 	UpdatedAt time.Time `bson:"updated_at"`
+	// Version monte à chaque écriture. Une mise à jour porte la version
+	// qu'elle a lue : si elle ne correspond plus, c'est que quelqu'un a
+	// écrit entre-temps, et l'écriture est refusée (ErrConflict) plutôt que
+	// d'effacer sa modification. C'est aussi l'ancrage du rebase du
+	// changeset (jalon 48).
+	Version int `bson:"version"`
 }
 
 // Priority d'une tâche.
@@ -88,6 +96,8 @@ type Task struct {
 	MailID    string    `bson:"mail_id"`
 	CreatedAt time.Time `bson:"created_at"`
 	DoneAt    time.Time `bson:"done_at"`
+	// Version : voir Note.Version.
+	Version int `bson:"version"`
 }
 
 // NoteQuery filtre une liste de notes.
@@ -107,6 +117,24 @@ type TaskQuery struct {
 	MailID string
 }
 
+// ErrConflict : l'entité a changé depuis sa lecture. Jamais un écrasement
+// silencieux — même règle que « les valeurs sous le seuil sont marquées
+// pour revue humaine, jamais acceptées silencieusement ».
+var ErrConflict = errors.New("notes: modifiée entre-temps")
+
+// Conflict porte l'état courant, pour que l'interface puisse montrer
+// « quelqu'un a modifié ceci pendant ta saisie » côte à côte plutôt que
+// d'annoncer un échec sans recours.
+type Conflict struct {
+	Current Note
+}
+
+func (c *Conflict) Error() string {
+	return fmt.Sprintf("la note %q a été modifiée entre-temps", c.Current.Title)
+}
+
+func (c *Conflict) Unwrap() error { return ErrConflict }
+
 // Store persiste notes et tâches (MongoStore en production, FakeStore en
 // test). Get : ok=false si l'élément n'existe pas ; Update et Delete
 // échouent sur un élément inconnu.
@@ -117,6 +145,9 @@ type Store interface {
 	For(scope tenancy.Scope) Store
 	CreateNote(ctx context.Context, n Note) error
 	GetNote(ctx context.Context, id string) (Note, bool, error)
+	// UpdateNote réécrit la note. Conditionnel : n.Version doit être celle
+	// enregistrée, sinon ErrConflict et rien n'est écrit. La nouvelle
+	// version est un incrément.
 	UpdateNote(ctx context.Context, n Note) error
 	DeleteNote(ctx context.Context, id string) error
 	// ListNotes : épinglées d'abord, puis la plus récemment modifiée.
@@ -124,6 +155,7 @@ type Store interface {
 
 	CreateTask(ctx context.Context, t Task) error
 	GetTask(ctx context.Context, id string) (Task, bool, error)
+	// UpdateTask : même contrat conditionnel qu'UpdateNote.
 	UpdateTask(ctx context.Context, t Task) error
 	DeleteTask(ctx context.Context, id string) error
 	ListTasks(ctx context.Context, q TaskQuery) ([]Task, error)

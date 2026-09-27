@@ -64,6 +64,7 @@ func (s *MongoStore) CreateNote(ctx context.Context, n Note) error {
 		return err
 	}
 	n.Env = s.scope.Env
+	n.Version = 1
 	if _, err := s.Notes.InsertOne(ctx, n); err != nil {
 		return fmt.Errorf("notes: create note %s: %w", n.ID, err)
 	}
@@ -92,7 +93,7 @@ func (s *MongoStore) UpdateNote(ctx context.Context, n Note) error {
 	// ReplaceOne remplace le document entier : il doit porter son
 	// environnement, sinon la note sortirait de son environnement.
 	n.Env = s.scope.Env
-	return replace(ctx, s.Notes, s.key(n.ID), n.ID, n, "note")
+	return replace(ctx, s.Notes, s.key(n.ID), n.ID, n.Version, &n, "note")
 }
 
 func (s *MongoStore) DeleteNote(ctx context.Context, id string) error {
@@ -141,6 +142,7 @@ func (s *MongoStore) CreateTask(ctx context.Context, t Task) error {
 		return err
 	}
 	t.Env = s.scope.Env
+	t.Version = 1
 	if _, err := s.Tasks.InsertOne(ctx, t); err != nil {
 		return fmt.Errorf("notes: create task %s: %w", t.ID, err)
 	}
@@ -167,7 +169,7 @@ func (s *MongoStore) UpdateTask(ctx context.Context, t Task) error {
 		return err
 	}
 	t.Env = s.scope.Env
-	return replace(ctx, s.Tasks, s.key(t.ID), t.ID, t, "tâche")
+	return replace(ctx, s.Tasks, s.key(t.ID), t.ID, t.Version, &t, "tâche")
 }
 
 func (s *MongoStore) DeleteTask(ctx context.Context, id string) error {
@@ -203,16 +205,43 @@ func (s *MongoStore) ListTasks(ctx context.Context, q TaskQuery) ([]Task, error)
 	return out, nil
 }
 
-func replace(ctx context.Context, c *mongo.Collection, filter bson.M, id string, doc any, what string) error {
+// replace réécrit un document, à condition que sa version soit encore
+// celle qu'on a lue. ReplaceOne remplace tout : sans ce filtre, une
+// modification faite entre-temps disparaîtrait sans un mot — exactement la
+// classe de bug qui a coûté quatre correctifs à ce projet avec un seul
+// utilisateur (jalons 15, 23, 26-27, 39).
+//
+// setVersion écrit la nouvelle version dans le document remplacé : un
+// ReplaceOne ne peut pas combiner $inc, donc c'est l'appelant qui la pose.
+func replace(ctx context.Context, c *mongo.Collection, filter bson.M, id string, version int, doc versioned, what string) error {
+	filter["version"] = version
+	doc.setVersion(version + 1)
 	res, err := c.ReplaceOne(ctx, filter, doc)
 	if err != nil {
 		return fmt.Errorf("notes: update %s %s: %w", what, id, err)
 	}
 	if res.MatchedCount == 0 {
-		return fmt.Errorf("notes: %s %s introuvable", what, id)
+		// Soit l'entité n'existe pas, soit sa version a bougé. On distingue,
+		// parce que « introuvable » et « modifiée entre-temps » ne se
+		// traitent pas pareil du tout dans l'interface.
+		delete(filter, "version")
+		n, cerr := c.CountDocuments(ctx, filter)
+		if cerr != nil {
+			return fmt.Errorf("notes: update %s %s: %w", what, id, cerr)
+		}
+		if n == 0 {
+			return fmt.Errorf("notes: %s %s introuvable", what, id)
+		}
+		return fmt.Errorf("%w: %s %s (version %d)", ErrConflict, what, id, version)
 	}
 	return nil
 }
+
+// versioned : une entité dont la version se pose avant écriture.
+type versioned interface{ setVersion(int) }
+
+func (n *Note) setVersion(v int) { n.Version = v }
+func (t *Task) setVersion(v int) { t.Version = v }
 
 func remove(ctx context.Context, c *mongo.Collection, filter bson.M, id, what string) error {
 	res, err := c.DeleteOne(ctx, filter)

@@ -64,6 +64,7 @@ func (s *FakeStore) CreateNote(ctx context.Context, n Note) error {
 		return fmt.Errorf("notes: note %s existe déjà", n.ID)
 	}
 	n.Env = s.scope.Env
+	n.Version = 1
 	s.shared.notes[s.key(n.ID)] = cloneNote(n)
 	return nil
 }
@@ -84,10 +85,15 @@ func (s *FakeStore) UpdateNote(ctx context.Context, n Note) error {
 	}
 	s.shared.mu.Lock()
 	defer s.shared.mu.Unlock()
-	if _, ok := s.shared.notes[s.key(n.ID)]; !ok {
+	existing, ok := s.shared.notes[s.key(n.ID)]
+	if !ok {
 		return fmt.Errorf("notes: note %s introuvable", n.ID)
 	}
+	if n.Version != existing.Version {
+		return fmt.Errorf("%w: note %s (version %d, attendue %d)", ErrConflict, n.ID, n.Version, existing.Version)
+	}
 	n.Env = s.scope.Env
+	n.Version = existing.Version + 1
 	s.shared.notes[s.key(n.ID)] = cloneNote(n)
 	return nil
 }
@@ -162,6 +168,7 @@ func (s *FakeStore) CreateTask(ctx context.Context, t Task) error {
 		return fmt.Errorf("notes: tâche %s existe déjà", t.ID)
 	}
 	t.Env = s.scope.Env
+	t.Version = 1
 	s.shared.tasks[s.key(t.ID)] = t
 	return nil
 }
@@ -182,10 +189,15 @@ func (s *FakeStore) UpdateTask(ctx context.Context, t Task) error {
 	}
 	s.shared.mu.Lock()
 	defer s.shared.mu.Unlock()
-	if _, ok := s.shared.tasks[s.key(t.ID)]; !ok {
+	existing, ok := s.shared.tasks[s.key(t.ID)]
+	if !ok {
 		return fmt.Errorf("notes: tâche %s introuvable", t.ID)
 	}
+	if t.Version != existing.Version {
+		return fmt.Errorf("%w: tâche %s (version %d, attendue %d)", ErrConflict, t.ID, t.Version, existing.Version)
+	}
 	t.Env = s.scope.Env
+	t.Version = existing.Version + 1
 	s.shared.tasks[s.key(t.ID)] = t
 	return nil
 }
