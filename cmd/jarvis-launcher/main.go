@@ -141,7 +141,10 @@ func run(jarvisDir, home string) error {
 		}
 		appCtx, cancelApp := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancelApp()
-		if err := launcher.WaitHealthy(appCtx, "http://"+cfg.Addr+"/", 500*time.Millisecond); err != nil {
+		// « /health » et pas « / » : avec l'authentification configurée
+		// (jalon 45), « / » renvoie 302 vers /login et le lanceur ne
+		// verrait jamais l'application démarrer.
+		if err := launcher.WaitHealthy(appCtx, "http://"+cfg.Addr+"/health", 500*time.Millisecond); err != nil {
 			return cmd, err
 		}
 		return cmd, nil

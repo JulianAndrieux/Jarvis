@@ -30,7 +30,7 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 	var tasks []notes.Task
 	if s.Notes != nil {
 		now = s.Notes.Clock()
-		tasks, _ = s.Notes.Store.ListTasks(ctx, notes.TaskQuery{})
+		tasks, _ = s.Notes.DB(ctx).ListTasks(ctx, notes.TaskQuery{})
 	}
 	var active, failed []webapp.Job
 	for _, st := range []webapp.Status{webapp.StatusRunning, webapp.StatusPending} {
@@ -44,7 +44,7 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 	}
 	var mails []mail.Mail
 	if s.Mail != nil {
-		mails, _ = s.Mail.Store.List(ctx, mail.Query{Category: mail.Action, Limit: 50})
+		mails, _ = s.Mail.DB(ctx).List(ctx, mail.Query{Category: mail.Action, Limit: 50})
 	}
 	// Une source illisible laisse son bloc vide plutôt que de casser la
 	// barre (affichée sur toutes les pages).

@@ -1,0 +1,55 @@
+package templates
+
+// DashboardPage : la page d'accueil de l'application (ticket "Revoir
+// ordre des sections"). Rendu statique : « / » est le contrôle de santé
+// du lanceur (500 ms par tentative) et la première page de l'essai à
+// blanc d'un déploiement — les statistiques, qui lisent la base,
+// arrivent ensuite par HTMX. Chargées une fois (« load ») : pas de
+// sondage périodique, la barre latérale se rafraîchit déjà toute seule.
+templ DashboardPage() {
+	@Layout("Jarvis — tableau de bord", "dashboard") {
+		<div class="page-wide">
+			<div class="page-title">
+				<h2>Tableau de bord</h2>
+				<a class="button button-primary" href="/import">+ Importer</a>
+			</div>
+			<div id="dashboard-stats" hx-get="/dashboard/stats" hx-trigger="load" hx-swap="innerHTML">
+				<p class="muted">Chargement des statistiques…</p>
+			</div>
+		</div>
+	}
+}
+
+// DashboardStats : les statistiques du tableau de bord — une carte par
+// section, dans l'ordre de la navigation, puis les derniers documents
+// importés.
+templ DashboardStats(v DashboardView) {
+	<div class="stat-grid">
+		for _, c := range v.Cards {
+			<a class={ "stat-card", templ.KV("alert", c.Alert) } href={ templ.SafeURL(c.Href) }>
+				<div class="stat-label">{ c.Icon } { c.Label }</div>
+				<div class="stat-value">{ c.Value }</div>
+				if c.Detail != "" {
+					<div class="stat-detail">{ c.Detail }</div>
+				}
+			</a>
+		}
+	</div>
+	<h3 class="section-title">Derniers documents importés</h3>
+	if v.RecentErr {
+		<div class="empty-state">
+			<p class="muted">Lecture impossible : la liste des documents n'a pas pu être chargée.</p>
+		</div>
+	} else if len(v.Recent) == 0 {
+		<div class="empty-state">
+			<p>Aucun document pour l'instant.</p>
+			<a class="button button-primary" href="/import">Importer un premier document</a>
+		</div>
+	} else {
+		<div class="doc-grid">
+			for _, d := range v.Recent {
+				@documentCard(d, false)
+			}
+		</div>
+	}
+}

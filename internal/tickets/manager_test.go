@@ -165,6 +165,60 @@ func TestManager_TransitionsAreEnforced(t *testing.T) {
 	}
 }
 
+// Ressusciter un ticket annulé (par erreur, ou repris plus tard) : il
+// repart en brouillon. La copie de travail ayant été supprimée à
+// l'annulation, la branche, le diff, le rapport et la relecture sont
+// oubliés — ils désigneraient un travail qui n'existe plus ; le plan
+// reste, mémoire de l'analyse précédente.
+func TestManager_ResurrectCancelledTicketBackToDraft(t *testing.T) {
+	m, s := newManager(&fakeAnalyst{plan: "p"})
+	ctx := context.Background()
+	tk, _ := m.Create(ctx, "T", "besoin", "")
+	// Un ticket annulé après un développement : il portait une branche,
+	// un diff, un rapport et une relecture.
+	tk.Status, tk.Plan = Cancelled, "plan v1"
+	tk.Branch, tk.Diff, tk.Report = "ticket/"+tk.ID, "diff", "gofmt : ok"
+	tk.Review = &ReviewResult{Approved: true, Rounds: 1}
+	if err := s.Update(ctx, tk); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Resurrect(ctx, tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := s.Get(ctx, tk.ID)
+	if got.Status != Draft {
+		t.Errorf("status = %s, want %s", got.Status, Draft)
+	}
+	if got.Branch != "" || got.Diff != "" || got.Report != "" || got.Review != nil {
+		t.Errorf("stale work kept: %+v", got)
+	}
+	if got.Plan != "plan v1" {
+		t.Errorf("plan = %q, want the previous analysis kept", got.Plan)
+	}
+	if last := got.Events[len(got.Events)-1]; last.Kind != EventStatus || !strings.Contains(last.Text, "ressuscité") {
+		t.Errorf("last event = %+v, want a status event saying the ticket was resurrected", last)
+	}
+	// Repart du brouillon : l'analyse se relance.
+	if err := m.StartAnalysis(ctx, tk.ID); err != nil {
+		t.Fatalf("analysing a resurrected ticket: %v", err)
+	}
+	waitTicket(t, s, tk.ID, PlanReady)
+}
+
+func TestManager_ResurrectOnlyACancelledTicket(t *testing.T) {
+	m, _ := newManager(&fakeAnalyst{})
+	ctx := context.Background()
+	tk, _ := m.Create(ctx, "T", "b", "") // brouillon
+	err := m.Resurrect(ctx, tk.ID)
+	if err == nil || !strings.Contains(err.Error(), "impossible") {
+		t.Errorf("resurrecting a draft = %v, want a refusal explaining why", err)
+	}
+	if err := m.Resurrect(ctx, "inconnu"); err == nil || !strings.Contains(err.Error(), "introuvable") {
+		t.Errorf("resurrecting an unknown ticket = %v", err)
+	}
+}
+
 // L'analyse attend son tour derrière la file partagée avec les documents.
 func TestManager_AnalysisWaitsForSharedGate(t *testing.T) {
 	g := gate.New(1)

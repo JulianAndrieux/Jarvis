@@ -2807,6 +2807,47 @@ décisions : `docs/plan-multi-environnement.md`.
   `withCheckIsolation` vide `--auth-config` et détourne journal, changesets
   et comptes vers des collections de contrôle (test de garde).
 
+- **Intégration de `main` dans l'épopée : fait.** Pendant ce chantier, trois
+  tickets ont été déployés sur `main` par le pilote automatique (notes en
+  boîtes, résurrection d'un ticket, ordre des sections + tableau de bord) —
+  du code écrit contre les interfaces **d'avant** la portée, les versions et
+  le changeset. Fusionné plutôt que rejoué :
+  - **Le texte d'une note vit désormais dans ses boîtes** (`Note.Blocks`,
+    `Body` dérivé). C'est du texte écrit par un humain : il entre donc dans
+    le changeset comme les autres champs (`blocks` ajouté à `noteFields`,
+    `Body` gardé — les deux bougent ensemble, donc leurs conflits
+    coïncident) et il est journalisé sous `body`, lisible dans l'onglet
+    Activité. `editBlocks` reste l'unique chemin d'écriture des boîtes :
+    la portée, le journal et la mise en attente y tiennent en un seul
+    endroit. `SaveNote` ne porte plus que l'en-tête (titre, tags,
+    épingle) ; la version affichée voyage avec ce formulaire et un conflit
+    réaffiche la saisie intacte à côté de l'en-tête enregistré
+    entre-temps.
+  - **Trou trouvé en fusionnant, dans mon propre travail** : les lectures
+    des handlers passaient par `s.Notes.Store`, c'est-à-dire la vue
+    **par défaut** du store, quelle que soit la session — donc les notes,
+    tâches, emails liés et le tableau de bord d'un autre environnement, et
+    sans le changeset appliqué. Les écritures, elles, étaient bien scopées
+    (elles passent par le Service). `notes.Service.DB(ctx)` (même forme que
+    `mail.Service.DB`, qui existait déjà) ; tous les sites d'appel de
+    `cmd/jarvisapp` convertis, et `internal/notes` n'a plus qu'un seul
+    endroit qui touche `Store` (`db`). La fixture du changeset injectait
+    l'overlay dans `Service.Store` : elle testait l'overlay sans tester le
+    choix, donc un chemin écrivant directement dans la base passait
+    inaperçu — recâblée comme l'application.
+  - **`JobManager.Count`** (nouveau côté `main`, pour le tableau de bord)
+    lisait le store non scopé : passé par `db(ctx)`, et `Overlay.Count`
+    compte ce que je vois, mes modifications en attente comprises.
+  - **Régression évitée** : le lanceur attendait un 200 sur `/`, qui est
+    devenu le tableau de bord — avec l'authentification configurée, `/`
+    redirige vers `/login` et le lanceur n'aurait plus jamais vu
+    l'application démarrer (ni après un déploiement). Il interroge
+    désormais `/health`, public par construction.
+  - Le décorateur de test qui simule une base illisible perdait sa panne
+    dès que `JobManager` demandait la vue de la portée : un store enveloppé
+    doit implémenter `For`, sinon l'embedding rend la fake nue et le test
+    passe en ne testant plus rien.
+
 **Reste à valider en conditions réelles** (impossible depuis
 l'environnement de développement de ce chantier) : les contrats Mongo
 contre Atlas (`-tags=integration`, `MONGO_URI`), le flux Google avec un

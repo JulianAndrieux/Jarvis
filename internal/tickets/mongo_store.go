@@ -68,7 +68,7 @@ func (s *MongoStore) List(ctx context.Context, status Status) ([]Ticket, error) 
 		filter["status"] = status
 	}
 	// Le fil peut être long : pas chargé pour une liste.
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetProjection(bson.M{"events": 0, "diff": 0, "report": 0}).SetLimit(500)
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetProjection(bson.M{"events": 0, "diff": 0, "report": 0}).SetLimit(MaxList)
 	cur, err := s.Collection.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, fmt.Errorf("tickets: list: %w", err)

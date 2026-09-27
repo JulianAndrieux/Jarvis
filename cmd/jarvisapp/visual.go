@@ -37,9 +37,10 @@ func visualArgs(current []string, addr, jobsCollection, ticketsCollection string
 // withCheckIsolation : une instance de contrôle (essai à blanc du
 // déploiement, capture pour la relecture visuelle) ne doit toucher à rien
 // de réel. Elle ne relève jamais la boîte mail et ne lit ni ne trie les
-// vrais emails (jalon 39) ; elle n'écrit ni dans le journal des
-// modifications ni dans les changesets, et surtout elle **n'a pas
-// d'authentification** (jalon 51).
+// vrais emails (jalon 39) ; elle ne lit ni les vraies notes ni les vraies
+// tâches (le tableau de bord, première page visitée, les lit) ; elle
+// n'écrit ni dans le journal des modifications ni dans les changesets, et
+// surtout elle **n'a pas d'authentification** (jalon 51).
 //
 // Ce dernier point n'est pas un détail : avec l'authentification
 // configurée, une instance de contrôle renverrait chacune de ses pages
@@ -49,6 +50,8 @@ func withCheckIsolation(overrides map[string]string) map[string]string {
 	overrides["mail-config"] = ""
 	overrides["mail-collection"] = "emails_check"
 	overrides["mail-files-collection"] = "email_files_check"
+	overrides["notes-collection"] = "notes_check"
+	overrides["tasks-collection"] = "tasks_check"
 	overrides["auth-config"] = ""
 	overrides["accounts-prefix"] = "accounts_check_"
 	overrides["changes-collection"] = "changes_check"

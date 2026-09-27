@@ -424,6 +424,71 @@ func TestFakeStore_List_FiltersByCreationDate(t *testing.T) {
 	}
 }
 
+// Count compte sans charger : mêmes filtres que List, mais Limit ignoré
+// (le tableau de bord veut le total, pas une page de résultats).
+func TestFakeStore_Count_MatchesListFiltersAndIgnoresLimit(t *testing.T) {
+	s := NewFakeStore()
+	ctx := context.Background()
+	day := func(d int) time.Time { return time.Date(2026, 9, d, 10, 0, 0, 0, time.Local) }
+	for _, j := range []Job{
+		{ID: "a", Filename: "facture-a.pdf", Status: StatusDone, CreatedAt: day(10)},
+		{ID: "b", Filename: "facture-b.pdf", Status: StatusDone, CreatedAt: day(11)},
+		{ID: "c", Filename: "devis.pdf", Status: StatusDone, CreatedAt: day(12)},
+		{ID: "d", Filename: "cassé.docx", Status: StatusFailed, Format: "word", CreatedAt: day(13)},
+		{ID: "e", Filename: "compta.xlsx", Status: StatusRunning, Format: "sheet", CreatedAt: day(14)},
+	} {
+		if _, err := s.Create(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	count := func(q ListQuery) int {
+		n, err := s.Count(ctx, q)
+		if err != nil {
+			t.Fatalf("Count(%+v) error = %v", q, err)
+		}
+		return n
+	}
+	// Le même filtre doit donner le même compte que List : Count et List
+	// partagent la même condition, jamais deux copies qui divergent.
+	sameAsList := func(q ListQuery) {
+		t.Helper()
+		got, err := s.List(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := count(q); n != len(got) {
+			t.Errorf("Count(%+v) = %d, want %d (comme List)", q, n, len(got))
+		}
+	}
+
+	if n := count(ListQuery{}); n != 5 {
+		t.Errorf("Count() = %d, want 5", n)
+	}
+	if n := count(ListQuery{Status: StatusFailed}); n != 1 {
+		t.Errorf("Count(Status=failed) = %d, want 1", n)
+	}
+	if n := count(ListQuery{Status: StatusDone}); n != 3 {
+		t.Errorf("Count(Status=done) = %d, want 3", n)
+	}
+	if n := count(ListQuery{Format: "sheet"}); n != 1 {
+		t.Errorf("Count(Format=sheet) = %d, want 1", n)
+	}
+	if n := count(ListQuery{Search: "facture"}); n != 2 {
+		t.Errorf("Count(Search=facture) = %d, want 2", n)
+	}
+	sameAsList(ListQuery{Search: "facture"})
+	sameAsList(ListQuery{CreatedFrom: day(12), CreatedBefore: day(14)})
+
+	// Limit borne List, jamais Count.
+	if n := count(ListQuery{Limit: 2}); n != 5 {
+		t.Errorf("Count(Limit=2) = %d, want 5 (Limit ignoré)", n)
+	}
+	if got, _ := s.List(ctx, ListQuery{Limit: 2}); len(got) != 2 {
+		t.Errorf("List(Limit=2) = %d jobs, want 2 (la prémisse du test)", len(got))
+	}
+}
+
 // Tags et commentaire : écritures ciblées, comme la miniature. Un Update
 // depuis une copie ancienne du job (prise avant qu'on les modifie) ne
 // doit pas les écraser — ni l'inverse : SetTags/SetComment ne touchent

@@ -102,7 +102,7 @@ templ DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter)
 		<div class="page-wide">
 			<div class="page-title">
 				<h2>Documents</h2>
-				<a class="button button-primary" href="/">+ Importer</a>
+				<a class="button button-primary" href="/import">+ Importer</a>
 			</div>
 			<form class="search-bar" method="get" action="/documents">
 				<input type="text" name="q" id="q" value={ f.Search } placeholder="Rechercher : nom, type, tag, ou contenu du document…"/>
@@ -134,51 +134,61 @@ templ DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter)
 						<p>Aucun document importé à ces dates.</p>
 					} else {
 						<p>Aucun document pour l'instant.</p>
-						<a class="button button-primary" href="/">Importer un premier PDF</a>
+						<a class="button button-primary" href="/import">Importer un premier PDF</a>
 					}
 				</div>
 			} else {
 				<p class="muted">{ fmt.Sprint(len(docs)) } document(s)</p>
 				<div class="doc-grid">
 					for _, d := range docs {
-						<a class="doc-card" href={ templ.SafeURL("/documents/" + d.ID) }>
-							<div class="doc-thumb">
-								if d.HasThumbnail {
-									<img src={ "/documents/" + d.ID + "/thumbnail" } alt={ "Aperçu de " + d.Filename } loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"/>
-								}
-								<div class="doc-icon" hidden?={ d.HasThumbnail }>{ familyIcon(d.Family) }</div>
-								if d.Ext != "" {
-									<span class="ext-badge">{ d.Ext }</span>
-								}
-							</div>
-							<div class="doc-card-body">
-								<div class="doc-name" title={ d.Filename }>{ d.Filename }</div>
-								<div class="doc-meta">
-									if d.DocType != "" {
-										<span class="chip chip-type">{ d.DocType }</span>
-									}
-									if d.Status != string(webapp.StatusDone) {
-										@statusChip(webapp.Status(d.Status))
-									}
-									for _, tag := range d.Tags {
-										<span class="chip">{ tag }</span>
-									}
-								</div>
-								<div class="doc-date">{ d.CreatedAt }</div>
-							</div>
-							<button
-								class="button-danger card-delete"
-								title="Supprimer"
-								hx-delete={ "/documents/" + d.ID }
-								hx-confirm={ "Supprimer définitivement " + d.Filename + " ?" }
-								onclick="event.preventDefault()"
-							>🗑</button>
-						</a>
+						@documentCard(d, true)
 					}
 				</div>
 			}
 		</div>
 	}
+}
+
+// documentCard : la carte d'un document dans une grille — la
+// bibliothèque et le tableau de bord montrent exactement la même.
+// deletable : le bouton de suppression (au survol) n'apparaît que dans la
+// bibliothèque, pas sur la page d'accueil.
+templ documentCard(d DocumentRow, deletable bool) {
+	<a class="doc-card" href={ templ.SafeURL("/documents/" + d.ID) }>
+		<div class="doc-thumb">
+			if d.HasThumbnail {
+				<img src={ "/documents/" + d.ID + "/thumbnail" } alt={ "Aperçu de " + d.Filename } loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"/>
+			}
+			<div class="doc-icon" hidden?={ d.HasThumbnail }>{ familyIcon(d.Family) }</div>
+			if d.Ext != "" {
+				<span class="ext-badge">{ d.Ext }</span>
+			}
+		</div>
+		<div class="doc-card-body">
+			<div class="doc-name" title={ d.Filename }>{ d.Filename }</div>
+			<div class="doc-meta">
+				if d.DocType != "" {
+					<span class="chip chip-type">{ d.DocType }</span>
+				}
+				if d.Status != string(webapp.StatusDone) {
+					@statusChip(webapp.Status(d.Status))
+				}
+				for _, tag := range d.Tags {
+					<span class="chip">{ tag }</span>
+				}
+			</div>
+			<div class="doc-date">{ d.CreatedAt }</div>
+		</div>
+		if deletable {
+			<button
+				class="button-danger card-delete"
+				title="Supprimer"
+				hx-delete={ "/documents/" + d.ID }
+				hx-confirm={ "Supprimer définitivement " + d.Filename + " ?" }
+				onclick="event.preventDefault()"
+			>🗑</button>
+		}
+	</a>
 }
 
 // DocumentDetailPage : aperçu du PDF à gauche, toutes les informations à

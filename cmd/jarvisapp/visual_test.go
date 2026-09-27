@@ -11,14 +11,15 @@ import (
 func TestVisualArgs_Isolated(t *testing.T) {
 	current := []string{"--addr", "127.0.0.1:8090", "--mongo-collection", "jobs", "--tickets-collection", "tickets",
 		"--models-file", "/home/x/.jarvis/models.json", "--watch-dir", "/home/x/Inbox", "--out-dir", "/data",
-		"--mail-config", "/home/x/.jarvis/mail.json", "--mail-collection", "emails"}
+		"--mail-config", "/home/x/.jarvis/mail.json", "--mail-collection", "emails",
+		"--notes-collection", "notes", "--tasks-collection", "tasks"}
 	got := strings.Join(visualArgs(current, "127.0.0.1:9999", "jobs", "tickets"), " ")
-	for _, want := range []string{"127.0.0.1:9999", "jobs_visualcheck", "tickets_visualcheck", "--models-file=", "--watch-dir=", "--out-dir=", "--agent-dev=false", "--deploy=false", "--mail-config=", "--mail-collection=emails_check", "--ticket-pickup=0"} {
+	for _, want := range []string{"127.0.0.1:9999", "jobs_visualcheck", "tickets_visualcheck", "--models-file=", "--watch-dir=", "--out-dir=", "--agent-dev=false", "--deploy=false", "--mail-config=", "--mail-collection=emails_check", "--ticket-pickup=0", "--notes-collection=notes_check", "--tasks-collection=tasks_check"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("args lack %q: %s", want, got)
 		}
 	}
-	for _, unwanted := range []string{"8090", "models.json", "Inbox", "/data", "mail.json", "--mail-collection emails"} {
+	for _, unwanted := range []string{"8090", "models.json", "Inbox", "/data", "mail.json", "--mail-collection emails", "--notes-collection notes", "--tasks-collection tasks"} {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("args keep %q: %s", unwanted, got)
 		}
@@ -26,17 +27,20 @@ func TestVisualArgs_Isolated(t *testing.T) {
 }
 
 // L'essai à blanc d'un déploiement : même isolement (jamais la boîte mail,
-// ni les modèles, ni les vraies collections).
+// ni les modèles, ni les vraies collections). Le tableau de bord (ticket
+// "Revoir ordre des sections") lit désormais notes et tâches : elles sont
+// isolées comme le reste.
 func TestSmokeArgs_Isolated(t *testing.T) {
 	current := []string{"--addr", "127.0.0.1:8090", "--mongo-collection", "jobs", "--tickets-collection", "tickets",
-		"--models-file", "/home/x/.jarvis/models.json", "--mail-config", "/home/x/.jarvis/mail.json", "--mail-collection", "emails"}
+		"--models-file", "/home/x/.jarvis/models.json", "--mail-config", "/home/x/.jarvis/mail.json", "--mail-collection", "emails",
+		"--notes-collection", "notes", "--tasks-collection", "tasks"}
 	got := strings.Join(smokeArgs(current, "127.0.0.1:9999", "jobs", "tickets"), " ")
-	for _, want := range []string{"127.0.0.1:9999", "jobs_deploycheck", "tickets_deploycheck", "--models-file=", "--mail-config=", "--mail-collection=emails_check", "--watch-dir=", "--ticket-pickup=0"} {
+	for _, want := range []string{"127.0.0.1:9999", "jobs_deploycheck", "tickets_deploycheck", "--models-file=", "--mail-config=", "--mail-collection=emails_check", "--watch-dir=", "--ticket-pickup=0", "--notes-collection=notes_check", "--tasks-collection=tasks_check"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("args lack %q: %s", want, got)
 		}
 	}
-	for _, unwanted := range []string{"8090", "models.json", "mail.json", "--mail-collection emails"} {
+	for _, unwanted := range []string{"8090", "models.json", "mail.json", "--mail-collection emails", "--notes-collection notes", "--tasks-collection tasks"} {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("args keep %q: %s", unwanted, got)
 		}

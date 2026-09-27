@@ -22,17 +22,20 @@ func TestService_NoteLifecycle(t *testing.T) {
 		t.Fatalf("NewNote = %+v, %v", n, err)
 	}
 	*now = now.Add(time.Hour)
-	saved, err := s.SaveNote(ctx, n.ID, "  Courses  ", "- lait", " maison, urgent ,, maison ", true)
+	if _, err := s.SaveBlock(ctx, n.ID, n.Blocks[0].ID, "- lait", ""); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := s.SaveNote(ctx, n.ID, "  Courses  ", " maison, urgent ,, maison ", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if saved.Title != "Courses" || saved.Body != "- lait" || strings.Join(saved.Tags, "|") != "maison|urgent" || !saved.Pinned || !saved.UpdatedAt.Equal(*now) || !saved.CreatedAt.Equal(wednesday) || len(saved.DocIDs) != 1 {
 		t.Errorf("SaveNote = %+v", saved)
 	}
-	if saved, _ := s.SaveNote(ctx, n.ID, " ", "", "", false); saved.Title != "Sans titre" {
+	if saved, _ := s.SaveNote(ctx, n.ID, " ", "", false); saved.Title != "Sans titre" {
 		t.Errorf("empty title = %q", saved.Title)
 	}
-	if _, err := s.SaveNote(ctx, "absente", "x", "", "", false); err == nil {
+	if _, err := s.SaveNote(ctx, "absente", "x", "", false); err == nil {
 		t.Error("SaveNote(unknown) = nil")
 	}
 }
@@ -144,5 +147,22 @@ func TestService_FromMail(t *testing.T) {
 	}
 	if _, err := s.AddMailTask(ctx, "  ", "mail-1"); err == nil {
 		t.Error("AddMailTask(empty) = nil")
+	}
+}
+
+// setBody écrit le texte d'une note en passant par sa première boîte : le
+// texte vit dans les boîtes depuis le jalon « Améliorer les notes », Body
+// en est dérivé. Les tests qui veulent « une note avec ce corps »
+// passent par là plutôt que d'écrire Body à la main, sinon ils
+// testeraient un état que l'application ne produit jamais.
+func setBody(t *testing.T, svc *Service, ctx context.Context, noteID, text string) {
+	t.Helper()
+	n, ok, err := svc.DB(ctx).GetNote(ctx, noteID)
+	if err != nil || !ok {
+		t.Fatalf("note %s introuvable : %v", noteID, err)
+	}
+	blocks := BlocksOf(n)
+	if _, err := svc.SaveBlock(ctx, noteID, blocks[0].ID, text, ""); err != nil {
+		t.Fatalf("SaveBlock: %v", err)
 	}
 }

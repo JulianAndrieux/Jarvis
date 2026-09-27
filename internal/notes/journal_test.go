@@ -33,9 +33,10 @@ func TestSaveNote_JournaliseChaqueChampModifie(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SaveNote(ctx, n.ID, "Courses", "du lait", "maison, urgent", true); err != nil {
+	if _, err := svc.SaveNote(ctx, n.ID, "Courses", "maison, urgent", true); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, svc, ctx, n.ID, "du lait")
 
 	ops, err := j.List(ctx, changes.Query{Env: tenancy.Local, Kind: changes.KindNote, Target: n.ID})
 	if err != nil {
@@ -68,13 +69,15 @@ func TestSaveNote_SansModificationNeJournaliseRien(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SaveNote(ctx, n.ID, "Courses", "du lait", "maison", false); err != nil {
+	if _, err := svc.SaveNote(ctx, n.ID, "Courses", "maison", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, svc, ctx, n.ID, "du lait")
 	before, _ := j.List(ctx, changes.Query{Env: tenancy.Local})
-	if _, err := svc.SaveNote(ctx, n.ID, "Courses", "du lait", "maison", false); err != nil {
+	if _, err := svc.SaveNote(ctx, n.ID, "Courses", "maison", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, svc, ctx, n.ID, "du lait")
 	after, _ := j.List(ctx, changes.Query{Env: tenancy.Local})
 	if len(after) != len(before) {
 		t.Errorf("%d opérations puis %d : un enregistrement sans modification ne doit rien journaliser", len(before), len(after))
@@ -135,4 +138,32 @@ func keys(m map[string]changes.Op) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// Le texte d'une boîte est écrit par un humain : il est journalisé, sous
+// le champ « body » — le texte de la note, lisible dans l'onglet Activité.
+func TestSaveBlock_JournaliseLeTexte(t *testing.T) {
+	svc, j, ctx := journalService(t)
+	n, err := svc.NewNote(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setBody(t, svc, ctx, n.ID, "du lait")
+
+	ops, err := j.List(ctx, changes.Query{Env: tenancy.Local})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, op := range ops {
+		if op.Kind == changes.KindNote && op.Target == n.ID && op.Field == "body" && op.Action == changes.Set {
+			found = true
+			if op.User != "u-1" || op.Session != "s-1" {
+				t.Errorf("attribution = %s/%s", op.User, op.Session)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("aucune opération « body » dans le journal : %+v", ops)
+	}
 }

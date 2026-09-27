@@ -55,9 +55,10 @@ func TestChangesPage_CommitDepuisLInterface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "du lait", "", false); err != nil {
+	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, autre, ctx, n.ID, "du lait")
 
 	// Je modifie par l'interface (le formulaire porte la version affichée).
 	mine, _, err := s.Notes.Store.For(tenancy.LocalScope()).GetNote(ctx, n.ID)
@@ -108,7 +109,7 @@ func TestChangesPage_Conflit(t *testing.T) {
 	s, autre, _ := newChangesetServer(t)
 	ctx := context.Background()
 	n, _ := autre.NewNote(ctx, "")
-	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", "", false); err != nil {
+	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
 	mine, _, _ := s.Notes.Store.For(tenancy.LocalScope()).GetNote(ctx, n.ID)
@@ -116,7 +117,7 @@ func TestChangesPage_Conflit(t *testing.T) {
 		"version": {strconv.Itoa(mine.Version)}, "title": {"Mon titre"},
 	})
 	// L'autre écrit le même champ entre-temps.
-	if _, err := autre.SaveNote(ctx, n.ID, "Son titre", "", "", false); err != nil {
+	if _, err := autre.SaveNote(ctx, n.ID, "Son titre", "", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -137,7 +138,7 @@ func TestChangesPage_Abandon(t *testing.T) {
 	s, autre, base := newChangesetServer(t)
 	ctx := context.Background()
 	n, _ := autre.NewNote(ctx, "")
-	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", "", false); err != nil {
+	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
 	mine, _, _ := s.Notes.Store.For(tenancy.LocalScope()).GetNote(ctx, n.ID)
@@ -176,7 +177,7 @@ func TestChangesPage_NotesEtDocumentsEnsemble(t *testing.T) {
 	ctx := context.Background()
 
 	n, _ := autre.NewNote(ctx, "")
-	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", "", false); err != nil {
+	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Jobs.Submit(tenancy.WithScope(ctx, tenancy.LocalScope()), "facture.pdf", []byte("%PDF-1.4")); err != nil {

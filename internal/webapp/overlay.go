@@ -116,6 +116,32 @@ func (o *Overlay) Get(ctx context.Context, id string) (Job, bool, error) {
 	return job, ok, nil
 }
 
+// Count compte ce que je vois : la base, plus mes modifications en
+// attente. Un document que je viens de supprimer ne compte plus pour moi,
+// et il compte encore pour les autres.
+func (o *Overlay) Count(ctx context.Context, q ListQuery) (int, error) {
+	ops, err := o.pending(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if len(ops) == 0 {
+		return o.Base.Count(ctx, q) // rien en attente : le compte côté serveur
+	}
+	// Avec des modifications en attente, le compte doit passer par le même
+	// prédicat que la liste — SummaryOnly : jamais les PDF pour compter.
+	all, err := o.Base.List(ctx, ListQuery{SummaryOnly: true})
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, j := range all {
+		if merged, ok := applyJobOps(j, true, j.ID, ops); ok && q.Matches(merged) {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (o *Overlay) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	ops, err := o.pending(ctx)
 	if err != nil {

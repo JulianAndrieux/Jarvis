@@ -214,10 +214,10 @@ func (s *Server) handleEmail(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	if s.Notes != nil {
-		if tasks, err := s.Notes.Store.ListTasks(ctx, notes.TaskQuery{MailID: m.ID}); err == nil {
+		if tasks, err := s.Notes.DB(ctx).ListTasks(ctx, notes.TaskQuery{MailID: m.ID}); err == nil {
 			v.Tasks = s.taskGroups(ctx, tasks, taskContext{mailID: m.ID})
 		}
-		if ns, err := s.Notes.Store.ListNotes(ctx, notes.NoteQuery{MailID: m.ID}); err == nil {
+		if ns, err := s.Notes.DB(ctx).ListNotes(ctx, notes.NoteQuery{MailID: m.ID}); err == nil {
 			v.Notes = noteCards(ns)
 		}
 	}

@@ -16,15 +16,37 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
-// Note est une note en Markdown.
+// Block est une boîte de note (layout à la Jupyter) : un morceau de
+// texte Markdown, qu'on peut transformer en tâche ou archiver en le
+// taguant.
+type Block struct {
+	ID       string   `bson:"id"`
+	Text     string   `bson:"text"`
+	Tags     []string `bson:"tags"`
+	Archived bool     `bson:"archived"`
+	// ArchivedAt : quand la boîte a été archivée (zéro : jamais).
+	ArchivedAt time.Time `bson:"archived_at"`
+	// TaskID : la tâche née de cette boîte ("" : aucune).
+	TaskID    string    `bson:"task_id"`
+	CreatedAt time.Time `bson:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at"`
+}
+
+// Note est une note en Markdown, écrite en une suite de boîtes.
 type Note struct {
 	ID string `bson:"_id"`
 	// Env : l'environnement propriétaire. Renseigné par le Store, jamais
 	// par l'appelant.
 	Env   tenancy.EnvID `bson:"env_id"`
 	Title string        `bson:"title"`
-	Body  string        `bson:"body"`
-	Tags  []string      `bson:"tags"`
+	// Body : le texte de toutes les boîtes concaténé (JoinBlocks) —
+	// dérivé, jamais saisi directement. Gardé parce que les notes
+	// d'avant les boîtes n'ont que lui (BlocksOf les lit comme une
+	// boîte unique) et parce que la recherche plein texte porte dessus.
+	Body string `bson:"body"`
+	// Blocks : les boîtes de la note (vide : note d'avant les boîtes).
+	Blocks []Block  `bson:"blocks"`
+	Tags   []string `bson:"tags"`
 	// Pinned : affichée en tête de liste.
 	Pinned bool `bson:"pinned"`
 	// DocIDs : documents de la bibliothèque liés à la note.
@@ -103,14 +125,20 @@ type Task struct {
 	Version int `bson:"version"`
 }
 
-// NoteQuery filtre une liste de notes.
+// NoteQuery filtre une liste de notes. Types comparables seulement :
+// NoteQuery sert de clé de map dans le contrat de Store.
 type NoteQuery struct {
-	// Search : sous-chaîne (insensible à la casse) du titre, du texte ou
-	// d'un tag.
+	// Search : sous-chaîne (insensible à la casse) du titre, du texte
+	// (Body ou celui d'une boîte), d'un tag de note ou de boîte.
 	Search string
+	// Tag : tag de la note ou d'une de ses boîtes.
 	Tag    string
 	DocID  string
 	MailID string
+	// UpdatedFrom / UpdatedBefore filtrent sur la date de modification
+	// (UpdatedAt), intervalle semi-ouvert [UpdatedFrom, UpdatedBefore).
+	UpdatedFrom   time.Time
+	UpdatedBefore time.Time
 }
 
 // TaskQuery filtre une liste de tâches.
@@ -137,6 +165,15 @@ func (c *Conflict) Error() string {
 }
 
 func (c *Conflict) Unwrap() error { return ErrConflict }
+
+// MaxListNotes et MaxListTasks bornent ce que ListNotes et ListTasks
+// ramènent : un appelant qui reçoit autant d'éléments sait que la liste
+// est tronquée, et qu'un compte tiré de sa longueur est un minimum, pas
+// un total.
+const (
+	MaxListNotes = 500
+	MaxListTasks = 2000
+)
 
 // Store persiste notes et tâches (MongoStore en production, FakeStore en
 // test). Get : ok=false si l'élément n'existe pas ; Update et Delete
@@ -173,13 +210,19 @@ type Store interface {
 // (jalon 48) doit appliquer la même requête à des notes modifiées en
 // mémoire, que Mongo ne peut pas filtrer.
 func (q NoteQuery) Matches(n Note) bool {
-	if q.Tag != "" && !slices.Contains(n.Tags, q.Tag) {
+	if q.Tag != "" && !slices.Contains(n.Tags, q.Tag) && !slices.Contains(BlockTags(n.Blocks), q.Tag) {
 		return false
 	}
 	if q.DocID != "" && !slices.Contains(n.DocIDs, q.DocID) {
 		return false
 	}
 	if q.MailID != "" && n.MailID != q.MailID {
+		return false
+	}
+	if !q.UpdatedFrom.IsZero() && n.UpdatedAt.Before(q.UpdatedFrom) {
+		return false
+	}
+	if !q.UpdatedBefore.IsZero() && !n.UpdatedAt.Before(q.UpdatedBefore) {
 		return false
 	}
 	if q.Search == "" {

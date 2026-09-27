@@ -38,9 +38,10 @@ func TestUpdateNote_RefuseUneVersionPerimee(t *testing.T) {
 	}
 
 	// Quelqu'un modifie la note.
-	if _, err := svc.SaveNote(ctx, n.ID, "Courses", "du lait", "", false); err != nil {
+	if _, err := svc.SaveNote(ctx, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, svc, ctx, n.ID, "du lait")
 
 	// Mon écriture, bâtie sur ce que j'avais lu avant, est refusée.
 	stale.Body = "autre chose"
@@ -65,7 +66,7 @@ func TestVersion_MonteAChaqueEcriture(t *testing.T) {
 		t.Fatal(err)
 	}
 	first, _, _ := st.GetNote(ctx, n.ID)
-	if _, err := svc.SaveNote(ctx, n.ID, "A", "", "", false); err != nil {
+	if _, err := svc.SaveNote(ctx, n.ID, "A", "", false); err != nil {
 		t.Fatal(err)
 	}
 	second, _, _ := st.GetNote(ctx, n.ID)
@@ -83,11 +84,12 @@ func TestSaveNote_ConflitRendLEtatCourant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SaveNote(ctx, n.ID, "Titre de l'autre", "corps de l'autre", "", false); err != nil {
+	if _, err := svc.SaveNote(ctx, n.ID, "Titre de l'autre", "", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, svc, ctx, n.ID, "corps de l'autre")
 	// Je soumets une version périmée (celle d'avant l'écriture de l'autre).
-	_, err = svc.SaveNoteVersion(ctx, n.ID, n.Version, "Mon titre", "mon corps", "", false)
+	_, err = svc.SaveNoteVersion(ctx, n.ID, n.Version, "Mon titre", "", false)
 	var c *Conflict
 	if !errors.As(err, &c) {
 		t.Fatalf("err = %v, veut un *Conflict", err)

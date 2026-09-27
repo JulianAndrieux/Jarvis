@@ -27,6 +27,17 @@ func (s *Server) notesRoutes(r chi.Router) {
 	r.Post("/notes", s.handleNoteCreate)
 	r.Get("/notes/{id}", s.handleNote)
 	r.Post("/notes/{id}", s.handleNoteSave)
+	// Boîtes d'une note. « blocks/preview » a trois segments : aucune
+	// collision avec POST /notes/{id}.
+	r.Post("/notes/blocks/preview", s.handleNoteBlockPreview)
+	r.Get("/notes/{id}/blocks", s.handleNoteBlocks)
+	r.Post("/notes/{id}/blocks", s.handleNoteBlockAdd)
+	r.Post("/notes/{id}/blocks/{bid}", s.handleNoteBlockSave)
+	r.Post("/notes/{id}/blocks/{bid}/move", s.handleNoteBlockMove)
+	r.Post("/notes/{id}/blocks/{bid}/delete", s.handleNoteBlockDelete)
+	r.Post("/notes/{id}/blocks/{bid}/task", s.handleNoteBlockTask)
+	r.Post("/notes/{id}/blocks/{bid}/archive", s.handleNoteBlockArchive)
+	r.Post("/notes/{id}/blocks/{bid}/unarchive", s.handleNoteBlockUnarchive)
 	r.Post("/notes/{id}/delete", s.handleNoteDelete)
 	r.Post("/notes/{id}/docs", s.handleNoteLinkDoc)
 	r.Post("/notes/{id}/docs/{doc}/unlink", s.handleNoteUnlinkDoc)
@@ -74,18 +85,21 @@ func (s *Server) handleNotes(w http.ResponseWriter, r *http.Request) {
 	if !s.notesEnabled(w) {
 		return
 	}
-	search, tag := r.URL.Query().Get("q"), r.URL.Query().Get("tag")
-	list, err := s.Notes.Store.ListNotes(r.Context(), notes.NoteQuery{Search: search, Tag: tag})
+	q := r.URL.Query()
+	f := templates.NotesFilters{Search: q.Get("q"), Tag: q.Get("tag"), From: q.Get("from"), To: q.Get("to")}
+	query := notes.NoteQuery{Search: f.Search, Tag: f.Tag}
+	query.UpdatedFrom, query.UpdatedBefore, f.Error = dateRange(f.From, f.To, "aucune note ne peut correspondre")
+	list, err := s.Notes.DB(r.Context()).ListNotes(r.Context(), query)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
-	all, err := s.Notes.Store.ListNotes(r.Context(), notes.NoteQuery{})
+	all, err := s.Notes.DB(r.Context()).ListNotes(r.Context(), notes.NoteQuery{})
 	if err != nil {
 		serverError(w, err)
 		return
 	}
-	renderPage(w, r, http.StatusOK, templates.NotesPage(noteCards(list), search, tag, allTags(all)), "notes")
+	renderPage(w, r, http.StatusOK, templates.NotesPage(noteCards(list), f, allTags(all)), "notes")
 }
 
 func (s *Server) handleNoteCreate(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +111,8 @@ func (s *Server) handleNoteCreate(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	http.Redirect(w, r, "/notes/"+n.ID+"?edit=1", http.StatusSeeOther)
+	// La première boîte s'ouvre directement : il n'y a rien à lire.
+	http.Redirect(w, r, "/notes/"+n.ID+"?edit="+n.Blocks[0].ID, http.StatusSeeOther)
 }
 
 func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +120,7 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	n, ok, err := s.Notes.Store.GetNote(ctx, chi.URLParam(r, "id"))
+	n, ok, err := s.Notes.DB(ctx).GetNote(ctx, chi.URLParam(r, "id"))
 	if err != nil {
 		serverError(w, err)
 		return
@@ -114,19 +129,24 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	tasks, err := s.Notes.Store.ListTasks(ctx, notes.TaskQuery{NoteID: n.ID})
-	if err != nil {
-		serverError(w, err)
-		return
-	}
-	names := s.docNames(ctx, n.DocIDs)
+	renderPage(w, r, http.StatusOK, templates.NotePage(s.noteView(r, n)), "note")
+}
+
+// noteView assemble la page d'une note : ses boîtes, ses tâches, ses
+// documents liés. Un seul exemplaire, pour que la page rendue après un
+// conflit d'enregistrement soit exactement la page normale — sinon elle
+// reviendrait sans boîtes ni tâches.
+func (s *Server) noteView(r *http.Request, n notes.Note) templates.NoteView {
+	ctx := r.Context()
 	v := templates.NoteView{
 		MailSubject: s.mailSubjects(ctx, nonEmpty(n.MailID))[n.MailID],
 		Note:        n,
-		BodyHTML:    projectinfo.RenderMarkdown(n.Body),
-		Edit:        r.URL.Query().Get("edit") != "",
-		Tasks:       s.taskGroups(ctx, tasks, taskContext{noteID: n.ID}),
+		Blocks:      s.blockViews(ctx, n, r.URL.Query().Get("edit"), r.URL.Query().Get("archives") != ""),
 	}
+	if tasks, err := s.Notes.DB(ctx).ListTasks(ctx, notes.TaskQuery{NoteID: n.ID}); err == nil {
+		v.Tasks = s.taskGroups(ctx, tasks, taskContext{noteID: n.ID})
+	}
+	names := s.docNames(ctx, n.DocIDs)
 	for _, id := range n.DocIDs {
 		v.Docs = append(v.Docs, templates.DocLink{ID: id, Name: names[id]})
 	}
@@ -135,7 +155,7 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 			v.Choices = append(v.Choices, d)
 		}
 	}
-	renderPage(w, r, http.StatusOK, templates.NotePage(v), "note")
+	return v
 }
 
 func (s *Server) handleNoteSave(w http.ResponseWriter, r *http.Request) {
@@ -143,22 +163,21 @@ func (s *Server) handleNoteSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	title, body, tags, pinned := r.FormValue("title"), r.FormValue("body"), r.FormValue("tags"), r.FormValue("pinned") != ""
+	title, tags, pinned := r.FormValue("title"), r.FormValue("tags"), r.FormValue("pinned") != ""
 	version, _ := strconv.Atoi(r.FormValue("version"))
 
-	_, err := s.Notes.SaveNoteVersion(r.Context(), id, version, title, body, tags, pinned)
+	_, err := s.Notes.SaveNoteVersion(r.Context(), id, version, title, tags, pinned)
 	var conflict *notes.Conflict
 	if errors.As(err, &conflict) {
 		// Sa saisie est réaffichée telle quelle, à côté de ce qui a été
-		// enregistré entre-temps : jamais d'écrasement muet, jamais de texte
-		// perdu. La version portée devient celle du store, pour qu'un second
-		// enregistrement délibéré passe.
-		mine := conflict.Current
-		mine.Title, mine.Body, mine.Tags, mine.Pinned = title, body, splitFormTags(tags), pinned
+		// enregistré entre-temps : jamais d'écrasement muet, jamais de
+		// saisie perdue. La version portée devient celle du store, pour
+		// qu'un second enregistrement délibéré passe.
+		v := s.noteView(r, conflict.Current)
+		v.Note.Title, v.Note.Tags, v.Note.Pinned = title, splitFormTags(tags), pinned
 		other := conflict.Current
-		renderPage(w, r, http.StatusConflict, templates.NotePage(templates.NoteView{
-			Note: mine, Edit: true, Conflict: &other,
-		}), "note conflict")
+		v.Conflict = &other
+		renderPage(w, r, http.StatusConflict, templates.NotePage(v), "note conflict")
 		return
 	}
 	if err != nil {
@@ -166,6 +185,112 @@ func (s *Server) handleNoteSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/notes/"+id, http.StatusSeeOther)
+}
+
+// --- Boîtes d'une note ---
+//
+// Toutes les actions de boîte rendent le même fragment : la colonne
+// entière (#note-blocks). Un seul chemin de rendu, donc pas de
+// divergence entre fragments — et un refus (archive sans tag, boîte
+// vide) revient avec le statut 200, le message porté par le fragment :
+// HTMX ne remplacerait pas la cible sur une réponse 4xx.
+
+// blockAction exécute fn puis rend la colonne de boîtes. fn retourne la
+// boîte à ouvrir dans l'éditeur ensuite ("" : aucune).
+func (s *Server) blockAction(w http.ResponseWriter, r *http.Request, fn func(ctx context.Context, noteID, blockID string) (string, error)) {
+	if !s.notesEnabled(w) {
+		return
+	}
+	ctx := r.Context()
+	noteID, blockID := chi.URLParam(r, "id"), chi.URLParam(r, "bid")
+	n, ok, err := s.Notes.DB(ctx).GetNote(ctx, noteID)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	editID, err := fn(ctx, noteID, blockID)
+	var msg string
+	if err != nil {
+		msg, editID = err.Error(), ""
+	}
+	if n, ok, err = s.Notes.DB(ctx).GetNote(ctx, noteID); err != nil {
+		serverError(w, err)
+		return
+	} else if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	v := s.blockViews(ctx, n, editID, r.URL.Query().Get("archives") != "")
+	v.Error = msg
+	renderPage(w, r, http.StatusOK, templates.NoteBlocks(v), "note blocks")
+}
+
+func (s *Server) handleNoteBlocks(w http.ResponseWriter, r *http.Request) {
+	edit := r.URL.Query().Get("edit")
+	s.blockAction(w, r, func(context.Context, string, string) (string, error) { return edit, nil })
+}
+
+func (s *Server) handleNoteBlockAdd(w http.ResponseWriter, r *http.Request) {
+	after := r.FormValue("after")
+	s.blockAction(w, r, func(ctx context.Context, noteID, _ string) (string, error) {
+		// La boîte neuve est vide : elle s'ouvre directement.
+		b, err := s.Notes.AddBlock(ctx, noteID, after)
+		return b.ID, err
+	})
+}
+
+func (s *Server) handleNoteBlockSave(w http.ResponseWriter, r *http.Request) {
+	text, tags := r.FormValue("text"), r.FormValue("tags")
+	s.blockAction(w, r, func(ctx context.Context, noteID, blockID string) (string, error) {
+		_, err := s.Notes.SaveBlock(ctx, noteID, blockID, text, tags)
+		return "", err
+	})
+}
+
+func (s *Server) handleNoteBlockMove(w http.ResponseWriter, r *http.Request) {
+	up := r.FormValue("dir") != "down"
+	s.blockAction(w, r, func(ctx context.Context, noteID, blockID string) (string, error) {
+		return "", s.Notes.MoveBlock(ctx, noteID, blockID, up)
+	})
+}
+
+func (s *Server) handleNoteBlockDelete(w http.ResponseWriter, r *http.Request) {
+	s.blockAction(w, r, func(ctx context.Context, noteID, blockID string) (string, error) {
+		return "", s.Notes.DeleteBlock(ctx, noteID, blockID)
+	})
+}
+
+func (s *Server) handleNoteBlockTask(w http.ResponseWriter, r *http.Request) {
+	s.blockAction(w, r, func(ctx context.Context, noteID, blockID string) (string, error) {
+		_, err := s.Notes.BlockToTask(ctx, noteID, blockID)
+		return "", err
+	})
+}
+
+func (s *Server) handleNoteBlockArchive(w http.ResponseWriter, r *http.Request) {
+	tags := r.FormValue("tags")
+	s.blockAction(w, r, func(ctx context.Context, noteID, blockID string) (string, error) {
+		_, err := s.Notes.ArchiveBlock(ctx, noteID, blockID, tags)
+		return "", err
+	})
+}
+
+func (s *Server) handleNoteBlockUnarchive(w http.ResponseWriter, r *http.Request) {
+	s.blockAction(w, r, func(ctx context.Context, noteID, blockID string) (string, error) {
+		_, err := s.Notes.UnarchiveBlock(ctx, noteID, blockID)
+		return "", err
+	})
+}
+
+// handleNoteBlockPreview : l'aperçu Markdown d'une boîte en cours
+// d'écriture, rendu par le serveur (déjà échappé) — aucune
+// bibliothèque Markdown n'est chargée dans le navigateur.
+func (s *Server) handleNoteBlockPreview(w http.ResponseWriter, r *http.Request) {
+	renderPage(w, r, http.StatusOK, templates.MarkdownPreview(projectinfo.RenderMarkdown(r.FormValue("text"))), "markdown preview")
 }
 
 func (s *Server) handleNoteDelete(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +334,7 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	if !s.notesEnabled(w) {
 		return
 	}
-	tasks, err := s.Notes.Store.ListTasks(r.Context(), notes.TaskQuery{})
+	tasks, err := s.Notes.DB(r.Context()).ListTasks(r.Context(), notes.TaskQuery{})
 	if err != nil {
 		serverError(w, err)
 		return
@@ -243,7 +368,7 @@ func (s *Server) handleTaskEdit(w http.ResponseWriter, r *http.Request) {
 	if !s.notesEnabled(w) {
 		return
 	}
-	t, ok, err := s.Notes.Store.GetTask(r.Context(), chi.URLParam(r, "id"))
+	t, ok, err := s.Notes.DB(r.Context()).GetTask(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		serverError(w, err)
 		return
@@ -261,7 +386,7 @@ func (s *Server) handleTaskSave(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
-	t, ok, err := s.Notes.Store.GetTask(ctx, id)
+	t, ok, err := s.Notes.DB(ctx).GetTask(ctx, id)
 	if err != nil {
 		serverError(w, err)
 		return
@@ -300,12 +425,12 @@ func (s *Server) handleDocumentLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
-	ns, err := s.Notes.Store.ListNotes(ctx, notes.NoteQuery{DocID: id})
+	ns, err := s.Notes.DB(ctx).ListNotes(ctx, notes.NoteQuery{DocID: id})
 	if err != nil {
 		serverError(w, err)
 		return
 	}
-	tasks, err := s.Notes.Store.ListTasks(ctx, notes.TaskQuery{DocID: id})
+	tasks, err := s.Notes.DB(ctx).ListTasks(ctx, notes.TaskQuery{DocID: id})
 	if err != nil {
 		serverError(w, err)
 		return
@@ -367,7 +492,7 @@ func (s *Server) taskGroups(ctx context.Context, tasks []notes.Task, here taskCo
 
 func (s *Server) taskEditView(ctx context.Context, t notes.Task, errMsg string) templates.TaskEditView {
 	v := templates.TaskEditView{Task: t, Docs: s.recentDocs(ctx), Error: errMsg}
-	if all, err := s.Notes.Store.ListNotes(ctx, notes.NoteQuery{}); err == nil {
+	if all, err := s.Notes.DB(ctx).ListNotes(ctx, notes.NoteQuery{}); err == nil {
 		for _, n := range all {
 			v.Notes = append(v.Notes, templates.DocLink{ID: n.ID, Name: n.Title})
 		}
@@ -382,7 +507,7 @@ func (s *Server) noteTitles(ctx context.Context, ids []string) map[string]string
 		if _, done := out[id]; done {
 			continue
 		}
-		n, ok, err := s.Notes.Store.GetNote(ctx, id)
+		n, ok, err := s.Notes.DB(ctx).GetNote(ctx, id)
 		if err == nil && ok {
 			out[id] = n.Title
 		} else {
@@ -430,22 +555,61 @@ func nonEmpty(id string) []string {
 	return []string{id}
 }
 
+// blockViews : la colonne de boîtes d'une note. editID : la boîte
+// ouverte dans l'éditeur ("" : aucune). showArchived : les boîtes
+// archivées sont masquées par défaut, mais toujours comptées.
+func (s *Server) blockViews(ctx context.Context, n notes.Note, editID string, showArchived bool) templates.NoteBlocksView {
+	v := templates.NoteBlocksView{NoteID: n.ID, EditID: editID, ShowArchived: showArchived}
+	for _, b := range notes.BlocksOf(n) {
+		if b.Archived {
+			v.ArchivedCount++
+			if !showArchived {
+				continue
+			}
+		}
+		bv := templates.BlockView{
+			ID: b.ID, Text: b.Text, HTML: projectinfo.RenderMarkdown(b.Text),
+			Tags: b.Tags, Archived: b.Archived, TaskID: b.TaskID, Editing: b.ID == editID,
+		}
+		if b.Archived && !b.ArchivedAt.IsZero() {
+			bv.ArchivedAt = b.ArchivedAt.Local().Format("02/01/2006 15:04")
+		}
+		if b.TaskID != "" {
+			bv.TaskTitle = "tâche supprimée"
+			if t, ok, err := s.Notes.DB(ctx).GetTask(ctx, b.TaskID); err == nil && ok {
+				bv.TaskTitle = t.Title
+			}
+		}
+		v.Blocks = append(v.Blocks, bv)
+	}
+	return v
+}
+
 func noteCards(ns []notes.Note) []templates.NoteCard {
 	out := make([]templates.NoteCard, 0, len(ns))
 	for _, n := range ns {
-		out = append(out, templates.NoteCard{
+		blocks := notes.BlocksOf(n)
+		card := templates.NoteCard{
 			ID: n.ID, Title: n.Title, Excerpt: excerpt(n.Body, 160), Tags: n.Tags, Pinned: n.Pinned,
-			Updated: n.UpdatedAt.Local().Format("02/01/2006 15:04"),
-		})
+			Updated: n.UpdatedAt.Local().Format("02/01/2006 15:04"), Boxes: len(blocks),
+		}
+		for _, b := range blocks {
+			if b.Archived {
+				card.Archived++
+			}
+		}
+		out = append(out, card)
 	}
 	return out
 }
 
+// allTags : les tags proposés en filtre — ceux des notes et ceux de
+// leurs boîtes (une boîte archivée se retrouve par son tag).
 func allTags(ns []notes.Note) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, n := range ns {
-		for _, t := range n.Tags {
+		for _, t := range append(append([]string{}, n.Tags...), notes.BlockTags(notes.BlocksOf(n))...) {
 			if !seen[t] {
 				seen[t] = true
 				out = append(out, t)

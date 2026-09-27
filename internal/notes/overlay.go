@@ -273,6 +273,10 @@ type noteField struct {
 var noteFields = []noteField{
 	{"title", func(n Note) any { return n.Title }, func(n *Note, v json.RawMessage) error { return json.Unmarshal(v, &n.Title) }},
 	{"body", func(n Note) any { return n.Body }, func(n *Note, v json.RawMessage) error { return json.Unmarshal(v, &n.Body) }},
+	// Les boîtes : le texte d'une note y vit (jalon « Améliorer les notes »).
+	// Body en est dérivé et reste dans la table : les deux bougent ensemble,
+	// donc leurs conflits coïncident, et la recherche porte sur Body.
+	{"blocks", func(n Note) any { return n.Blocks }, func(n *Note, v json.RawMessage) error { return json.Unmarshal(v, &n.Blocks) }},
 	{"tags", func(n Note) any { return n.Tags }, func(n *Note, v json.RawMessage) error { return json.Unmarshal(v, &n.Tags) }},
 	{"pinned", func(n Note) any { return n.Pinned }, func(n *Note, v json.RawMessage) error { return json.Unmarshal(v, &n.Pinned) }},
 	{"doc_ids", func(n Note) any { return n.DocIDs }, func(n *Note, v json.RawMessage) error { return json.Unmarshal(v, &n.DocIDs) }},

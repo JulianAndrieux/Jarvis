@@ -623,6 +623,12 @@ func (m *JobManager) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	return m.db(ctx).List(ctx, q)
 }
 
+// Count retourne le nombre de jobs correspondant à q (tableau de bord) —
+// délègue directement à Store.Count.
+func (m *JobManager) Count(ctx context.Context, q ListQuery) (int, error) {
+	return m.db(ctx).Count(ctx, q)
+}
+
 // SetTags remplace les tags du job id — n'a aucune incidence sur le
 // traitement, purement de l'organisation côté utilisateur. Écriture
 // ciblée (Store.SetTags) : jamais une relecture/réécriture du job entier,

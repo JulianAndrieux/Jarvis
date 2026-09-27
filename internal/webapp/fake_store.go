@@ -187,6 +187,27 @@ func (s *FakeStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	return matched, nil
 }
 
+// Count, comme MongoStore : les filtres de List, sans Limit ni tri.
+func (s *FakeStore) Count(ctx context.Context, q ListQuery) (int, error) {
+	if err := s.ensure(); err != nil {
+		return 0, err
+	}
+	s.shared.mu.Lock()
+	defer s.shared.mu.Unlock()
+
+	prefix := string(s.scope.Env) + "\x00"
+	n := 0
+	for k, j := range s.shared.jobs {
+		if len(k) < len(prefix) || k[:len(prefix)] != prefix {
+			continue // un autre environnement
+		}
+		if q.Matches(j) {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (s *FakeStore) SetThumbnail(ctx context.Context, id string, png []byte) error {
 	return s.mutate(id, func(j *Job) { j.Thumbnail = png })
 }

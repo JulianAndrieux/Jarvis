@@ -136,6 +136,16 @@ func noteMatches(n Note, lowerSearch string) bool {
 			return true
 		}
 	}
+	for _, b := range n.Blocks {
+		if strings.Contains(strings.ToLower(b.Text), lowerSearch) {
+			return true
+		}
+		for _, tag := range b.Tags {
+			if strings.Contains(strings.ToLower(tag), lowerSearch) {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -218,5 +228,9 @@ func (s *FakeStore) ListTasks(ctx context.Context, q TaskQuery) ([]Task, error) 
 func cloneNote(n Note) Note {
 	n.Tags = slices.Clone(n.Tags)
 	n.DocIDs = slices.Clone(n.DocIDs)
+	n.Blocks = slices.Clone(n.Blocks)
+	for i := range n.Blocks {
+		n.Blocks[i].Tags = slices.Clone(n.Blocks[i].Tags)
+	}
 	return n
 }

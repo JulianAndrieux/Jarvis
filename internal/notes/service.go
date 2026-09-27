@@ -54,6 +54,13 @@ func (s *Service) db(ctx context.Context) Store {
 	return s.Store.For(scope)
 }
 
+// DB rend la persistance vue depuis la portée de cette requête, pour les
+// lectures de l'interface. Sans elle, un handler lisant s.Store lirait
+// l'environnement par défaut quelle que soit la session — et le changeset
+// ne s'appliquerait pas à ce qu'il affiche. Même forme que
+// mail.Service.DB.
+func (s *Service) DB(ctx context.Context) Store { return s.db(ctx) }
+
 // Pending : mes opérations en attente (vide si le changeset n'est pas
 // activé).
 func (s *Service) Pending(ctx context.Context) ([]changes.Op, error) {
@@ -102,14 +109,19 @@ func (s *Service) now() time.Time {
 
 const untitled = "Sans titre"
 
-// NewNote crée une note vide, liée au document docID s'il est donné.
+// NewNote crée une note vide (une boîte vide, prête à écrire), liée au
+// document docID s'il est donné.
 func (s *Service) NewNote(ctx context.Context, docID string) (Note, error) {
 	id, err := newID()
 	if err != nil {
 		return Note{}, err
 	}
 	now := s.now()
-	n := Note{ID: id, Title: untitled, CreatedAt: now, UpdatedAt: now}
+	first, err := newBlock("", now)
+	if err != nil {
+		return Note{}, err
+	}
+	n := Note{ID: id, Title: untitled, Blocks: []Block{first}, CreatedAt: now, UpdatedAt: now}
 	if docID != "" {
 		n.DocIDs = []string{docID}
 	}
@@ -120,25 +132,26 @@ func (s *Service) NewNote(ctx context.Context, docID string) (Note, error) {
 	return n, nil
 }
 
-// SaveNote enregistre le contenu d'une note. tags : séparés par des
-// virgules (doublons et vides retirés).
+// SaveNote enregistre l'en-tête d'une note (titre, tags, épingle) : le
+// texte, lui, vit dans ses boîtes (cf. SaveBlock) et n'est pas touché
+// ici. tags : séparés par des virgules (doublons et vides retirés).
 //
 // Écrit sur la version qu'elle vient de lire : la fenêtre de conflit est
 // donc minuscule. Un formulaire ouvert depuis dix minutes, lui, doit
 // passer par SaveNoteVersion en portant la version qu'il a affichée —
 // sinon il écraserait sans le savoir ce qui a changé depuis.
-func (s *Service) SaveNote(ctx context.Context, id, title, body, tags string, pinned bool) (Note, error) {
+func (s *Service) SaveNote(ctx context.Context, id, title, tags string, pinned bool) (Note, error) {
 	n, err := s.note(ctx, id)
 	if err != nil {
 		return Note{}, err
 	}
-	return s.saveNote(ctx, n, title, body, tags, pinned)
+	return s.saveNote(ctx, n, title, tags, pinned)
 }
 
 // SaveNoteVersion enregistre une note en exigeant que rien n'ait changé
 // depuis la version affichée. En cas de conflit, rend un *Conflict portant
 // l'état courant, pour que l'interface puisse montrer les deux côtés.
-func (s *Service) SaveNoteVersion(ctx context.Context, id string, version int, title, body, tags string, pinned bool) (Note, error) {
+func (s *Service) SaveNoteVersion(ctx context.Context, id string, version int, title, tags string, pinned bool) (Note, error) {
 	n, err := s.note(ctx, id)
 	if err != nil {
 		return Note{}, err
@@ -146,10 +159,10 @@ func (s *Service) SaveNoteVersion(ctx context.Context, id string, version int, t
 	if n.Version != version {
 		return Note{}, &Conflict{Current: n}
 	}
-	return s.saveNote(ctx, n, title, body, tags, pinned)
+	return s.saveNote(ctx, n, title, tags, pinned)
 }
 
-func (s *Service) saveNote(ctx context.Context, n Note, title, body, tags string, pinned bool) (Note, error) {
+func (s *Service) saveNote(ctx context.Context, n Note, title, tags string, pinned bool) (Note, error) {
 	// L'état d'avant est capturé ici, avant toute écriture : le journal
 	// compare des champs, pas des intentions.
 	before := n
@@ -157,7 +170,7 @@ func (s *Service) saveNote(ctx context.Context, n Note, title, body, tags string
 	if n.Title == "" {
 		n.Title = untitled
 	}
-	n.Body, n.Tags, n.Pinned, n.UpdatedAt = body, splitTags(tags), pinned, s.now()
+	n.Tags, n.Pinned, n.UpdatedAt = splitTags(tags), pinned, s.now()
 	if err := s.db(ctx).UpdateNote(ctx, n); err != nil {
 		if errors.Is(err, ErrConflict) {
 			// Quelqu'un a écrit dans la fenêtre entre la lecture et
@@ -174,7 +187,6 @@ func (s *Service) saveNote(ctx context.Context, n Note, title, body, tags string
 		before, after any
 	}{
 		{"title", before.Title, n.Title},
-		{"body", before.Body, n.Body},
 		{"tags", before.Tags, n.Tags},
 		{"pinned", before.Pinned, n.Pinned},
 	} {
@@ -293,7 +305,11 @@ func (s *Service) NewMailNote(ctx context.Context, mailID, title, body string) (
 	if title = strings.TrimSpace(title); title == "" {
 		title = untitled
 	}
-	n := Note{ID: id, Title: title, Body: body, MailID: mailID, CreatedAt: now, UpdatedAt: now}
+	first, err := newBlock(body, now)
+	if err != nil {
+		return Note{}, err
+	}
+	n := Note{ID: id, Title: title, Body: body, Blocks: []Block{first}, MailID: mailID, CreatedAt: now, UpdatedAt: now}
 	if err := s.db(ctx).CreateNote(ctx, n); err != nil {
 		return Note{}, err
 	}

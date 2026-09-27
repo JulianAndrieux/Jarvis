@@ -48,6 +48,9 @@ func (s *Server) ticketRoutes(r chi.Router) {
 	r.Post("/tickets/{id}/cancel", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.Cancel(ctx, id)
 	}))
+	r.Post("/tickets/{id}/resurrect", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
+		return s.Tickets.Resurrect(ctx, id)
+	}))
 	r.Post("/tickets/{id}/agent", s.ticketAction(func(ctx context.Context, id string, r *http.Request) error {
 		return s.Tickets.SetAgent(ctx, id, tickets.AgentKind(r.FormValue("agent")))
 	}))

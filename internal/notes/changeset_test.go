@@ -39,8 +39,12 @@ func newCS(t *testing.T) *csFixture {
 		now:     now,
 	}
 	stager := &changes.Stager{Store: staged, Now: clock}
-	f.moi = &Service{Store: NewOverlay(base, staged, stager, scopeMoi), Now: clock}
-	f.autre = &Service{Store: base, Now: clock}
+	// Câblé comme l'application : le Service reçoit la base et son
+	// changeset, et c'est db(ctx) qui décide. Injecter l'overlay dans Store
+	// testerait l'overlay sans tester le choix — un chemin qui écrirait
+	// directement dans la base passerait inaperçu.
+	f.moi = &Service{Store: base, Now: clock, Staged: staged, Stager: stager, DefaultScope: scopeMoi}
+	f.autre = &Service{Store: base, Now: clock, DefaultScope: scopeAutre}
 	return f
 }
 
@@ -54,17 +58,19 @@ func TestChangeset_InvisibleJusquAuCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "du lait", "", false); err != nil {
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, f.autre, f.ctxAutr, n.ID, "du lait")
 
 	// Je la modifie.
-	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Courses de la semaine", "du lait", "", false); err != nil {
-		t.Fatalf("SaveNote : %v", err)
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Courses de la semaine", "", false); err != nil {
+		t.Fatal(err)
 	}
+	setBody(t, f.moi, f.ctxMoi, n.ID, "du lait")
 
 	// Moi, je vois ma version.
-	mine, ok, err := f.moi.Store.GetNote(f.ctxMoi, n.ID)
+	mine, ok, err := f.moi.DB(f.ctxMoi).GetNote(f.ctxMoi, n.ID)
 	if err != nil || !ok {
 		t.Fatalf("GetNote (moi) = (%v, %v)", ok, err)
 	}
@@ -106,11 +112,12 @@ func TestChangeset_CreationEnAttente(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Secret", "rien", "perso", false); err != nil {
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Secret", "perso", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, f.moi, f.ctxMoi, n.ID, "rien")
 
-	mine, err := f.moi.Store.ListNotes(f.ctxMoi, NoteQuery{})
+	mine, err := f.moi.DB(f.ctxMoi).ListNotes(f.ctxMoi, NoteQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,11 +126,11 @@ func TestChangeset_CreationEnAttente(t *testing.T) {
 	}
 	// Retrouvée par son nouveau titre : la requête est appliquée après mes
 	// opérations, pas avant (sans quoi Mongo filtrerait sur l'ancien état).
-	found, err := f.moi.Store.ListNotes(f.ctxMoi, NoteQuery{Search: "secret"})
+	found, err := f.moi.DB(f.ctxMoi).ListNotes(f.ctxMoi, NoteQuery{Search: "secret"})
 	if err != nil || len(found) != 1 {
 		t.Errorf("recherche = %d notes (err=%v), veut 1", len(found), err)
 	}
-	if byTag, _ := f.moi.Store.ListNotes(f.ctxMoi, NoteQuery{Tag: "perso"}); len(byTag) != 1 {
+	if byTag, _ := f.moi.DB(f.ctxMoi).ListNotes(f.ctxMoi, NoteQuery{Tag: "perso"}); len(byTag) != 1 {
 		t.Errorf("filtre par tag = %d, veut 1", len(byTag))
 	}
 	// Invisible des autres.
@@ -145,16 +152,16 @@ func TestChangeset_CreationEnAttente(t *testing.T) {
 func TestChangeset_RechercheSuitLEtatEnAttente(t *testing.T) {
 	f := newCS(t)
 	n, _ := f.autre.NewNote(f.ctxAutr, "")
-	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Ancien titre", "", "", false); err != nil {
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Ancien titre", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Nouveau titre", "", "", false); err != nil {
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Nouveau titre", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := f.moi.Store.ListNotes(f.ctxMoi, NoteQuery{Search: "Nouveau"}); len(got) != 1 {
+	if got, _ := f.moi.DB(f.ctxMoi).ListNotes(f.ctxMoi, NoteQuery{Search: "Nouveau"}); len(got) != 1 {
 		t.Errorf("recherche sur le nouveau titre = %d, veut 1", len(got))
 	}
-	if got, _ := f.moi.Store.ListNotes(f.ctxMoi, NoteQuery{Search: "Ancien"}); len(got) != 0 {
+	if got, _ := f.moi.DB(f.ctxMoi).ListNotes(f.ctxMoi, NoteQuery{Search: "Ancien"}); len(got) != 0 {
 		t.Errorf("recherche sur l'ancien titre = %d, veut 0", len(got))
 	}
 }
@@ -164,18 +171,21 @@ func TestChangeset_RechercheSuitLEtatEnAttente(t *testing.T) {
 func TestChangeset_ChampsDifferentsNeConflictentPas(t *testing.T) {
 	f := newCS(t)
 	n, _ := f.autre.NewNote(f.ctxAutr, "")
-	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "du lait", "", false); err != nil {
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, f.autre, f.ctxAutr, n.ID, "du lait")
 
 	// Je change le titre (en attente).
-	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Courses du samedi", "du lait", "", false); err != nil {
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Courses du samedi", "", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, f.moi, f.ctxMoi, n.ID, "du lait")
 	// L'autre change le corps, directement dans la base.
-	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "du lait et du pain", "", false); err != nil {
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
+	setBody(t, f.autre, f.ctxAutr, n.ID, "du lait et du pain")
 
 	res, err := f.commit.Commit(f.ctxMoi, scopeOf(f.ctxMoi))
 	if err != nil {
@@ -198,13 +208,13 @@ func TestChangeset_ChampsDifferentsNeConflictentPas(t *testing.T) {
 func TestChangeset_MemeChampConflit(t *testing.T) {
 	f := newCS(t)
 	n, _ := f.autre.NewNote(f.ctxAutr, "")
-	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "", "", false); err != nil {
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Mon titre", "", "", false); err != nil {
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Mon titre", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Son titre", "", "", false); err != nil {
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Son titre", "", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,13 +249,13 @@ func TestChangeset_MemeChampConflit(t *testing.T) {
 func TestChangeset_SuppressionEnAttente(t *testing.T) {
 	f := newCS(t)
 	n, _ := f.autre.NewNote(f.ctxAutr, "")
-	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "À jeter", "", "", false); err != nil {
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "À jeter", "", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.moi.DeleteNote(f.ctxMoi, n.ID); err != nil {
 		t.Fatalf("DeleteNote : %v", err)
 	}
-	if _, ok, _ := f.moi.Store.GetNote(f.ctxMoi, n.ID); ok {
+	if _, ok, _ := f.moi.DB(f.ctxMoi).GetNote(f.ctxMoi, n.ID); ok {
 		t.Error("supprimée en attente, elle ne doit plus m'apparaître")
 	}
 	if _, ok, _ := f.base.For(scopeOf(f.ctxAutr)).GetNote(f.ctxAutr, n.ID); !ok {
@@ -263,16 +273,16 @@ func TestChangeset_SuppressionEnAttente(t *testing.T) {
 func TestChangeset_Abandon(t *testing.T) {
 	f := newCS(t)
 	n, _ := f.autre.NewNote(f.ctxAutr, "")
-	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "", "", false); err != nil {
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Mon titre", "", "", false); err != nil {
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Mon titre", "", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.staged.DropAll(f.ctxMoi, tenancy.Local, "moi"); err != nil {
 		t.Fatal(err)
 	}
-	if got, ok, _ := f.moi.Store.GetNote(f.ctxMoi, n.ID); !ok || got.Title != "Courses" {
+	if got, ok, _ := f.moi.DB(f.ctxMoi).GetNote(f.ctxMoi, n.ID); !ok || got.Title != "Courses" {
 		t.Errorf("après abandon je vois %q, veut l'état de la base", got.Title)
 	}
 }
@@ -284,7 +294,7 @@ func TestChangeset_Taches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mine, _ := f.moi.Store.ListTasks(f.ctxMoi, TaskQuery{}); len(mine) != 1 {
+	if mine, _ := f.moi.DB(f.ctxMoi).ListTasks(f.ctxMoi, TaskQuery{}); len(mine) != 1 {
 		t.Errorf("mes tâches = %d, veut 1", len(mine))
 	}
 	if theirs, _ := f.base.For(scopeOf(f.ctxAutr)).ListTasks(f.ctxAutr, TaskQuery{}); len(theirs) != 0 {
@@ -293,7 +303,7 @@ func TestChangeset_Taches(t *testing.T) {
 	if _, err := f.moi.ToggleTask(f.ctxMoi, task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := f.moi.Store.GetTask(f.ctxMoi, task.ID); !got.Done {
+	if got, _, _ := f.moi.DB(f.ctxMoi).GetTask(f.ctxMoi, task.ID); !got.Done {
 		t.Error("ma tâche doit être cochée de mon point de vue")
 	}
 	if _, err := f.commit.Commit(f.ctxMoi, scopeOf(f.ctxMoi)); err != nil {
@@ -310,16 +320,16 @@ func TestChangeset_Taches(t *testing.T) {
 func TestChangeset_DeuxModifsSuccessives(t *testing.T) {
 	f := newCS(t)
 	n, _ := f.autre.NewNote(f.ctxAutr, "")
-	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "A", "", "", false); err != nil {
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "A", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "B", "", "", false); err != nil {
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "B", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "C", "", "", false); err != nil {
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "C", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := f.moi.Store.GetNote(f.ctxMoi, n.ID); got.Title != "C" {
+	if got, _, _ := f.moi.DB(f.ctxMoi).GetNote(f.ctxMoi, n.ID); got.Title != "C" {
 		t.Errorf("je vois %q, veut ma dernière valeur", got.Title)
 	}
 	if _, err := f.commit.Commit(f.ctxMoi, scopeOf(f.ctxMoi)); err != nil {
@@ -327,5 +337,52 @@ func TestChangeset_DeuxModifsSuccessives(t *testing.T) {
 	}
 	if got, _, _ := f.base.For(scopeOf(f.ctxMoi)).GetNote(f.ctxMoi, n.ID); got.Title != "C" {
 		t.Errorf("en base = %q, veut C", got.Title)
+	}
+}
+
+// Le texte d'une note vit dans ses boîtes, et c'est un humain qui l'écrit :
+// il passe donc par le changeset comme n'importe quel autre champ. Sans
+// cela, une modification de texte serait immédiatement visible des autres
+// alors qu'un renommage attendrait le commit — deux règles pour la même
+// note.
+func TestChangeset_TexteDUneBoiteAttendLeCommit(t *testing.T) {
+	f := newCS(t)
+	n, err := f.autre.NewNote(f.ctxAutr, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setBody(t, f.autre, f.ctxAutr, n.ID, "avant")
+
+	// Je réécris le texte : en attente.
+	setBody(t, f.moi, f.ctxMoi, n.ID, "après")
+
+	base := f.base.For(scopeOf(f.ctxAutr))
+	theirs, _, _ := base.GetNote(f.ctxAutr, n.ID)
+	if theirs.Body != "avant" {
+		t.Errorf("l'autre voit %q avant mon commit, veut %q", theirs.Body, "avant")
+	}
+	mine, _, _ := f.moi.DB(f.ctxMoi).GetNote(f.ctxMoi, n.ID)
+	if mine.Body != "après" {
+		t.Errorf("je vois %q, veut ma version en attente", mine.Body)
+	}
+	if len(BlocksOf(mine)) != 1 || BlocksOf(mine)[0].Text != "après" {
+		t.Errorf("mes boîtes en attente = %+v", BlocksOf(mine))
+	}
+
+	res, err := f.commit.Commit(f.ctxMoi, scopeOf(f.ctxMoi))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Conflicts) != 0 {
+		t.Fatalf("conflits = %+v, veut aucun", res.Conflicts)
+	}
+	after, _, _ := base.GetNote(f.ctxAutr, n.ID)
+	if after.Body != "après" {
+		t.Errorf("après commit, corps = %q", after.Body)
+	}
+	// Les boîtes, pas seulement le texte dérivé : sinon la page afficherait
+	// encore l'ancien texte, qui est celui qu'elle lit vraiment.
+	if bs := BlocksOf(after); len(bs) != 1 || bs[0].Text != "après" {
+		t.Errorf("après commit, boîtes = %+v", bs)
 	}
 }

@@ -28,7 +28,8 @@ const (
 )
 
 // transitions : seules ces étapes s'enchaînent. Pas de plan validé sans
-// analyse, un ticket annulé est clos ; un échec se relance.
+// analyse, un ticket annulé repart en brouillon (ressuscité) ; un échec
+// se relance.
 var transitions = map[Status][]Status{
 	Draft:        {Analyzing, Cancelled},
 	Analyzing:    {PlanReady, Failed},
@@ -41,6 +42,9 @@ var transitions = map[Status][]Status{
 	// en revue (échec, retour arrière) — jamais annulé en plein vol.
 	Deploying: {Deployed, Review},
 	Failed:    {Analyzing, Developing, Cancelled},
+	// Un ticket annulé se ressuscite : il repart en brouillon, d'où
+	// l'analyse se relance explicitement.
+	Cancelled: {Draft},
 }
 
 // CanTransition indique si un ticket peut passer de from à to.
@@ -169,6 +173,11 @@ type Ticket struct {
 	UpdatedAt time.Time     `bson:"updated_at"`
 	Events    []Event       `bson:"events,omitempty"`
 }
+
+// MaxList borne ce que List ramène : un appelant qui reçoit autant de
+// tickets sait que la liste est tronquée, et qu'un compte tiré de sa
+// longueur est un minimum, pas un total.
+const MaxList = 500
 
 // Store est le port de persistance des tickets.
 type Store interface {
