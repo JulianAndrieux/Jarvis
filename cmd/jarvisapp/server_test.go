@@ -56,8 +56,43 @@ func newTestServer(t *testing.T, runner webapp.Runner) (*Server, *webapp.FakeSto
 	fakeStore := webapp.NewFakeStore()
 	jobs := webapp.NewJobManager(fakeStore, runner)
 	jobs.WorkDir = t.TempDir()
+	// Chaque soumission traite dans sa propre goroutine, avec un fichier
+	// temporaire sous WorkDir. Un test qui rend la main avant la fin du
+	// traitement laissait son dossier temporaire être supprimé pendant que
+	// la goroutine y écrivait encore : « TempDir RemoveAll cleanup:
+	// directory not empty », par intermittence et sous charge seulement.
+	// Enregistré après t.TempDir(), donc exécuté avant lui (les nettoyages
+	// sont dépilés) : on attend le calme, puis le dossier disparaît.
+	t.Cleanup(func() { waitJobsSettled(t, fakeStore) })
 	s := &Server{Jobs: jobs, Registry: doctype.NewDefaultRegistry()}
 	return s, fakeStore
+}
+
+// waitJobsSettled attend qu'aucun job ne soit plus en cours.
+func waitJobsSettled(t *testing.T, store *webapp.FakeStore) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		jobs, err := store.List(context.Background(), webapp.ListQuery{SummaryOnly: true})
+		if err != nil {
+			return // le store n'est plus utilisable : rien à attendre
+		}
+		busy := false
+		for _, j := range jobs {
+			if j.Status == webapp.StatusPending || j.Status == webapp.StatusRunning {
+				busy = true
+				break
+			}
+		}
+		if !busy {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Log("des traitements sont encore en cours à la fin du test")
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func multipartUpload(t *testing.T, filename string, content []byte) (*bytes.Buffer, string) {

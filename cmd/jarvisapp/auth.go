@@ -44,11 +44,28 @@ func isPublicPath(p string) bool {
 }
 
 // requiresOwner : ce qui n'appartient qu'au propriétaire de l'instance.
+//
 // L'espace Admin exécute `go test`, relit le dépôt et déclenche des
 // déploiements : un préfixe d'URL n'est pas un contrôle d'accès, c'est le
 // rôle qui décide.
+//
+// Les tickets aussi (jalon 50) : un ticket fait écrire du code dans le
+// dépôt, et son déploiement remplace le processus — il redémarrerait donc
+// l'application de tous les environnements. Le cycle d'auto-modification
+// appartient au propriétaire, pas à un environnement.
+//
+// Limite connue : le lien « Tickets » reste visible dans la navigation pour
+// tout le monde (le gabarit ne connaît pas le rôle ; le conditionner
+// demanderait de changer la signature de Layout partout). Cliquer répond
+// 403 — le contrôle est côté serveur, ce qui est ce qui compte.
 func requiresOwner(p string) bool {
-	return p == "/admin" || strings.HasPrefix(p, "/admin/")
+	switch {
+	case p == "/admin" || strings.HasPrefix(p, "/admin/"):
+		return true
+	case p == "/tickets" || strings.HasPrefix(p, "/tickets/"):
+		return true
+	}
+	return false
 }
 
 // authEnabled : l'authentification n'est active que si un fournisseur

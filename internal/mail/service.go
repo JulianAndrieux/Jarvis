@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
+
+	"github.com/JulianAndrieux/Jarvis/internal/secretbox"
 )
 
 // Service relève la boîte à intervalle régulier et fait trier les
@@ -39,7 +41,10 @@ type Service struct {
 	kick       chan struct{}
 	triageKick chan struct{} // DefaultScope : portée du travail de fond (relève, tri) quand le
 	// contexte n'en porte pas.
-	DefaultScope tenancy.Scope
+	DefaultScope tenancy.Scope // Key chiffre le mot de passe de la boîte au repos (jalon 50). Sans
+	// elle, Configure refuse d'écrire plutôt que de reposer un mot de passe
+	// en clair.
+	Key secretbox.Key
 }
 
 // DB rend la persistance des emails vue depuis la portée de l'appel — les
@@ -66,7 +71,7 @@ func (s *Service) Config() (Config, bool, error) {
 	if s.ConfigPath == "" {
 		return Config{}, false, nil
 	}
-	return LoadConfig(s.ConfigPath)
+	return LoadConfigKey(s.ConfigPath, s.Key)
 }
 
 // Configure vérifie la connexion avec cette configuration, puis
@@ -87,7 +92,7 @@ func (s *Service) Configure(ctx context.Context, c Config) error {
 		return err
 	}
 	sess.Logout()
-	if err := SaveConfig(s.ConfigPath, c); err != nil {
+	if err := SaveConfigKey(s.ConfigPath, c, s.Key); err != nil {
 		return err
 	}
 	s.logf("mail: boîte configurée (%s)", c)

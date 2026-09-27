@@ -44,6 +44,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
+	"github.com/JulianAndrieux/Jarvis/internal/secretbox"
 	"github.com/JulianAndrieux/Jarvis/internal/store"
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
@@ -77,6 +78,7 @@ func main() {
 	moduleDir := flag.String("module-dir", "", "Racine du module Go à analyser pour le navigateur de code (vide = répertoire courant)")
 	watchDir := flag.String("watch-dir", "", "Dossier surveillé pour l'ingestion automatique de PDF ; vide = désactivée")
 	watchInterval := flag.Duration("watch-interval", watch.DefaultInterval, "Intervalle de sondage de --watch-dir")
+	watchEnv := flag.String("watch-env", string(tenancy.Local), "Environnement auquel appartiennent les fichiers déposés dans --watch-dir : un document ingéré doit avoir un propriétaire")
 	vlmConcurrency := flag.Int("vlm-concurrency", 1, "Nombre de pages traitées en parallèle pour le VLM, par document ; 1 (défaut) = séquentiel. Le VLM (appels multimodaux) sature vite en parallèle, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
 	llmConcurrency := flag.Int("llm-concurrency", 1, "Nombre de pages traitées en parallèle pour l'extraction LLM, par document ; 1 (défaut) = séquentiel. Un contenu dense (page transcrite par le VLM) peut faire échouer le serveur llama.cpp (\"Context size has been exceeded\") au-delà de 1 en parallèle sur ce type de matériel, cf. CLAUDE.md — ne pas augmenter sans avoir revalidé sur le serveur cible")
 	agentURL := flag.String("agent-url", "", "URL du serveur du modèle de l'agent des tickets (compatible OpenAI, appels d'outils) ; vide = --llm-url")
@@ -297,6 +299,10 @@ func main() {
 			Dir:      *watchDir,
 			Interval: *watchInterval,
 			OnFile: func(ctx context.Context, filename string, content []byte) error {
+				// Portée explicite : un fichier déposé dans un dossier n'a
+				// pas de session, mais il a un environnement — sans lui, il
+				// n'appartiendrait à personne.
+				ctx = tenancy.WithScope(ctx, tenancy.System(tenancy.EnvID(*watchEnv)))
 				_, err := jobs.Submit(ctx, filename, content)
 				return err
 			},
@@ -340,7 +346,7 @@ func main() {
 		// Au démarrage, les modèles de documents (l'usage courant), à son
 		// tour dans la file : jamais pendant un ticket.
 		go func() {
-			release, err := modelGate.AcquireFor(context.Background(), gate.Documents)
+			release, err := modelGate.AcquireFair(context.Background(), gate.Documents, tenancy.Local)
 			if err != nil {
 				log.Printf("jarvisapp: modèles de documents : %v", err)
 				return
@@ -353,12 +359,24 @@ func main() {
 	jobs.Gate = modelGate
 	// Emails : relève périodique, tri par le LLM des documents dans la
 	// file des modèles (profil documents).
+	secretKey, err := secretbox.LoadOrCreateKey(defaultSecretKey())
+	if err != nil {
+		log.Fatalf("jarvisapp: clé de chiffrement locale : %v", err)
+	}
 	mailService := &mail.Service{
+		Key:     secretKey,
 		Store:   mailStore,
 		Syncer:  &mail.Syncer{Store: mailStore, Connect: mail.ConnectIMAP, Days: *mailDays},
 		Triager: &mail.Triager{LLM: llmClient, Model: *llmModel, Prompt: agentRegistry.PromptFunc(agents.MailTriage)},
 		Acquire: func(ctx context.Context) (func(), error) {
-			return modelGate.AcquireFor(ctx, gate.Documents)
+			// Le tri des emails appartient à un environnement, comme les
+			// documents : même file équitable.
+			scope, _ := tenancy.FromContext(ctx)
+			env := scope.Env
+			if env == "" {
+				env = tenancy.Local
+			}
+			return modelGate.AcquireFair(ctx, gate.Documents, env)
 		},
 		ConfigPath: *mailConfig,
 		Interval:   *mailInterval,
@@ -628,6 +646,12 @@ func persistJobLocally(outDir string) func(webapp.Job) {
 		if job.Status != webapp.StatusDone || job.Result == nil {
 			return
 		}
+		// Un dossier par environnement : deux environnements peuvent porter
+		// un document de même empreinte sans écrire l'un sur l'autre
+		// (jalon 50).
+		if job.Env != "" {
+			outDir = filepath.Join(outDir, string(job.Env))
+		}
 		hash := job.SourceHash
 		doc, pages := store.BuildRecords(hash, job.Filename, job.DocType, time.Now().UTC(), *job.Result)
 		if err := store.WriteRecords(outDir, doc, pages); err != nil {
@@ -748,4 +772,17 @@ func loopbackAddr(addr string) string {
 		host = "127.0.0.1"
 	}
 	return net.JoinHostPort(host, port)
+}
+
+// defaultSecretKey : ~/.jarvis/secret.key, la clé qui chiffre les
+// identifiants de services tiers (mot de passe de la boîte mail). Elle ne
+// quitte jamais la machine : c'est ce qui rend vérifiable « aucun mot de
+// passe enregistré en clair hors de l'hôte ». Dossier personnel inconnu :
+// la clé est posée à côté du binaire, faute de mieux.
+func defaultSecretKey() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "secret.key"
+	}
+	return filepath.Join(home, ".jarvis", "secret.key")
 }

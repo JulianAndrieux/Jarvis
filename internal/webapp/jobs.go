@@ -320,7 +320,11 @@ func (m *JobManager) process(job Job, run runFunc) {
 // modèles de documents, jalon 37) et retourne la fonction qui la libère.
 func (m *JobManager) acquire(ctx context.Context) (func(), error) {
 	if m.Gate != nil {
-		return m.Gate.AcquireFor(ctx, gate.Documents)
+		// Au nom de son environnement : la porte répartit son tour entre
+		// environnements plutôt que de servir dix documents du même avant
+		// de regarder les autres (jalon 50).
+		scope, _ := tenancy.FromContext(ctx)
+		return m.Gate.AcquireFair(ctx, gate.Documents, scope.Env)
 	}
 	m.semOnce.Do(func() {
 		n := m.Concurrency

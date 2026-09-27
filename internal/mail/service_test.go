@@ -9,12 +9,21 @@ import (
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/imap"
+
+	"github.com/JulianAndrieux/Jarvis/internal/secretbox"
 )
+
+// testKey : la clé de chiffrement des mots de passe dans les tests. Une
+// vraie clé, comme en production : le chemin sans clé est refusé, et c'est
+// voulu.
+var testKey = secretbox.Key{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+	17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
 
 func newService(t *testing.T, sess *fakeSession, model *scriptedLLM) (*Service, *FakeStore) {
 	t.Helper()
 	store := NewFakeStore()
 	s := &Service{
+		Key:        testKey,
 		Store:      store,
 		Syncer:     newSyncer(store, sess),
 		Triager:    &Triager{LLM: model, Model: "qwen3-8b", Now: func() time.Time { return now }},
@@ -80,7 +89,7 @@ func TestService_ConfigureTestsTheConnectionFirst(t *testing.T) {
 func TestService_CycleSyncsThenTriagesThroughTheModelQueue(t *testing.T) {
 	model := &scriptedLLM{reply: `{"category":"a_traiter","summary":"Une facture à payer.","action":"Payer la facture"}`}
 	s, store := newService(t, oneMailbox(), model)
-	SaveConfig(s.ConfigPath, cfg)
+	SaveConfigKey(s.ConfigPath, cfg, testKey)
 	var acquired, released int
 	s.Acquire = func(ctx context.Context) (func(), error) {
 		acquired++
@@ -108,7 +117,7 @@ func TestService_CycleSyncsThenTriagesThroughTheModelQueue(t *testing.T) {
 func TestService_TriageFailures(t *testing.T) {
 	model := &scriptedLLM{reply: `{"category":"spam","summary":"","action":""}`}
 	s, store := newService(t, oneMailbox(), model)
-	SaveConfig(s.ConfigPath, cfg)
+	SaveConfigKey(s.ConfigPath, cfg, testKey)
 	s.Cycle(context.Background())
 	ms, _ := store.List(context.Background(), Query{})
 	for _, m := range ms {
@@ -121,7 +130,7 @@ func TestService_TriageFailures(t *testing.T) {
 	}
 
 	s2, store2 := newService(t, oneMailbox(), &scriptedLLM{err: errors.New("connection refused")})
-	SaveConfig(s2.ConfigPath, cfg)
+	SaveConfigKey(s2.ConfigPath, cfg, testKey)
 	s2.Cycle(context.Background())
 	if pending, _ := store2.List(context.Background(), Query{Untriaged: true}); len(pending) != 2 {
 		t.Errorf("pending = %d, want both left for later", len(pending))
@@ -131,7 +140,7 @@ func TestService_TriageFailures(t *testing.T) {
 	}
 
 	s3, store3 := newService(t, oneMailbox(), model)
-	SaveConfig(s3.ConfigPath, cfg)
+	SaveConfigKey(s3.ConfigPath, cfg, testKey)
 	s3.Acquire = func(ctx context.Context) (func(), error) { return nil, errors.New("modèles indisponibles") }
 	s3.Cycle(context.Background())
 	if pending, _ := store3.List(context.Background(), Query{Untriaged: true}); len(pending) != 2 {
@@ -142,7 +151,7 @@ func TestService_TriageFailures(t *testing.T) {
 func TestService_SyncErrorIsShownAndTriageStillRuns(t *testing.T) {
 	model := &scriptedLLM{reply: `{"category":"information","summary":"s","action":""}`}
 	s, store := newService(t, oneMailbox(), model)
-	SaveConfig(s.ConfigPath, cfg)
+	SaveConfigKey(s.ConfigPath, cfg, testKey)
 	store.Save(context.Background(), Mail{ID: "old", Subject: "Déjà relevé"}, nil)
 	s.Syncer.Connect = func(ctx context.Context, c Config) (Session, error) { return nil, errors.New("réseau coupé") }
 	s.Cycle(context.Background())
@@ -157,7 +166,7 @@ func TestService_SyncErrorIsShownAndTriageStillRuns(t *testing.T) {
 func TestService_RetriageAndRunLoop(t *testing.T) {
 	model := &scriptedLLM{reply: `{"category":"information","summary":"s","action":""}`}
 	s, store := newService(t, oneMailbox(), model)
-	SaveConfig(s.ConfigPath, cfg)
+	SaveConfigKey(s.ConfigPath, cfg, testKey)
 	s.Interval = time.Hour
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -186,7 +195,7 @@ func TestService_RetriageAndRunLoop(t *testing.T) {
 func TestService_FullTriageBatchTriggersAnotherCycle(t *testing.T) {
 	model := &scriptedLLM{reply: `{"category":"information","summary":"s","action":""}`}
 	s, store := newService(t, oneMailbox(), model)
-	SaveConfig(s.ConfigPath, cfg)
+	SaveConfigKey(s.ConfigPath, cfg, testKey)
 	s.TriageBatch = 1
 	s.Interval = time.Hour
 	ctx, cancel := context.WithCancel(context.Background())
@@ -216,7 +225,7 @@ func TestService_SyncDoesNotWaitForTheModelQueue(t *testing.T) {
 	sess := oneMailbox()
 	model := &scriptedLLM{reply: `{"category":"information","summary":"s","action":""}`}
 	s, store := newService(t, sess, model)
-	SaveConfig(s.ConfigPath, cfg)
+	SaveConfigKey(s.ConfigPath, cfg, testKey)
 	s.Interval = time.Hour
 	blocked := make(chan struct{})
 	s.Acquire = func(ctx context.Context) (func(), error) {

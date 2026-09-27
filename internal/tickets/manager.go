@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/gate"
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // Manager orchestre le cycle des tickets : création, analyse par l'agent
@@ -535,7 +536,7 @@ func (m *Manager) analyze(t Ticket, req AnalysisRequest) {
 	// Claude Code ne passe pas par les modèles locaux : pas de bascule
 	// vers le profil code (Devstral) pour ses tickets.
 	if m.Gate != nil && t.Agent != AgentClaude {
-		release, err := m.Gate.AcquireFor(ctx, gate.Code)
+		release, err := m.Gate.AcquireFair(ctx, gate.Code, tenancy.Local)
 		if err != nil {
 			m.fail(ctx, t, "Modèle de code indisponible : "+err.Error(), "")
 			return
@@ -576,7 +577,7 @@ func (m *Manager) develop(t Ticket, feedback string) {
 	ctx := context.Background()
 	set := m.agents(t)
 	if m.Gate != nil && t.Agent != AgentClaude {
-		release, err := m.Gate.AcquireFor(ctx, gate.Code)
+		release, err := m.Gate.AcquireFair(ctx, gate.Code, tenancy.Local)
 		if err != nil {
 			m.fail(ctx, t, "Modèle de code indisponible : "+err.Error(), "")
 			return

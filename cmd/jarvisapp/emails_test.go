@@ -13,6 +13,8 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
+
+	"github.com/JulianAndrieux/Jarvis/internal/secretbox"
 )
 
 // Emails (jalon 39).
@@ -46,8 +48,15 @@ func newMailServer(t *testing.T) (*Server, *mail.FakeStore, *notes.FakeStore) {
 			return nil, errors.New("AUTHENTICATIONFAILED Invalid credentials")
 		}},
 		ConfigPath: filepath.Join(t.TempDir(), "mail.json"),
+		// Une vraie clé, comme en production : le mot de passe de la boîte
+		// n'est jamais écrit en clair (jalon 50), et l'écriture sans clé est
+		// refusée.
+		Key: mailTestKey(t),
 	}
-	mail.SaveConfig(s.Mail.ConfigPath, mail.Config{Host: mail.DefaultHost, User: "moi@gmail.com", Password: "secret"})
+	if err := mail.SaveConfigKey(s.Mail.ConfigPath,
+		mail.Config{Host: mail.DefaultHost, User: "moi@gmail.com", Password: "secret"}, s.Mail.Key); err != nil {
+		t.Fatal(err)
+	}
 	return s, store, notesStore
 }
 
@@ -270,3 +279,14 @@ func TestEmails_DisabledWithoutService(t *testing.T) {
 type okSession struct{ mail.Session }
 
 func (okSession) Logout() error { return nil }
+
+// mailTestKey : la clé de chiffrement locale d'un test, dans son dossier
+// temporaire.
+func mailTestKey(t *testing.T) secretbox.Key {
+	t.Helper()
+	k, err := secretbox.LoadOrCreateKey(filepath.Join(t.TempDir(), "secret.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
