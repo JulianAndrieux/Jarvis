@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -31,6 +32,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/testrunner"
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
+	"github.com/JulianAndrieux/Jarvis/internal/webguard"
 )
 
 // Server expose les deux domaines fonctionnels sur un seul routeur :
@@ -113,6 +115,15 @@ func readModulePath(moduleDir string) string {
 
 func (s *Server) Routes() chi.Router {
 	r := chi.NewRouter()
+
+	// Avant toute route : une requête qui modifie l'état doit venir de
+	// l'application elle-même. Sans ce contrôle, un formulaire sur un autre
+	// site suffisait à créer un ticket, que la relève automatique prend et
+	// que le pilote automatique fait développer puis déployer — voir
+	// internal/webguard. Monté ici, sur le routeur racine, pour qu'une route
+	// ajoutée plus tard soit couverte sans qu'on y pense (verrouillé par
+	// TestMutatingRoutes_RejectCrossSiteRequests).
+	r.Use(webguard.Guard{Logf: log.Printf}.Middleware)
 
 	// Upload / suivi de documents (ex-cmd/jarvisweb).
 	r.Get("/", s.handleIndex)
