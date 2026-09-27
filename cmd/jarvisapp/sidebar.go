@@ -49,6 +49,7 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 	// Une source illisible laisse son bloc vide plutôt que de casser la
 	// barre (affichée sur toutes les pages).
 	v := buildSidebar(now, tasks, active, failed, tks, mails)
+	v.Pending = s.pendingCount(r)
 	w.Header().Set("Cache-Control", "no-store")
 	renderPage(w, r, http.StatusOK, templates.Sidebar(v), "sidebar")
 }

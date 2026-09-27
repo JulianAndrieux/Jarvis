@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -117,32 +116,14 @@ func (s *FakeStore) ListNotes(ctx context.Context, q NoteQuery) ([]Note, error) 
 	}
 	s.shared.mu.Lock()
 	defer s.shared.mu.Unlock()
-	search := strings.ToLower(q.Search)
 	var out []Note
 	for k, n := range s.shared.notes {
-		if !s.mine(k) {
-			continue
-		}
-		if q.Tag != "" && !slices.Contains(n.Tags, q.Tag) {
-			continue
-		}
-		if q.DocID != "" && !slices.Contains(n.DocIDs, q.DocID) {
-			continue
-		}
-		if q.MailID != "" && n.MailID != q.MailID {
-			continue
-		}
-		if search != "" && !noteMatches(n, search) {
+		if !s.mine(k) || !q.Matches(n) {
 			continue
 		}
 		out = append(out, cloneNote(n))
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Pinned != out[j].Pinned {
-			return out[i].Pinned
-		}
-		return out[i].UpdatedAt.After(out[j].UpdatedAt)
-	})
+	SortNotes(out)
 	return out, nil
 }
 
@@ -223,14 +204,12 @@ func (s *FakeStore) ListTasks(ctx context.Context, q TaskQuery) ([]Task, error) 
 	defer s.shared.mu.Unlock()
 	var out []Task
 	for k, t := range s.shared.tasks {
-		if !s.mine(k) {
+		if !s.mine(k) || !q.Matches(t) {
 			continue
 		}
-		if (q.NoteID == "" || t.NoteID == q.NoteID) && (q.DocID == "" || t.DocID == q.DocID) && (q.MailID == "" || t.MailID == q.MailID) {
-			out = append(out, t)
-		}
+		out = append(out, t)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	SortTasks(out)
 	return out, nil
 }
 

@@ -7,6 +7,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // MongoJournal persiste le journal dans une collection. Append-only : ni
@@ -78,4 +80,75 @@ func (j *MongoJournal) List(ctx context.Context, q Query) ([]Op, error) {
 		return nil, fmt.Errorf("changes: list: %w", err)
 	}
 	return out, nil
+}
+
+// MongoChangesetStore persiste les opérations en attente.
+//
+// Une collection à part du journal : ce sont deux choses différentes (ce
+// qui attend, et ce qui a eu lieu), avec des durées de vie opposées — le
+// journal ne se vide jamais, un changeset se vide à chaque commit.
+type MongoChangesetStore struct {
+	Ops *mongo.Collection
+}
+
+func NewMongoChangesetStore(ctx context.Context, uri, database, collection string) (*MongoChangesetStore, error) {
+	client, err := mongo.Connect(options.Client().ApplyURI(uri))
+	if err != nil {
+		return nil, fmt.Errorf("changes: connect to mongodb: %w", err)
+	}
+	if err := client.Ping(ctx, nil); err != nil {
+		return nil, fmt.Errorf("changes: ping mongodb: %w", err)
+	}
+	s := &MongoChangesetStore{Ops: client.Database(database).Collection(collection)}
+	// La lecture qui compte : mes opérations en attente, dans l'ordre.
+	if _, err := s.Ops.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "env_id", Value: 1}, {Key: "user_id", Value: 1}, {Key: "at", Value: 1}},
+	}); err != nil {
+		return nil, fmt.Errorf("changes: index changeset: %w", err)
+	}
+	return s, nil
+}
+
+func (s *MongoChangesetStore) Stage(ctx context.Context, ops ...Op) error {
+	if len(ops) == 0 {
+		return nil
+	}
+	docs := make([]any, 0, len(ops))
+	for _, o := range ops {
+		docs = append(docs, o)
+	}
+	if _, err := s.Ops.InsertMany(ctx, docs); err != nil {
+		return fmt.Errorf("changes: mise en attente: %w", err)
+	}
+	return nil
+}
+
+func (s *MongoChangesetStore) Pending(ctx context.Context, env tenancy.EnvID, user tenancy.UserID) ([]Op, error) {
+	cur, err := s.Ops.Find(ctx,
+		bson.M{"env_id": string(env), "user_id": string(user)},
+		options.Find().SetSort(bson.D{{Key: "at", Value: 1}}))
+	if err != nil {
+		return nil, fmt.Errorf("changes: en attente: %w", err)
+	}
+	var out []Op
+	if err := cur.All(ctx, &out); err != nil {
+		return nil, fmt.Errorf("changes: en attente: %w", err)
+	}
+	return out, nil
+}
+
+func (s *MongoChangesetStore) Drop(ctx context.Context, env tenancy.EnvID, user tenancy.UserID, opID string) error {
+	// La portée fait partie du filtre : un identifiant d'opération ne suffit
+	// jamais à toucher le changeset de quelqu'un d'autre.
+	if _, err := s.Ops.DeleteOne(ctx, bson.M{"_id": opID, "env_id": string(env), "user_id": string(user)}); err != nil {
+		return fmt.Errorf("changes: abandon de %s: %w", opID, err)
+	}
+	return nil
+}
+
+func (s *MongoChangesetStore) DropAll(ctx context.Context, env tenancy.EnvID, user tenancy.UserID) error {
+	if _, err := s.Ops.DeleteMany(ctx, bson.M{"env_id": string(env), "user_id": string(user)}); err != nil {
+		return fmt.Errorf("changes: vidage du changeset: %w", err)
+	}
+	return nil
 }

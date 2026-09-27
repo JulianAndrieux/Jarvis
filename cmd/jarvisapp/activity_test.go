@@ -17,7 +17,7 @@ func TestActivityPage(t *testing.T) {
 	s.Journal = j
 	at := time.Date(2026, 9, 27, 14, 30, 0, 0, time.UTC)
 	if err := j.Append(context.Background(),
-		changes.Op{ID: "1", Env: tenancy.Local, User: "u-moi", Session: "s", At: at,
+		changes.Op{ID: "1", Env: tenancy.Local, User: tenancy.LocalUser, Session: tenancy.LocalSession, At: at,
 			Kind: changes.KindNote, Target: "n1", Label: "Courses", Field: "title",
 			Action: changes.Set, Before: `"Sans titre"`, After: `"Courses"`},
 		changes.Op{ID: "2", Env: tenancy.Local, User: "u-autre", Session: "s2", At: at.Add(time.Minute),
@@ -46,13 +46,16 @@ func TestActivityPage(t *testing.T) {
 		t.Error("une note modifiée doit être liée")
 	}
 
-	// Sans authentification, la portée n'a pas de user : « mes
-	// modifications » n'a pas de sens, la page montre tout l'environnement
-	// plutôt qu'une liste vide inexplicable.
+	// « Mes modifications » : en mode mono-utilisateur, je suis l'utilisateur
+	// local — je vois les miennes, pas celles inscrites au nom d'un autre.
 	rec = httptest.NewRecorder()
 	s.Routes().ServeHTTP(rec, httptest.NewRequest("GET", "http://127.0.0.1:8090/activity", nil))
-	if !strings.Contains(rec.Body.String(), "facture.pdf") {
-		t.Error("en mode mono-utilisateur, la page doit montrer tout l'environnement")
+	body = rec.Body.String()
+	if !strings.Contains(body, "Courses") {
+		t.Error("mes modifications doivent apparaître")
+	}
+	if strings.Contains(body, "facture.pdf") {
+		t.Error("celles d'un autre auteur ne doivent pas apparaître dans « mes modifications »")
 	}
 }
 

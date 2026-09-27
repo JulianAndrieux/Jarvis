@@ -17,4 +17,8 @@ type SidebarView struct {
 	Mails    []SideItem // emails « à traiter » de la semaine sans tâche
 	Running  []SideItem
 	Errors   []SideItem
+	// Pending : nombre de modifications en attente de commit (jalon 48). Un
+	// compteur permanent, parce qu'un changeset oublié est invisible de
+	// tous — y compris de son auteur.
+	Pending int
 }

@@ -73,10 +73,12 @@ func scopeOf(r *http.Request) tenancy.Scope {
 func (s *Server) withScope(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.authEnabled() {
-			// Mode mono-utilisateur : la portée de l'installation.
-			next.ServeHTTP(w, r.WithContext(tenancy.WithScope(r.Context(), tenancy.Scope{
-				Env: tenancy.Local, Role: tenancy.RoleOwner,
-			})))
+			// Mode mono-utilisateur : la portée de l'installation, avec son
+			// identité locale. Une session nommée, et non une portée sans
+			// session : sans elle, ni le journal ni le changeset ne
+			// s'appliqueraient, puisque « sans session » veut dire « travail
+			// de fond ».
+			next.ServeHTTP(w, r.WithContext(tenancy.WithScope(r.Context(), tenancy.LocalScope())))
 			return
 		}
 

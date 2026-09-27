@@ -27,6 +27,24 @@ type SessionID string
 // cloisonnement lui sont attribuées par la migration.
 const Local EnvID = "local"
 
+// LocalUser et LocalSession sont l'identité de l'installation
+// mono-utilisateur, quand aucune authentification n'est configurée.
+//
+// Une session nommée plutôt qu'une portée sans session : « pas de session »
+// signifie « travail de fond », et le travail de fond n'a ni journal ni
+// changeset. L'utilisateur d'une installation locale, lui, est bien un
+// humain qui modifie des choses — ses modifications doivent être tracées et
+// pouvoir être mises en attente comme celles de n'importe qui.
+const (
+	LocalUser    UserID    = "local"
+	LocalSession SessionID = "local"
+)
+
+// LocalScope est la portée de cette installation mono-utilisateur.
+func LocalScope() Scope {
+	return Scope{Env: Local, User: LocalUser, Session: LocalSession, Role: RoleOwner}
+}
+
 // Role : ce qu'un user peut faire. RoleOwner est le propriétaire de
 // l'instance (le seul à disposer de l'espace Admin, des tickets et du
 // déploiement — un déploiement redémarre l'application de tous les

@@ -1,0 +1,100 @@
+package templates
+
+// PendingEntry : une modification en attente, prête à afficher.
+type PendingEntry struct {
+	ID    string
+	Kind  string
+	Label string
+	// What : la phrase décrivant la modification.
+	What string
+	When string
+	Href string
+	// Conflict, si non vide, dit pourquoi elle n'a pas pu s'appliquer.
+	Conflict string
+	// Current : la valeur en base aujourd'hui, en cas de conflit.
+	Current string
+}
+
+// ChangesView : l'écran des modifications en attente.
+type ChangesView struct {
+	Entries []PendingEntry
+	// Committed/Conflicted : résultat du commit qui vient d'avoir lieu
+	// (-1 : aucun commit dans cette requête).
+	Committed  int
+	Conflicted int
+}
+
+templ ChangesPage(v ChangesView) {
+	@Layout("Changements", "changes") {
+		<div class="page-title"><h2>Changements</h2></div>
+		<p class="muted">
+			Tes modifications vivent ici jusqu'à ce que tu les commites :
+			personne d'autre ne les voit. Commiter les applique une par une —
+			celle qui touche un champ que quelqu'un a modifié entre-temps
+			n'est jamais appliquée en silence, elle revient ici avec les deux
+			valeurs.
+		</p>
+		if v.Committed >= 0 {
+			<div class="card commit-result">
+				if v.Committed > 0 {
+					<strong>{ plural(v.Committed, "modification appliquée", "modifications appliquées") }.</strong>
+				} else {
+					<strong>Aucune modification appliquée.</strong>
+				}
+				if v.Conflicted > 0 {
+					{ " " }
+					<span>{ plural(v.Conflicted, "conflit à trancher", "conflits à trancher") } ci-dessous.</span>
+				}
+			</div>
+		}
+		if len(v.Entries) == 0 {
+			<p class="muted">Rien en attente.</p>
+		} else {
+			<form method="post" action="/changes/commit" class="field-row">
+				<button type="submit" class="button-primary">Commiter tout ce qui peut l'être</button>
+			</form>
+			<table class="activity">
+				<tbody>
+					for _, e := range v.Entries {
+						<tr>
+							<td class="muted nowrap">{ e.When }</td>
+							<td class="muted nowrap">{ e.Kind }</td>
+							<td>
+								if e.Href != "" {
+									<a href={ templ.SafeURL(e.Href) }>{ e.Label }</a>
+								} else {
+									{ e.Label }
+								}
+							</td>
+							<td>
+								{ e.What }
+								if e.Conflict != "" {
+									<div class="conflict-inline">
+										<strong>{ e.Conflict }</strong>
+										<div>en base aujourd'hui : <code>{ e.Current }</code></div>
+									</div>
+								}
+							</td>
+							<td class="nowrap">
+								<form method="post" action={ templ.SafeURL("/changes/" + e.ID + "/discard") }>
+									<button type="submit" class="button button-ghost">Abandonner</button>
+								</form>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+			<form method="post" action="/changes/discard" class="field-row">
+				<button type="submit" class="button button-ghost">Tout abandonner</button>
+			</form>
+		}
+		<style>
+			table.activity { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+			table.activity td { padding: .45rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; font-size: .92rem; }
+			table.activity .nowrap { white-space: nowrap; }
+			.conflict-inline { margin-top: .4rem; padding: .5rem .7rem; border-radius: 8px; background: var(--danger-soft); color: var(--danger); font-size: .85rem; }
+			.conflict-inline code { color: inherit; }
+			.commit-result { margin-bottom: 1rem; }
+		</style>
+	}
+}

@@ -95,6 +95,7 @@ func main() {
 	notesCollection := flag.String("notes-collection", "notes", "Collection MongoDB des notes (onglet Notes)")
 	tasksCollection := flag.String("tasks-collection", "tasks", "Collection MongoDB des tâches (onglet Tâches)")
 	changesCollection := flag.String("changes-collection", "changes", "Collection MongoDB du journal des modifications (onglet Activité)")
+	changesetCollection := flag.String("changeset-collection", "changeset", "Collection MongoDB des modifications en attente de commit (onglet Changements) ; vide = écritures directes, sans changeset")
 	mailCollection := flag.String("mail-collection", "emails", "Collection MongoDB des emails relevés (onglet Emails)")
 	mailFilesCollection := flag.String("mail-files-collection", "email_files", "Collection MongoDB du contenu des pièces jointes")
 	mailConfig := flag.String("mail-config", defaultMailConfig(), "Configuration de la boîte mail (serveur, adresse, mot de passe d'application — fichier local 0600, jamais dans Atlas, rempli depuis l'onglet Emails) ; vide = pas de relève ni de tri")
@@ -176,6 +177,24 @@ func main() {
 		log.Fatalf("jarvisapp: journal des modifications : %v", err)
 	}
 	recorder := &changes.Recorder{Journal: journal, Logf: log.Printf}
+
+	// Changeset (jalon 48) : les modifications d'un humain attendent son
+	// commit, invisibles des autres. Le travail de fond, lui, écrit
+	// toujours directement — il n'a pas de session.
+	var changeset changes.ChangesetStore
+	var stager *changes.Stager
+	if *changesetCollection != "" {
+		csCtx, cancelCS := context.WithTimeout(context.Background(), 10*time.Second)
+		cs, err := changes.NewMongoChangesetStore(csCtx, mongoConn, *mongoDB, *changesetCollection)
+		cancelCS()
+		if err != nil {
+			log.Fatalf("jarvisapp: changeset : %v", err)
+		}
+		changeset, stager = cs, &changes.Stager{Store: cs}
+		log.Printf("jarvisapp: changeset activé (les modifications attendent un commit)")
+	} else {
+		log.Printf("jarvisapp: changeset désactivé (écritures directes)")
+	}
 
 	registry := doctype.NewDefaultRegistry()
 
@@ -485,7 +504,7 @@ func main() {
 		log.Printf("jarvisapp: pilote automatique des tickets activé (déploiement si vérification et relecture réussies)")
 	}
 
-	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore, Changes: recorder}, Mail: mailService, Journal: journal}
+	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore, Changes: recorder, Staged: changeset, Stager: stager}, Mail: mailService, Journal: journal}
 
 	// Authentification (jalon 45). Sans fichier de configuration, rien ne
 	// change : un seul environnement, aucun écran de connexion — c'est ce

@@ -24,6 +24,13 @@ type Service struct {
 	// réellement modifié — c'est la granularité dont le changeset (jalon
 	// 48) aura besoin, pas une trace « la note a changé ».
 	Changes *changes.Recorder
+	// Staged et Stager, s'ils sont donnés, mettent les écritures en attente
+	// dans le changeset du user au lieu de les appliquer (jalon 48) : mes
+	// modifications n'existent que pour moi jusqu'à ce que je les commite.
+	// Le travail de fond, lui, écrit toujours directement — il n'a pas de
+	// session, donc rien à mettre en attente.
+	Staged changes.ChangesetStore
+	Stager *changes.Stager
 	// DefaultScope est la portée utilisée quand le contexte n'en porte
 	// pas : choix de câblage explicite (l'unique environnement
 	// d'aujourd'hui), que le jalon 45 remplacera par la portée de la
@@ -34,14 +41,56 @@ type Service struct {
 // db rend la persistance vue depuis la portée de cette opération — le seul
 // point du Service où l'environnement entre en jeu.
 func (s *Service) db(ctx context.Context) Store {
-	if sc, ok := tenancy.FromContext(ctx); ok {
-		return s.Store.For(sc)
+	scope, ok := tenancy.FromContext(ctx)
+	if !ok {
+		scope = s.DefaultScope
+		if scope.Env == "" {
+			scope = tenancy.Scope{Env: tenancy.Local, Role: tenancy.RoleOwner}
+		}
 	}
-	scope := s.DefaultScope
-	if scope.Env == "" {
-		scope = tenancy.Scope{Env: tenancy.Local, Role: tenancy.RoleOwner}
+	if s.Staged != nil && s.Stager != nil && !scope.Background() {
+		return NewOverlay(s.Store, s.Staged, s.Stager, scope)
 	}
 	return s.Store.For(scope)
+}
+
+// Pending : mes opérations en attente (vide si le changeset n'est pas
+// activé).
+func (s *Service) Pending(ctx context.Context) ([]changes.Op, error) {
+	scope, ok := tenancy.FromContext(ctx)
+	if !ok || s.Staged == nil || scope.Background() {
+		return nil, nil
+	}
+	return s.Staged.Pending(ctx, scope.Env, scope.User)
+}
+
+// Commit applique mes opérations en attente. Rend ce qui a été appliqué et
+// ce qui reste en conflit.
+func (s *Service) Commit(ctx context.Context) (CommitResult, error) {
+	scope, ok := tenancy.FromContext(ctx)
+	if !ok || s.Staged == nil {
+		return CommitResult{}, fmt.Errorf("notes: aucun changeset")
+	}
+	c := &Committer{Base: s.Store, Staged: s.Staged}
+	return c.Commit(ctx, scope)
+}
+
+// DiscardAll abandonne toutes mes opérations en attente.
+func (s *Service) DiscardAll(ctx context.Context) error {
+	scope, ok := tenancy.FromContext(ctx)
+	if !ok || s.Staged == nil {
+		return fmt.Errorf("notes: aucun changeset")
+	}
+	return s.Staged.DropAll(ctx, scope.Env, scope.User)
+}
+
+// Discard abandonne une opération précise.
+func (s *Service) Discard(ctx context.Context, opID string) error {
+	scope, ok := tenancy.FromContext(ctx)
+	if !ok || s.Staged == nil {
+		return fmt.Errorf("notes: aucun changeset")
+	}
+	return s.Staged.Drop(ctx, scope.Env, scope.User, opID)
 }
 
 func (s *Service) now() time.Time {

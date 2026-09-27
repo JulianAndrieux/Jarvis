@@ -8,6 +8,14 @@ import (
 
 // Sidebar : contenu de la barre latérale (fragment, rafraîchi seul).
 templ Sidebar(v SidebarView) {
+		if v.Pending > 0 {
+			<section class="side-block side-pending">
+				<a href="/changes">
+					<strong>{ plural(v.Pending, "modification", "modifications") } non commitée(s)</strong>
+					<span class="muted">visible(s) de toi seul jusqu'au commit</span>
+				</a>
+			</section>
+		}
 	<section class="side-block">
 		<div class="side-title">🗓 Cette semaine <span class="count">{ fmt.Sprint(len(v.Week) + v.WeekMore) }</span></div>
 		if len(v.Week) == 0 {

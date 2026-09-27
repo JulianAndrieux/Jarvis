@@ -8,6 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
@@ -159,4 +162,56 @@ type Store interface {
 	UpdateTask(ctx context.Context, t Task) error
 	DeleteTask(ctx context.Context, id string) error
 	ListTasks(ctx context.Context, q TaskQuery) ([]Task, error)
+}
+
+// Matches dit si une note satisfait la requête — hors cloisonnement par
+// environnement (c'est la portée du store qui s'en charge), hors tri.
+//
+// En Go, comme webapp.ListQuery.Matches, et pour la même raison : la fake
+// l'utilise, MongoStore exprime le même filtre en $regex, le contrat commun
+// aux deux surveille qu'ils s'accordent, et l'overlay du changeset
+// (jalon 48) doit appliquer la même requête à des notes modifiées en
+// mémoire, que Mongo ne peut pas filtrer.
+func (q NoteQuery) Matches(n Note) bool {
+	if q.Tag != "" && !slices.Contains(n.Tags, q.Tag) {
+		return false
+	}
+	if q.DocID != "" && !slices.Contains(n.DocIDs, q.DocID) {
+		return false
+	}
+	if q.MailID != "" && n.MailID != q.MailID {
+		return false
+	}
+	if q.Search == "" {
+		return true
+	}
+	return noteMatches(n, strings.ToLower(q.Search))
+}
+
+// Matches : même rôle pour une tâche.
+func (q TaskQuery) Matches(t Task) bool {
+	if q.NoteID != "" && t.NoteID != q.NoteID {
+		return false
+	}
+	if q.DocID != "" && t.DocID != q.DocID {
+		return false
+	}
+	return q.MailID == "" || t.MailID == q.MailID
+}
+
+// SortNotes : épinglées d'abord, puis la plus récemment modifiée — l'ordre
+// que tout Store doit rendre, réutilisable par l'overlay après
+// réapplication des opérations en attente.
+func SortNotes(out []Note) {
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Pinned != out[j].Pinned {
+			return out[i].Pinned
+		}
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
+}
+
+// SortTasks : de la plus ancienne à la plus récente (l'ordre de la todo).
+func SortTasks(out []Task) {
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
 }
