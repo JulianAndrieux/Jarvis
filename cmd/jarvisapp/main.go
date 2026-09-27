@@ -267,6 +267,7 @@ func main() {
 
 	jobs := webapp.NewJobManager(jobStore, runner)
 	jobs.Changes = recorder
+	jobs.Staged, jobs.Stager = changeset, stager
 	jobs.Renderer = parsing.PdftoppmRenderer{}
 	// Jalon 25 : conversion locale des fichiers non-PDF (LibreOffice,
 	// sips). Sans LibreOffice, ces fichiers échouent avec un message
@@ -505,6 +506,15 @@ func main() {
 	}
 
 	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore, Changes: recorder, Staged: changeset, Stager: stager}, Mail: mailService, Journal: journal}
+	if changeset != nil {
+		// Un seul commit pour tous les genres d'entités : chaque paquet
+		// fournit l'Applier de ce qu'il possède.
+		srv.Changeset = changeset
+		srv.Committer = &changes.Committer{Staged: changeset, Appliers: []changes.Applier{
+			notes.Applier{Base: notesStore},
+			webapp.Applier{Base: jobStore},
+		}}
+	}
 
 	// Authentification (jalon 45). Sans fichier de configuration, rien ne
 	// change : un seul environnement, aucun écran de connexion — c'est ce

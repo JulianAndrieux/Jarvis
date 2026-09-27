@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
-	"github.com/JulianAndrieux/Jarvis/internal/notes"
+	"github.com/JulianAndrieux/Jarvis/internal/changes"
 )
 
 func (s *Server) changesetRoutes(r chi.Router) {
@@ -16,27 +16,46 @@ func (s *Server) changesetRoutes(r chi.Router) {
 	r.Post("/changes/{id}/discard", s.handleChangesDiscard)
 }
 
-func (s *Server) handleChanges(w http.ResponseWriter, r *http.Request) {
-	if s.Notes == nil || s.Notes.Staged == nil {
+// changesetOff : le changeset n'existe que si un magasin d'opérations en
+// attente est configuré. Sans lui, les écritures sont directes, et cette
+// page n'aurait rien à montrer — mieux vaut 404 que laisser croire qu'on
+// met des modifications de côté.
+func (s *Server) changesetOff(w http.ResponseWriter, r *http.Request) bool {
+	if s.Changeset == nil || s.Committer == nil {
 		http.NotFound(w, r)
+		return true
+	}
+	return false
+}
+
+// pendingOps : mes opérations en attente, tous genres confondus.
+func (s *Server) pendingOps(r *http.Request) ([]changes.Op, error) {
+	scope := scopeOf(r)
+	if s.Changeset == nil || scope.Background() {
+		return nil, nil
+	}
+	return s.Changeset.Pending(r.Context(), scope.Env, scope.User)
+}
+
+func (s *Server) handleChanges(w http.ResponseWriter, r *http.Request) {
+	if s.changesetOff(w, r) {
 		return
 	}
 	s.renderChanges(w, r, nil, -1, 0)
 }
 
 func (s *Server) handleChangesCommit(w http.ResponseWriter, r *http.Request) {
-	if s.Notes == nil || s.Notes.Staged == nil {
-		http.NotFound(w, r)
+	if s.changesetOff(w, r) {
 		return
 	}
-	res, err := s.Notes.Commit(r.Context())
+	res, err := s.Committer.Commit(r.Context(), scopeOf(r))
 	if err != nil {
 		serverError(w, err)
 		return
 	}
 	// Les conflits sont affichés en place, avec les deux valeurs : c'est une
 	// décision à prendre, pas une erreur à annoncer.
-	byOp := map[string]notes.CommitConflict{}
+	byOp := map[string]changes.Conflict{}
 	for _, c := range res.Conflicts {
 		byOp[c.Op.ID] = c
 	}
@@ -44,11 +63,11 @@ func (s *Server) handleChangesCommit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleChangesDiscardAll(w http.ResponseWriter, r *http.Request) {
-	if s.Notes == nil || s.Notes.Staged == nil {
-		http.NotFound(w, r)
+	if s.changesetOff(w, r) {
 		return
 	}
-	if err := s.Notes.DiscardAll(r.Context()); err != nil {
+	scope := scopeOf(r)
+	if err := s.Changeset.DropAll(r.Context(), scope.Env, scope.User); err != nil {
 		serverError(w, err)
 		return
 	}
@@ -56,11 +75,11 @@ func (s *Server) handleChangesDiscardAll(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleChangesDiscard(w http.ResponseWriter, r *http.Request) {
-	if s.Notes == nil || s.Notes.Staged == nil {
-		http.NotFound(w, r)
+	if s.changesetOff(w, r) {
 		return
 	}
-	if err := s.Notes.Discard(r.Context(), chi.URLParam(r, "id")); err != nil {
+	scope := scopeOf(r)
+	if err := s.Changeset.Drop(r.Context(), scope.Env, scope.User, chi.URLParam(r, "id")); err != nil {
 		serverError(w, err)
 		return
 	}
@@ -69,8 +88,8 @@ func (s *Server) handleChangesDiscard(w http.ResponseWriter, r *http.Request) {
 
 // renderChanges affiche les opérations en attente, en y reportant les
 // conflits du commit qui vient d'avoir lieu (committed < 0 : aucun).
-func (s *Server) renderChanges(w http.ResponseWriter, r *http.Request, conflicts map[string]notes.CommitConflict, committed, conflicted int) {
-	ops, err := s.Notes.Pending(r.Context())
+func (s *Server) renderChanges(w http.ResponseWriter, r *http.Request, conflicts map[string]changes.Conflict, committed, conflicted int) {
+	ops, err := s.pendingOps(r)
 	if err != nil {
 		serverError(w, err)
 		return
@@ -98,10 +117,7 @@ func (s *Server) renderChanges(w http.ResponseWriter, r *http.Request, conflicts
 // la barre latérale. Une erreur laisse le compteur à zéro plutôt que de
 // casser la barre — même principe que ses autres sources.
 func (s *Server) pendingCount(r *http.Request) int {
-	if s.Notes == nil || s.Notes.Staged == nil {
-		return 0
-	}
-	ops, err := s.Notes.Pending(r.Context())
+	ops, err := s.pendingOps(r)
 	if err != nil {
 		return 0
 	}

@@ -12,13 +12,14 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/changes"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
+	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
 // newChangesetServer : l'application avec le changeset actif, plus un
 // service « de l'autre » qui écrit directement dans la base.
 func newChangesetServer(t *testing.T) (*Server, *notes.Service, *notes.FakeStore) {
 	t.Helper()
-	s, _ := newTestServer(t, &blockingRunner{})
+	s, jobStore := newTestServer(t, &blockingRunner{})
 	base := notes.NewFakeStore()
 	staged := changes.NewFakeChangesetStore()
 	clock := func() time.Time { return notesNow }
@@ -33,6 +34,13 @@ func newChangesetServer(t *testing.T) (*Server, *notes.Service, *notes.FakeStore
 		// requêtes HTTP.
 		DefaultScope: tenancy.LocalScope(),
 	}
+	s.Changeset = staged
+	s.Committer = &changes.Committer{Staged: staged, Appliers: []changes.Applier{
+		notes.Applier{Base: base}, webapp.Applier{Base: jobStore},
+	}}
+	s.Jobs.Staged, s.Jobs.Stager = staged, s.Notes.Stager
+	s.Jobs.DefaultScope = tenancy.LocalScope()
+
 	autre := &notes.Service{Store: base, Now: clock,
 		DefaultScope: tenancy.Scope{Env: tenancy.Local, User: "autre", Session: "s-autre", Role: tenancy.RoleMember}}
 	return s, autre, base
@@ -158,5 +166,51 @@ func TestChangesPage_SansChangeset(t *testing.T) {
 	s, _ := newNotesServer(t)
 	if rec := do(s, http.MethodGet, "/changes", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("code = %d, veut 404", rec.Code)
+	}
+}
+
+// Le même écran commite les deux genres d'entités : une note et un
+// document, en une fois.
+func TestChangesPage_NotesEtDocumentsEnsemble(t *testing.T) {
+	s, autre, base := newChangesetServer(t)
+	ctx := context.Background()
+
+	n, _ := autre.NewNote(ctx, "")
+	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Jobs.Submit(tenancy.WithScope(ctx, tenancy.LocalScope()), "facture.pdf", []byte("%PDF-1.4")); err != nil {
+		t.Fatal(err)
+	}
+	docs, err := s.Jobs.List(tenancy.WithScope(ctx, tenancy.LocalScope()), webapp.ListQuery{})
+	if err != nil || len(docs) != 1 {
+		t.Fatalf("documents = %d (err=%v)", len(docs), err)
+	}
+	docID := docs[0].ID
+
+	// Une modification de chaque côté.
+	mine, _, _ := s.Notes.Store.For(tenancy.LocalScope()).GetNote(ctx, n.ID)
+	do(s, http.MethodPost, "/notes/"+n.ID, url.Values{
+		"version": {strconv.Itoa(mine.Version)}, "title": {"Courses du samedi"},
+	})
+	do(s, http.MethodPost, "/documents/"+docID+"/tags", url.Values{"tags": {"urgent"}})
+
+	page := do(s, http.MethodGet, "/changes", nil).Body.String()
+	if !strings.Contains(page, "Courses du samedi") || !strings.Contains(page, "facture.pdf") {
+		t.Errorf("la page doit lister les deux genres, reçu : %s", page)
+	}
+
+	if rec := do(s, http.MethodPost, "/changes/commit", url.Values{}); rec.Code != http.StatusOK {
+		t.Fatalf("commit : %d", rec.Code)
+	}
+	if got, _, _ := base.GetNote(ctx, n.ID); got.Title != "Courses du samedi" {
+		t.Errorf("note en base = %q", got.Title)
+	}
+	got, _, err := s.Jobs.Get(tenancy.WithScope(ctx, tenancy.System(tenancy.Local)), docID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Tags) != 1 || got.Tags[0] != "urgent" {
+		t.Errorf("tags du document en base = %v", got.Tags)
 	}
 }

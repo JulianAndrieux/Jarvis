@@ -14,7 +14,7 @@ type csFixture struct {
 	staged  *changes.FakeChangesetStore
 	moi     *Service // édite à travers l'overlay
 	autre   *Service // écrit directement dans la base
-	commit  *Committer
+	commit  *changes.Committer
 	ctxMoi  context.Context
 	ctxAutr context.Context
 	now     time.Time
@@ -33,7 +33,7 @@ func newCS(t *testing.T) *csFixture {
 	f := &csFixture{
 		base:    base,
 		staged:  staged,
-		commit:  &Committer{Base: base, Staged: staged},
+		commit:  &changes.Committer{Staged: staged, Appliers: []changes.Applier{Applier{Base: base}}},
 		ctxMoi:  tenancy.WithScope(context.Background(), scopeMoi),
 		ctxAutr: tenancy.WithScope(context.Background(), scopeAutre),
 		now:     now,

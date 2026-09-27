@@ -66,12 +66,12 @@ func (s *Service) Pending(ctx context.Context) ([]changes.Op, error) {
 
 // Commit applique mes opérations en attente. Rend ce qui a été appliqué et
 // ce qui reste en conflit.
-func (s *Service) Commit(ctx context.Context) (CommitResult, error) {
+func (s *Service) Commit(ctx context.Context) (changes.CommitResult, error) {
 	scope, ok := tenancy.FromContext(ctx)
 	if !ok || s.Staged == nil {
-		return CommitResult{}, fmt.Errorf("notes: aucun changeset")
+		return changes.CommitResult{}, fmt.Errorf("notes: aucun changeset")
 	}
-	c := &Committer{Base: s.Store, Staged: s.Staged}
+	c := &changes.Committer{Staged: s.Staged, Appliers: []changes.Applier{Applier{Base: s.Store}}}
 	return c.Commit(ctx, scope)
 }
 

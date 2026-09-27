@@ -176,6 +176,12 @@ type JobManager struct {
 	// résultat d'extraction et la miniature n'ont rien à faire dans « qui a
 	// changé quoi » — le Recorder ignore d'ailleurs une portée de fond.
 	Changes *changes.Recorder
+	// Staged et Stager, s'ils sont donnés, mettent en attente ce qu'un
+	// humain modifie sur un document (tags, commentaire, suppression) —
+	// jalon 49. Le traitement, lui, écrit toujours directement : il n'a pas
+	// de session.
+	Staged changes.ChangesetStore
+	Stager *changes.Stager
 
 	// DefaultScope est la portée utilisée quand le contexte n'en porte
 	// pas. C'est un choix de câblage explicite, pas un repli caché :
@@ -191,10 +197,14 @@ type JobManager struct {
 // Toute lecture et toute écriture du JobManager passent par ici : c'est
 // le seul point où l'environnement entre en jeu.
 func (m *JobManager) db(ctx context.Context) Store {
-	if s, ok := tenancy.FromContext(ctx); ok {
-		return m.store.For(s)
+	scope, ok := tenancy.FromContext(ctx)
+	if !ok {
+		scope = m.DefaultScope
 	}
-	return m.store.For(m.DefaultScope)
+	if m.Staged != nil && m.Stager != nil && !scope.Background() {
+		return NewOverlay(m.store, m.Staged, m.Stager, scope)
+	}
+	return m.store.For(scope)
 }
 
 func NewJobManager(store Store, runner Runner) *JobManager {

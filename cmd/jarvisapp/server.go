@@ -71,6 +71,11 @@ type Server struct {
 	// Journal : l'histoire des modifications faites par les humains (jalon
 	// 46) ; nil désactive l'onglet Activité.
 	Journal changes.Journal
+	// Changeset et Committer : les modifications en attente de commit
+	// (jalons 48-49), tous genres d'entités confondus ; nil désactive
+	// l'onglet Changements et rend les écritures directes.
+	Changeset changes.ChangesetStore
+	Committer *changes.Committer
 	// LocalLogin : jeton de secours du propriétaire, écrit dans le journal
 	// au démarrage — une panne de Google ne doit pas interdire d'ouvrir une
 	// application par ailleurs locale.
