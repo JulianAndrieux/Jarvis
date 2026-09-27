@@ -1,9 +1,19 @@
 # Plan : environnements, users, sessions, changesets
 
-Document de travail. **Les cinq arbitrages de structure sont tranchés**
-(§3) ; le reste décrit comment les mettre en œuvre. CLAUDE.md n'est pas
-modifié : il décrit l'état réel du projet, pas une intention — il le sera
-jalon par jalon, à mesure que le code existe.
+**État : les jalons 42 à 51 sont écrits et livrés** (voir « État des
+jalons » de CLAUDE.md pour ce que chacun a réellement produit, et le
+journal git pour le détail commit par commit). Ce document reste la
+référence des décisions et de la conception ; il n'est plus une intention.
+
+Ce qui n'a pas pu être exercé depuis l'environnement de développement de
+ce chantier, et reste à valider : les contrats Mongo contre Atlas
+(`-tags=integration` avec `MONGO_URI`), le flux Google avec un vrai client
+OAuth et un navigateur, et un parcours à deux comptes. Une chose du jalon
+50 est volontairement inachevée et signalée comme telle : une boîte mail
+*par user* (le chiffrement des identifiants est fait, le fan-out de la
+relève non).
+
+Les cinq arbitrages de structure sont tranchés en §3.
 
 ---
 

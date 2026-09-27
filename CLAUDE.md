@@ -44,9 +44,13 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
   4. **Emails (`internal/mail`, jalon 39) : copiés dans MongoDB Atlas**
      (corps en texte, pièces jointes jusqu'à 15 Mo), comme les documents.
      Décision explicite de l'utilisateur (question posée : lus à la
-     demande ou copie dans Atlas). Le mot de passe de la boîte, lui, ne
-     quitte pas la machine (`~/.jarvis/mail.json`, 0600) ; le tri reste
-     fait par le modèle local.
+     demande ou copie dans Atlas). Le mot de passe de la boîte, lui,
+     **n'est jamais enregistré en clair hors de l'hôte** : il est chiffré
+     (AES-256-GCM, `internal/secretbox`) avec une clé qui ne quitte pas la
+     machine (`~/.jarvis/secret.key`, 0600) — reformulé au jalon 50, la
+     formulation d'avant (« ne quitte pas la machine », dans
+     `~/.jarvis/mail.json`) cessait d'être vraie dès qu'une sauvegarde ou
+     un second user existaient. Le tri reste fait par le modèle local.
   5. **Tickets confiés à Claude Code (`internal/claudecode`, jalon 41) :
      le code du dépôt et le texte du ticket partent à l'API d'Anthropic.**
      Décision explicite de l'utilisateur ("vu que le modèle local n'est pas
@@ -59,6 +63,30 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
      Documents, emails, notes et identifiants ne lui sont jamais donnés.
      Limite assumée : `go test` exécute du code écrit par Claude, sans bac à
      sable (comme pour l'agent local, cf. jalon 28).
+  6. **Identité (`internal/googleauth`, jalon 45) : se connecter passe par
+     Google.** Décision explicite de l'utilisateur. Ni document, ni
+     contenu, ni donnée d'un environnement ne part — seulement l'échange
+     d'authentification (et Google connaît déjà l'adresse du compte qui s'y
+     connecte). Conséquence assumée : une application par ailleurs capable
+     de tout faire hors ligne ne peut plus ouvrir de session si Google est
+     injoignable, d'où le lien de secours du propriétaire écrit dans le
+     journal de démarrage. Tant que `~/.jarvis/oauth.json` n'existe pas,
+     l'authentification est désactivée et rien ne sort.
+- **L'inférence locale est une ressource de machine, partagée et
+  sérialisée entre environnements** (jalon 50). Les modèles ne servent
+  qu'un travail à la fois sur ce matériel et un document de cinq pages
+  scannées les occupe une vingtaine de minutes : la file (`internal/gate`)
+  est équitable entre environnements, pas parallèle. Aucun découpage
+  logiciel ne rendra l'inférence simultanée ici — la réponse au débit
+  reste une machine dédiée, ou un point d'accès modèles par environnement
+  (`--vlm-url`/`--llm-url` sont déjà des réglages).
+- **Plusieurs environnements, plusieurs users** (jalons 42-51) : les
+  données sont cloisonnées par environnement, un user n'entre que sur
+  invitation, et ses modifications attendent son commit. « Tourne
+  entièrement en local » reste vrai de l'exécution (l'application n'écoute
+  toujours que sur `127.0.0.1` — décision de l'utilisateur), mais
+  l'application n'est plus mono-utilisateur pour autant. Plan et décisions
+  : `docs/plan-multi-environnement.md`.
 - TDD strict : chaque paquet a ses tests avant son implémentation. Pas de
   code non testé.
 - Construire à partir de primitives ; éviter les frameworks lourds et les
@@ -278,6 +306,18 @@ make build-app
 # affiché dès qu'il est prêt, poll HTMX automatique), Classes/Tests
 # (navigateur de code, cf. "Atelier de code" plus bas).
 ```
+Flags du multi-environnement (jalons 42-51) : `--auth-config`
+(`~/.jarvis/oauth.json` par défaut — **absent, l'authentification est
+désactivée** et l'application se comporte comme avant, un seul
+environnement et aucun écran de connexion), `--accounts-prefix`
+(collections des comptes), `--changes-collection` (journal des
+modifications, onglet Activité), `--changeset-collection` (modifications
+en attente de commit, onglet Changements ; vide = écritures directes),
+`--watch-env` (environnement auquel appartiennent les fichiers déposés
+dans `--watch-dir`). La clé qui chiffre les identifiants de services tiers
+est `~/.jarvis/secret.key` (créée au premier démarrage, 0600) — la perdre
+rend le mot de passe de la boîte mail illisible, il faudra le ressaisir.
+
 Flags utiles : `--mongo-uri` (**requis**, jalon 12 — les jobs, PDF source
 compris, sont persistés dans MongoDB), `--mongo-db`/`--mongo-collection`
 (défauts `jarvis`/`jobs`), `--work-dir` (fichiers temporaires de
@@ -2588,6 +2628,189 @@ spécifique à `localhost`.
     sortie structurée) ; chemins absolus via `/private/var`. Et un constat
     de sécurité : `Read` sans motif a lu `/etc/hosts` — motifs `./**`
     imposés (test de garde).
+
+### Épopée multi-environnement (jalons 42-51)
+Demandé : « plusieurs environnements, chacun avec un ou plusieurs users ;
+à chaque connexion une session ; la session doit tracker les changements
+du user ; pouvoir commiter un changement sans créer de conflits. »
+Décisions de l'utilisateur (questions posées) : environnement = locataire
+logique avec ressources physiques déclarées par environnement ; les
+« changements » sont les **données** (le cycle sur le code existe déjà) ;
+**vrai changeset** (invisible des autres jusqu'au commit) ; **Google**
+pour l'authentification ; l'application **reste locale**. Plan complet et
+décisions : `docs/plan-multi-environnement.md`.
+
+- **Jalon 42 — contrôle d'origine : fait.** Ferme une faille qui existait
+  et que l'écoute sur `127.0.0.1` n'empêchait pas : un navigateur autorise
+  la soumission d'un formulaire inter-origine, et `POST /tickets` lit son
+  contenu avec `r.FormValue` — donc une page web visitée pendant que
+  Jarvis tournait pouvait créer un brouillon, que la relève automatique
+  prenait et que le pilote automatique faisait développer puis **déployer
+  dans main**, sans qu'aucun humain voie le ticket.
+  `internal/webguard` : `Sec-Fetch-Site` fait foi (le code d'une page ne
+  peut pas l'écrire) ; à défaut `Origin` est comparé à notre origine ; un
+  autre port de la même machine est `same-site`, donc refusé ; sans aucun
+  des deux en-têtes la requête passe (ce n'est pas un navigateur — choix
+  assumé). Norme : `chi.Walk` vérifie que les 38 routes modifiantes
+  refusent une requête d'un autre site.
+- **Jalons 43-44 — cloisonnement des données par environnement : fait.**
+  Faits d'un seul coup : une couture qui ignore sa portée ne se teste pas,
+  et c'est le contrat d'isolation qui rend le changement sûr.
+  `internal/tenancy` (`Scope{Env, User, Session, Role}`, types distincts,
+  `tenancy.Local`, `System(env)` pour le travail de fond, transport par
+  contexte). `webapp`, `notes` et `mail` portent `env_id` ; chaque filtre
+  passe par `key()`. Les stores rendent `For(scope)` ; sans portée, chaque
+  méthode refuse (`tenancy.ErrNoEnv`). Un identifiant d'un autre
+  environnement répond **404, jamais 403**. GridFS préfixé par
+  l'environnement, l'ancien identifiant restant lisible après vérification
+  d'appartenance (aucun octet à déplacer pour migrer).
+  `tickets` et `agents` restent **globaux à l'instance** : le cycle
+  d'auto-modification appartient au propriétaire.
+  `ListQuery.Matches` extrait de `FakeStore` (un seul exemplaire du
+  prédicat, déjà surveillé par le contrat Fake/Mongo — il servira à
+  l'overlay du jalon 48). Portée traversante sans réécrire 270 sites
+  d'appel : `db(ctx)` au seul point qui touche le store, avec un
+  `DefaultScope` fixé par le câblage. `Job.Env` pour que le traitement de
+  fond se scope lui-même. Normes : contrat d'isolation imposé aux trois
+  stores (fake **et** Atlas), et `TestStore_RefusesEveryMethodWithoutScope`
+  par réflexion sur toutes les méthodes. Migration idempotente au
+  démarrage + comptage de ce qui reste non estampillé (un enregistrement
+  sans environnement ne remonterait dans aucune liste).
+- **Jalon 45 — comptes, environnements, sessions, connexion Google :
+  fait.** `internal/accounts` (User, Environment, Membership, Session,
+  Manager) ne connaît ni HTTP ni Google : il reçoit un profil vérifié et
+  rend une portée. Le cookie ne porte qu'un jeton de 32 octets dont seul
+  le SHA-256 est enregistré ; rien d'autre n'y est stocké (tout est relu à
+  chaque requête, pour qu'un droit retiré s'applique tout de suite).
+  Expiration glissante, au plus une écriture par heure. Un compte Google
+  ne donne rien sans appartenance ; seul le propriétaire, déclaré par la
+  configuration, entre sans invitation.
+  `internal/googleauth` : flux code + PKCE, **sans JWKS ni RSA** — le
+  jeton d'identité est obtenu en direct du point de terminaison en TLS,
+  cas où OIDC Core §3.1.3.7 admet la validation TLS à la place du contrôle
+  de signature ; `iss`/`aud`/`exp`/`email_verified` sont vérifiés.
+  Redirection sur `127.0.0.1`, seul hôte où Google accepte `http`.
+  Un middleware unique résout la session et attache sa portée — le seul
+  endroit où une portée entre dans l'application. **Lien de secours du
+  propriétaire** (jeton à usage unique, 15 min, écrit dans le journal de
+  démarrage) : se connecter par Google demande Internet, et une panne ne
+  doit pas interdire d'ouvrir une application par ailleurs locale.
+  Configuration dans `~/.jarvis/oauth.json` (0600), jamais en argument de
+  ligne de commande. **Fichier absent = authentification désactivée** :
+  l'installation existante démarre depuis le Dock sans rien préparer.
+  Normes : `chi.Walk` (83 routes protégées, 6 publiques déclarées) et
+  `/admin` par rôle. Deux défauts trouvés en écrivant les tests :
+  `UpsertUser` (piloté par la connexion) pouvait réactiver un compte
+  désactivé (d'où `SetUserDisabled`, écriture ciblée), et une page
+  d'administration sans modèle analysé paniquait en emportant le processus
+  (d'où `middleware.Recoverer`).
+- **Jalon 46 — journal des modifications : fait.** `internal/changes` :
+  une `Op` est une modification **au grain du champ** ; `Before`/`After`
+  portent du JSON (le format canonique du projet). Le `Recorder` complète
+  l'attribution depuis la portée ; un échec d'écriture n'est jamais
+  remonté (la modification a déjà eu lieu) ; sans session, rien n'est
+  journalisé (le traitement d'un document n'est pas une modification
+  d'un humain). Branché au niveau des services (11 mutations dans
+  `notes.Service`, 5 dans `JobManager`) plutôt que par un décorateur : les
+  services ont l'état d'avant sous la main, d'où une opération par champ
+  réellement modifié et aucune quand rien n'a bougé. `MongoJournal`
+  append-only. Onglet **Activité** (mes modifications / tout
+  l'environnement, auteur résolu en nom, pas de lien vers une entité
+  supprimée). Bug attrapé par les tests : dans `SaveNote`, l'état
+  « avant » était capturé après que le titre avait déjà été écrasé.
+- **Jalon 47 — versions et écritures conditionnelles : fait.** `Version`
+  sur `Note`, `Task`, `Job`. Notes et tâches : `UpdateNote`/`UpdateTask`
+  remplacent le document entier, donc la version lue fait partie du filtre
+  et un décalage rend `ErrConflict` sans rien écrire (« introuvable » et
+  « modifié entre-temps » distingués). Documents : **pas de contrôle, et
+  c'est motivé** — machine et humain écrivent des champs disjoints par
+  écritures ciblées (correctif des jalons 23 et 39), et conditionner
+  `Update` casserait le traitement qui garde une copie en mémoire pendant
+  des minutes. `notes.Conflict` porte l'état courant ; le formulaire d'une
+  note transporte sa version, et un conflit réaffiche la saisie intacte à
+  côté de ce qui a été enregistré, en 409. Tests de régression sur la
+  classe de bug des jalons 15/23/26-27/39, dont deux écrivains simultanés
+  (un passe, l'autre reçoit un conflit, rien ne disparaît).
+- **Jalons 48-49 — vrai changeset (notes, tâches, documents) : fait.**
+  Mes modifications existent pour moi seul jusqu'au commit. Le changeset
+  appartient au couple (environnement, user), pas à la session — passer du
+  portable au téléphone retrouve ce qui attend ; chaque opération garde sa
+  session d'origine.
+  Deux choses rendent l'overlay tenable, et elles étaient déjà dans le
+  code : le filtrage des listes est exprimable en Go (`Matches`, extrait
+  des fakes, surveillé par le contrat Fake/Mongo — sans quoi une note
+  renommée en attente serait trouvée par son ancien titre, puisque c'est
+  Mongo qui filtre) ; et quand rien n'est en attente, l'overlay délègue
+  directement à la base.
+  **Le contrôle de conflit se fait par champ** : une opération s'applique
+  si la valeur d'avant qu'elle a enregistrée est encore celle de la base.
+  Deux personnes qui touchent des champs différents de la même note
+  commitent donc toutes les deux sans conflit — c'est là que « commiter
+  sans conflit » se gagne, par la granularité, pas par un algorithme de
+  fusion. Un conflit n'écrase jamais et ne perd jamais : l'opération reste
+  en attente avec sa raison et la valeur actuelle, côte à côte.
+  Ce qui est mis en attente est borné aux champs écrits par un humain
+  (note/tâche : titre, corps, tags, épinglage, liens, échéance,
+  priorité, fait ; document : tags, commentaire, suppression). Les
+  écritures de la machine passent toujours directement, et une **action**
+  (déposer un fichier, relancer une extraction) n'est pas une modification
+  de données : effets hors base, donc immédiate.
+  `changes.Committer` dispatche à un `Applier` par genre d'entité, fourni
+  par le paquet qui possède le type. Interface : onglet **Changements**
+  (commit, abandon par opération ou en bloc, conflits en place) et
+  compteur permanent dans la barre latérale — un changeset oublié est
+  invisible de tous, y compris de son auteur.
+  Trouvé en branchant l'interface : sans authentification, la portée
+  injectée n'avait pas de session, donc ni journal ni changeset ne
+  s'appliquaient (« pas de session » = travail de fond). D'où
+  `tenancy.LocalScope()` : une identité locale nommée, qui les rend
+  effectifs en mode mono-utilisateur.
+- **Jalon 50 — ressources physiques par environnement : fait.**
+  **File des modèles équitable** (`gate.AcquireFair`) : les modèles ne
+  servent qu'un travail à la fois et un document de cinq pages scannées les
+  occupe ~18 min, donc en FIFO un environnement qui dépose dix documents
+  ferait attendre tous les autres. Tourniquet entre environnements, FIFO à
+  l'intérieur. **Un seul mécanisme de file**, délibérément : deux files sur
+  la même porte (un canal et un tourniquet) ne se verraient pas et
+  laisseraient passer deux travaux — ce que cette porte existe pour
+  empêcher. L'inférence reste sérialisée : le mécanisme ne la rend pas plus
+  rapide, il la rend équitable.
+  **`internal/secretbox`** : AES-256-GCM, clé dans `~/.jarvis/secret.key`
+  (0600, créée au premier démarrage). Le mot de passe de la boîte mail
+  n'est plus jamais écrit en clair ; une configuration antérieure est lue
+  une fois puis réécrite chiffrée ; sans clé, l'écriture est refusée. Un
+  test vérifie littéralement que le fichier ne contient pas le mot de
+  passe et qu'une autre clé ne peut pas le lire.
+  Copie locale des résultats sous `<racine>/<environnement>` ; dossier
+  surveillé rattaché à un environnement déclaré (`--watch-env`).
+  **Tickets réservés au propriétaire de l'instance** : un ticket fait
+  écrire du code et son déploiement remplace le processus, donc
+  redémarrerait l'application de tous les environnements.
+  **Non fait, dit clairement** : une boîte mail *par user*. Le chiffrement
+  est là, mais le service ne relève qu'une boîte par instance ; le fan-out
+  (une boucle par user, identifiants dans Atlas) reste à faire.
+- **Jalon 51 — gestion des environnements : fait.**
+  `/admin/environments` : créer, inviter une adresse Google avec un rôle,
+  retirer une appartenance, voir les membres. L'identifiant est dérivé du
+  nom en ASCII sans accent (il apparaît dans les journaux, les dossiers et
+  les identifiants de fichiers) ; le créateur devient membre
+  administrateur (sinon il fabriquerait un environnement où il ne peut pas
+  entrer) ; un rôle inventé est refusé ; on ne se retire pas soi-même.
+  Sélecteur d'environnement dans la **barre latérale** (le layout ne
+  connaît pas la portée, la barre est un fragment avec son handler), à
+  partir de deux environnements, posté sur `/env/switch` — le changement
+  passe par la session, jamais par l'URL.
+  **Régression évitée** : l'essai à blanc du déploiement et la relecture
+  visuelle lancent le binaire avec les options courantes ; avec
+  l'authentification configurée, cette instance aurait renvoyé toutes ses
+  pages vers `/login` et plus aucun ticket n'aurait pu être déployé.
+  `withCheckIsolation` vide `--auth-config` et détourne journal, changesets
+  et comptes vers des collections de contrôle (test de garde).
+
+**Reste à valider en conditions réelles** (impossible depuis
+l'environnement de développement de ce chantier) : les contrats Mongo
+contre Atlas (`-tags=integration`, `MONGO_URI`), le flux Google avec un
+vrai client OAuth et un navigateur, et un parcours à deux comptes.
 
 ## Atelier de code (cmd/codebrowser) — travail parallèle, outil de développement
 
