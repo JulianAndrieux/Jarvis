@@ -8,6 +8,19 @@ import (
 
 // Sidebar : contenu de la barre latérale (fragment, rafraîchi seul).
 templ Sidebar(v SidebarView) {
+		if len(v.Envs) > 1 {
+			<section class="side-block side-envs">
+				<form method="post" action="/env/switch">
+					<label for="env-switch">Environnement</label>
+					<select id="env-switch" name="env" onchange="this.form.submit()">
+						for _, e := range v.Envs {
+							<option value={ e.ID } selected?={ e.ID == v.CurrentEnv }>{ e.Name }</option>
+						}
+					</select>
+					<noscript><button type="submit" class="button">Changer</button></noscript>
+				</form>
+			</section>
+		}
 		if v.Pending > 0 {
 			<section class="side-block side-pending">
 				<a href="/changes">

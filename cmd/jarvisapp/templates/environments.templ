@@ -1,0 +1,108 @@
+package templates
+
+// EnvMemberView : un membre d'un environnement.
+type EnvMemberView struct {
+	UserID string
+	Email  string
+	Name   string
+	Role   string
+	// Me : c'est moi (on ne se retire pas soi-même par mégarde).
+	Me bool
+}
+
+// EnvView : un environnement et ses membres.
+type EnvView struct {
+	ID      string
+	Name    string
+	Members []EnvMemberView
+	// Current : l'environnement que je regarde en ce moment.
+	Current bool
+}
+
+// EnvironmentsView : l'écran d'administration des environnements.
+type EnvironmentsView struct {
+	Envs []EnvView
+	// Error : un refus expliqué, sans perdre la saisie.
+	Error string
+	// Roles : les rôles proposés à l'invitation.
+	Roles []string
+}
+
+templ EnvironmentsPage(v EnvironmentsView) {
+	@Layout("Environnements", "environments") {
+		<div class="page-title"><h2>Environnements</h2></div>
+		<p class="muted">
+			Un environnement est un espace cloisonné : ses documents, ses
+			emails, ses notes, ses tâches. Un compte n'entre que s'il a été
+			invité dans au moins un environnement.
+		</p>
+		if v.Error != "" {
+			<div class="card conflict"><strong>{ v.Error }</strong></div>
+		}
+		<form class="card" method="post" action="/admin/environments">
+			<label for="env-name">Nom du nouvel environnement</label>
+			<div class="field-row">
+				<input type="text" id="env-name" name="name" placeholder="Cabinet, Association, Perso…" required/>
+				<button type="submit" class="button-primary">Créer</button>
+			</div>
+		</form>
+		for _, e := range v.Envs {
+			<section class="card env-card">
+				<h3>
+					{ e.Name }
+					if e.Current {
+						<span class="chip chip-type">courant</span>
+					}
+					<span class="muted mono">{ e.ID }</span>
+				</h3>
+				if len(e.Members) == 0 {
+					<p class="muted">Aucun membre : personne ne peut encore y entrer.</p>
+				} else {
+					<table>
+						<tbody>
+							for _, m := range e.Members {
+								<tr>
+									<td>
+										if m.Name != "" {
+											{ m.Name }
+											{ " " }
+										}
+										<span class="muted">{ m.Email }</span>
+									</td>
+									<td><span class="chip">{ m.Role }</span></td>
+									<td>
+										if !m.Me {
+											<form method="post" action={ templ.SafeURL("/admin/environments/" + e.ID + "/remove") }>
+												<input type="hidden" name="user" value={ m.UserID }/>
+												<button type="submit" class="button button-ghost">Retirer</button>
+											</form>
+										} else {
+											<span class="muted">moi</span>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+				<form method="post" action={ templ.SafeURL("/admin/environments/" + e.ID + "/invite") }>
+					<div class="field-row">
+						<input type="email" name="email" placeholder="adresse Google à inviter" required/>
+						<select name="role">
+							for _, r := range v.Roles {
+								<option value={ r }>{ r }</option>
+							}
+						</select>
+						<button type="submit" class="button">Inviter</button>
+					</div>
+				</form>
+			</section>
+		}
+		<style>
+			.env-card h3 { display: flex; align-items: baseline; gap: .5rem; margin: 0 0 .75rem; font-size: 1.05rem; }
+			.env-card table { width: 100%; border-collapse: collapse; margin-bottom: .75rem; }
+			.env-card td { padding: .35rem .5rem; border-bottom: 1px solid var(--border); font-size: .9rem; }
+			.env-card form { margin: 0; }
+		</style>
+	}
+}

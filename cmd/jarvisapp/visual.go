@@ -20,7 +20,7 @@ import (
 // du processus courant, mais port libre, collections jetables, et rien qui
 // agisse (modèles, dossier surveillé, copie locale, tickets).
 func visualArgs(current []string, addr, jobsCollection, ticketsCollection string) []string {
-	return deploy.OverrideFlags(current, withMailIsolation(map[string]string{
+	return deploy.OverrideFlags(current, withCheckIsolation(map[string]string{
 		"addr":               addr,
 		"mongo-collection":   jobsCollection + "_visualcheck",
 		"tickets-collection": ticketsCollection + "_visualcheck",
@@ -34,13 +34,25 @@ func visualArgs(current []string, addr, jobsCollection, ticketsCollection string
 	}))
 }
 
-// withMailIsolation : une instance de contrôle (essai à blanc, capture)
-// ne relève jamais la boîte mail et ne lit ni ne trie les vrais emails
-// (jalon 39).
-func withMailIsolation(overrides map[string]string) map[string]string {
+// withCheckIsolation : une instance de contrôle (essai à blanc du
+// déploiement, capture pour la relecture visuelle) ne doit toucher à rien
+// de réel. Elle ne relève jamais la boîte mail et ne lit ni ne trie les
+// vrais emails (jalon 39) ; elle n'écrit ni dans le journal des
+// modifications ni dans les changesets, et surtout elle **n'a pas
+// d'authentification** (jalon 51).
+//
+// Ce dernier point n'est pas un détail : avec l'authentification
+// configurée, une instance de contrôle renverrait chacune de ses pages
+// vers /login, et l'essai à blanc du déploiement échouerait
+// systématiquement — plus aucun ticket ne pourrait être déployé.
+func withCheckIsolation(overrides map[string]string) map[string]string {
 	overrides["mail-config"] = ""
 	overrides["mail-collection"] = "emails_check"
 	overrides["mail-files-collection"] = "email_files_check"
+	overrides["auth-config"] = ""
+	overrides["accounts-prefix"] = "accounts_check_"
+	overrides["changes-collection"] = "changes_check"
+	overrides["changeset-collection"] = "changeset_check"
 	return overrides
 }
 

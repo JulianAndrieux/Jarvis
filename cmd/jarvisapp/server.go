@@ -197,6 +197,7 @@ func (s *Server) Routes() chi.Router {
 	r.Post("/admin/refresh", s.handleRefresh)
 	s.activityRoutes(r)
 	s.changesetRoutes(r)
+	s.environmentRoutes(r)
 	s.architectureRoutes(r)
 
 	// Jalon 33 : l'Admin vit sous /admin. Accueil de l'Admin, et les

@@ -50,6 +50,7 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 	// barre (affichée sur toutes les pages).
 	v := buildSidebar(now, tasks, active, failed, tks, mails)
 	v.Pending = s.pendingCount(r)
+	v.Envs, v.CurrentEnv = s.envOptions(r)
 	w.Header().Set("Cache-Control", "no-store")
 	renderPage(w, r, http.StatusOK, templates.Sidebar(v), "sidebar")
 }
@@ -149,4 +150,29 @@ func firstLine(s string, max int) string {
 		return string(r[:max]) + "…"
 	}
 	return s
+}
+
+// envOptions : mes environnements et celui que je regarde, pour le
+// sélecteur de la barre latérale. Sans comptes configurés, il n'y en a
+// qu'un : pas de sélecteur.
+func (s *Server) envOptions(r *http.Request) ([]templates.EnvOption, string) {
+	scope := scopeOf(r)
+	if s.Accounts == nil || scope.User == "" {
+		return nil, string(scope.Env)
+	}
+	envs, err := s.Accounts.EnvironmentsOf(r.Context(), scope.User)
+	if err != nil {
+		// Une source illisible laisse le sélecteur vide plutôt que de casser
+		// la barre, comme ses autres blocs.
+		return nil, string(scope.Env)
+	}
+	out := make([]templates.EnvOption, 0, len(envs))
+	for _, e := range envs {
+		name := e.Name
+		if name == "" {
+			name = string(e.ID)
+		}
+		out = append(out, templates.EnvOption{ID: string(e.ID), Name: name})
+	}
+	return out, string(scope.Env)
 }
