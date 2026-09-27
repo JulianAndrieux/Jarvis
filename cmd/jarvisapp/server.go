@@ -23,6 +23,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
 	"github.com/JulianAndrieux/Jarvis/internal/accounts"
 	"github.com/JulianAndrieux/Jarvis/internal/agents"
+	"github.com/JulianAndrieux/Jarvis/internal/changes"
 	"github.com/JulianAndrieux/Jarvis/internal/codemap"
 	"github.com/JulianAndrieux/Jarvis/internal/diagram"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
@@ -67,6 +68,9 @@ type Server struct {
 	// OAuth : le client Google. ClientID vide, la connexion Google n'est
 	// pas proposée (le lien de secours du propriétaire reste, lui).
 	OAuth googleauth.Config
+	// Journal : l'histoire des modifications faites par les humains (jalon
+	// 46) ; nil désactive l'onglet Activité.
+	Journal changes.Journal
 	// LocalLogin : jeton de secours du propriétaire, écrit dans le journal
 	// au démarrage — une panne de Google ne doit pas interdire d'ouvrir une
 	// application par ailleurs locale.
@@ -186,6 +190,7 @@ func (s *Server) Routes() chi.Router {
 	r.Get("/admin/tests", s.handleTests)
 	r.Post("/admin/tests/run", s.handleTestsRun)
 	r.Post("/admin/refresh", s.handleRefresh)
+	s.activityRoutes(r)
 	s.architectureRoutes(r)
 
 	// Jalon 33 : l'Admin vit sous /admin. Accueil de l'Admin, et les

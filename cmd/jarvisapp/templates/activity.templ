@@ -1,0 +1,82 @@
+package templates
+
+// ActivityEntry : une modification, prête à afficher.
+type ActivityEntry struct {
+	When  string // heure locale
+	Who   string // nom ou adresse, à défaut l'identifiant
+	Kind  string // document, note, tâche...
+	Label string // de quoi il s'agit
+	// What : la phrase décrivant la modification ("titre : Courses →
+	// Courses de la semaine", "créée", "supprimée").
+	What string
+	// Href : vers l'entité, si elle existe encore ("" sinon).
+	Href string
+	Mine bool
+}
+
+// ActivityView : l'écran d'activité.
+type ActivityView struct {
+	// Everyone : vue de tout l'environnement plutôt que de mes seules
+	// modifications.
+	Everyone bool
+	Entries  []ActivityEntry
+	// EnvName : l'environnement regardé.
+	EnvName string
+}
+
+templ ActivityPage(v ActivityView) {
+	@Layout("Activité", "activity") {
+		<div class="page-title"><h2>Activité</h2></div>
+		<p class="muted">
+			Ce qui a été modifié dans { v.EnvName }. Les lectures de documents
+			et les écritures du traitement n'y figurent pas : seulement ce
+			qu'une personne a changé.
+		</p>
+		<div class="filters">
+			if v.Everyone {
+				<a class="chip" href="/activity">Mes modifications</a>
+				<span class="chip active">Tout l'environnement</span>
+			} else {
+				<span class="chip active">Mes modifications</span>
+				<a class="chip" href="/activity?tout=1">Tout l'environnement</a>
+			}
+		</div>
+		if len(v.Entries) == 0 {
+			<p class="muted">Rien pour l'instant.</p>
+		} else {
+			<table class="activity">
+				<tbody>
+					for _, e := range v.Entries {
+						<tr>
+							<td class="muted nowrap">{ e.When }</td>
+							<td class="nowrap">
+								if e.Mine {
+									<strong>moi</strong>
+								} else {
+									{ e.Who }
+								}
+							</td>
+							<td class="muted nowrap">{ e.Kind }</td>
+							<td>
+								if e.Href != "" {
+									<a href={ templ.SafeURL(e.Href) }>{ e.Label }</a>
+								} else {
+									{ e.Label }
+								}
+							</td>
+							<td>{ e.What }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+		<style>
+			.filters { display: flex; gap: .4rem; margin: 0 0 1rem; }
+			.filters .chip.active { background: var(--accent-soft); color: var(--accent); }
+			.filters a.chip { text-decoration: none; }
+			table.activity { width: 100%; border-collapse: collapse; }
+			table.activity td { padding: .45rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; font-size: .92rem; }
+			table.activity .nowrap { white-space: nowrap; }
+		</style>
+	}
+}

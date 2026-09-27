@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/changes"
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/gate"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
@@ -160,6 +161,12 @@ type JobManager struct {
 	// fois le job terminé (Done ou Failed), avec l'état final du job.
 	OnFinish func(job Job)
 
+	// Changes, s'il est donné, journalise ce qu'un humain modifie (jalon
+	// 46). Jamais ce que la machine écrit : le statut, l'avancement, le
+	// résultat d'extraction et la miniature n'ont rien à faire dans « qui a
+	// changé quoi » — le Recorder ignore d'ailleurs une portée de fond.
+	Changes *changes.Recorder
+
 	// DefaultScope est la portée utilisée quand le contexte n'en porte
 	// pas. C'est un choix de câblage explicite, pas un repli caché :
 	// NewJobManager la fixe sur l'unique environnement d'aujourd'hui, et
@@ -222,6 +229,10 @@ func (m *JobManager) SubmitWithTags(ctx context.Context, filename string, conten
 	if err != nil {
 		return Job{}, fmt.Errorf("webapp: create job: %w", err)
 	}
+	// Déposer un document est bien une action d'un humain. Un fichier
+	// ingéré par le dossier surveillé, lui, arrive sans session : le
+	// Recorder l'ignore de lui-même.
+	m.Changes.Record(ctx, jobOp(created, "", changes.Create))
 
 	go m.process(created, m.runner.RunAuto)
 
@@ -541,7 +552,15 @@ func (m *JobManager) Get(ctx context.Context, id string) (Job, bool, error) {
 // copie locale additionnelle éventuelle (--out-dir) : celle-ci reste un
 // filet de secours indépendant, jamais purgé automatiquement.
 func (m *JobManager) Delete(ctx context.Context, id string) error {
-	return m.db(ctx).Delete(ctx, id)
+	job, _, err := m.db(ctx).Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := m.db(ctx).Delete(ctx, id); err != nil {
+		return err
+	}
+	m.Changes.Record(ctx, jobOp(job, "", changes.Delete))
+	return nil
 }
 
 // RecoverOrphaned marque en échec tout job resté StatusPending ou
@@ -585,9 +604,14 @@ func (m *JobManager) List(ctx context.Context, q ListQuery) ([]Job, error) {
 // ciblée (Store.SetTags) : jamais une relecture/réécriture du job entier,
 // qui pourrait annuler une fin de traitement concurrente.
 func (m *JobManager) SetTags(ctx context.Context, id string, tags []string) error {
+	before, _, err := m.db(ctx).Get(ctx, id)
+	if err != nil {
+		return err
+	}
 	if err := m.db(ctx).SetTags(ctx, id, tags); err != nil {
 		return fmt.Errorf("webapp: set tags %s: %w", id, err)
 	}
+	m.recordSet(ctx, before, "tags", before.Tags, tags)
 	return nil
 }
 
@@ -595,9 +619,15 @@ func (m *JobManager) SetTags(ctx context.Context, id string, tags []string) erro
 // fin retirés). Comme les tags, sans incidence sur le traitement, et par
 // écriture ciblée.
 func (m *JobManager) SetComment(ctx context.Context, id, comment string) error {
-	if err := m.db(ctx).SetComment(ctx, id, strings.TrimSpace(comment)); err != nil {
+	before, _, err := m.db(ctx).Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	comment = strings.TrimSpace(comment)
+	if err := m.db(ctx).SetComment(ctx, id, comment); err != nil {
 		return fmt.Errorf("webapp: set comment %s: %w", id, err)
 	}
+	m.recordSet(ctx, before, "comment", before.Comment, comment)
 	return nil
 }
 
@@ -629,6 +659,10 @@ func (m *JobManager) Reprocess(ctx context.Context, id, docType string) error {
 		fmt.Fprintf(os.Stderr, "webapp: clear progress %s: %v\n", job.ID, err)
 	}
 
+	// Réattribuer le type est une décision de l'humain, pas une
+	// classification de la machine : elle mérite une trace.
+	m.recordSet(ctx, job, "doc_type", job.DocType, docType)
+
 	go m.process(job, func(ctx context.Context, path string, onProgress pipeline.ProgressFunc) (pipeline.Result, error) {
 		return m.runner.RunWithType(ctx, docType, path, onProgress)
 	})
@@ -657,4 +691,23 @@ func conversionError(name string, err error) error {
 // iframe vers un fichier absent).
 func ConversionFailed(j Job) bool {
 	return j.Status == StatusFailed && strings.HasPrefix(j.Err, conversionErrPrefix)
+}
+
+// jobOp : une opération du journal visant ce document. Le nom du fichier
+// sert d'étiquette : un identifiant ne dit rien, et le document peut avoir
+// été supprimé quand on relit le journal.
+func jobOp(job Job, field string, action changes.Action) changes.Op {
+	return changes.Op{Kind: changes.KindDocument, Target: job.ID, Label: job.Filename, Field: field, Action: action}
+}
+
+// recordSet journalise « ce champ passe de before à after », et rien si la
+// valeur n'a pas bougé.
+func (m *JobManager) recordSet(ctx context.Context, job Job, field string, before, after any) {
+	b, a := changes.JSON(before), changes.JSON(after)
+	if b == a {
+		return
+	}
+	op := jobOp(job, field, changes.Set)
+	op.Before, op.After = b, a
+	m.Changes.Record(ctx, op)
 }

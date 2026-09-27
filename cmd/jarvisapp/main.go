@@ -30,6 +30,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
 	"github.com/JulianAndrieux/Jarvis/internal/agents"
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
+	"github.com/JulianAndrieux/Jarvis/internal/changes"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
 	"github.com/JulianAndrieux/Jarvis/internal/claudecode"
 	"github.com/JulianAndrieux/Jarvis/internal/deploy"
@@ -93,6 +94,7 @@ func main() {
 	agentsCollection := flag.String("agents-collection", "agents", "Collection MongoDB des prompts des agents (onglet Agents)")
 	notesCollection := flag.String("notes-collection", "notes", "Collection MongoDB des notes (onglet Notes)")
 	tasksCollection := flag.String("tasks-collection", "tasks", "Collection MongoDB des tâches (onglet Tâches)")
+	changesCollection := flag.String("changes-collection", "changes", "Collection MongoDB du journal des modifications (onglet Activité)")
 	mailCollection := flag.String("mail-collection", "emails", "Collection MongoDB des emails relevés (onglet Emails)")
 	mailFilesCollection := flag.String("mail-files-collection", "email_files", "Collection MongoDB du contenu des pièces jointes")
 	mailConfig := flag.String("mail-config", defaultMailConfig(), "Configuration de la boîte mail (serveur, adresse, mot de passe d'application — fichier local 0600, jamais dans Atlas, rempli depuis l'onglet Emails) ; vide = pas de relève ni de tri")
@@ -162,6 +164,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("jarvisapp: emails : %v", err)
 	}
+
+	// Journal des modifications faites par les humains (jalon 46) :
+	// append-only, cloisonné par environnement. Un échec d'écriture ne
+	// défait jamais la modification qu'il décrit — il est seulement
+	// journalisé.
+	journalCtx, cancelJournal := context.WithTimeout(context.Background(), 10*time.Second)
+	journal, err := changes.NewMongoJournal(journalCtx, mongoConn, *mongoDB, *changesCollection)
+	cancelJournal()
+	if err != nil {
+		log.Fatalf("jarvisapp: journal des modifications : %v", err)
+	}
+	recorder := &changes.Recorder{Journal: journal, Logf: log.Printf}
 
 	registry := doctype.NewDefaultRegistry()
 
@@ -233,6 +247,7 @@ func main() {
 	})
 
 	jobs := webapp.NewJobManager(jobStore, runner)
+	jobs.Changes = recorder
 	jobs.Renderer = parsing.PdftoppmRenderer{}
 	// Jalon 25 : conversion locale des fichiers non-PDF (LibreOffice,
 	// sips). Sans LibreOffice, ces fichiers échouent avec un message
@@ -470,7 +485,7 @@ func main() {
 		log.Printf("jarvisapp: pilote automatique des tickets activé (déploiement si vérification et relecture réussies)")
 	}
 
-	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore}, Mail: mailService}
+	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore, Changes: recorder}, Mail: mailService, Journal: journal}
 
 	// Authentification (jalon 45). Sans fichier de configuration, rien ne
 	// change : un seul environnement, aucun écran de connexion — c'est ce

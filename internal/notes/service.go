@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/changes"
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
@@ -17,6 +18,11 @@ type Service struct {
 	Store Store
 	// Now : horloge (nil : time.Now) — fixée dans les tests.
 	Now func() time.Time
+	// Changes, s'il est donné, journalise les modifications faites par un
+	// humain (jalon 46) : « qui a changé quoi ». Une opération par champ
+	// réellement modifié — c'est la granularité dont le changeset (jalon
+	// 48) aura besoin, pas une trace « la note a changé ».
+	Changes *changes.Recorder
 	// DefaultScope est la portée utilisée quand le contexte n'en porte
 	// pas : choix de câblage explicite (l'unique environnement
 	// d'aujourd'hui), que le jalon 45 remplacera par la portée de la
@@ -60,6 +66,7 @@ func (s *Service) NewNote(ctx context.Context, docID string) (Note, error) {
 	if err := s.db(ctx).CreateNote(ctx, n); err != nil {
 		return Note{}, err
 	}
+	s.Changes.Record(ctx, noteOp(n, "", changes.Create))
 	return n, nil
 }
 
@@ -70,12 +77,33 @@ func (s *Service) SaveNote(ctx context.Context, id, title, body, tags string, pi
 	if err != nil {
 		return Note{}, err
 	}
+	// L'état d'avant est capturé ici, avant toute écriture : le journal
+	// compare des champs, pas des intentions.
+	before := n
 	n.Title = strings.TrimSpace(title)
 	if n.Title == "" {
 		n.Title = untitled
 	}
 	n.Body, n.Tags, n.Pinned, n.UpdatedAt = body, splitTags(tags), pinned, s.now()
-	return n, s.db(ctx).UpdateNote(ctx, n)
+	if err := s.db(ctx).UpdateNote(ctx, n); err != nil {
+		return Note{}, err
+	}
+	var ops []changes.Op
+	for _, c := range []struct {
+		field         string
+		before, after any
+	}{
+		{"title", before.Title, n.Title},
+		{"body", before.Body, n.Body},
+		{"tags", before.Tags, n.Tags},
+		{"pinned", before.Pinned, n.Pinned},
+	} {
+		if op, ok := setOp(noteOp(n, c.field, changes.Set), c.before, c.after); ok {
+			ops = append(ops, op)
+		}
+	}
+	s.Changes.Record(ctx, ops...)
+	return n, nil
 }
 
 // DeleteNote supprime une note ; ses tâches restent, déliées.
@@ -90,7 +118,15 @@ func (s *Service) DeleteNote(ctx context.Context, id string) error {
 			return err
 		}
 	}
-	return s.db(ctx).DeleteNote(ctx, id)
+	n, err := s.note(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.db(ctx).DeleteNote(ctx, id); err != nil {
+		return err
+	}
+	s.Changes.Record(ctx, noteOp(n, "", changes.Delete))
+	return nil
 }
 
 // LinkDoc lie le document docID à la note (une seule fois).
@@ -99,8 +135,15 @@ func (s *Service) LinkDoc(ctx context.Context, noteID, docID string) error {
 	if err != nil || docID == "" || slices.Contains(n.DocIDs, docID) {
 		return err
 	}
+	before := n.DocIDs
 	n.DocIDs = append(n.DocIDs, docID)
-	return s.db(ctx).UpdateNote(ctx, n)
+	if err := s.db(ctx).UpdateNote(ctx, n); err != nil {
+		return err
+	}
+	if op, ok := setOp(noteOp(n, "doc_ids", changes.Set), before, n.DocIDs); ok {
+		s.Changes.Record(ctx, op)
+	}
+	return nil
 }
 
 // UnlinkDoc retire le lien entre la note et le document docID.
@@ -109,8 +152,15 @@ func (s *Service) UnlinkDoc(ctx context.Context, noteID, docID string) error {
 	if err != nil {
 		return err
 	}
+	before := append([]string(nil), n.DocIDs...)
 	n.DocIDs = slices.DeleteFunc(n.DocIDs, func(d string) bool { return d == docID })
-	return s.db(ctx).UpdateNote(ctx, n)
+	if err := s.db(ctx).UpdateNote(ctx, n); err != nil {
+		return err
+	}
+	if op, ok := setOp(noteOp(n, "doc_ids", changes.Set), before, n.DocIDs); ok {
+		s.Changes.Record(ctx, op)
+	}
+	return nil
 }
 
 // AddTask crée une tâche depuis une saisie rapide (cf. ParseQuickAdd),
@@ -126,7 +176,11 @@ func (s *Service) AddTask(ctx context.Context, input, noteID, docID string) (Tas
 		return Task{}, err
 	}
 	t := Task{ID: id, Title: q.Title, Due: q.Due, Priority: q.Priority, NoteID: noteID, DocID: docID, CreatedAt: now}
-	return t, s.db(ctx).CreateTask(ctx, t)
+	if err := s.db(ctx).CreateTask(ctx, t); err != nil {
+		return Task{}, err
+	}
+	s.Changes.Record(ctx, taskOp(t, "", changes.Create))
+	return t, nil
 }
 
 // AddMailTask crée une tâche depuis un email (saisie rapide, cf.
@@ -142,7 +196,11 @@ func (s *Service) AddMailTask(ctx context.Context, input, mailID string) (Task, 
 		return Task{}, err
 	}
 	t := Task{ID: id, Title: q.Title, Due: q.Due, Priority: q.Priority, MailID: mailID, CreatedAt: now}
-	return t, s.db(ctx).CreateTask(ctx, t)
+	if err := s.db(ctx).CreateTask(ctx, t); err != nil {
+		return Task{}, err
+	}
+	s.Changes.Record(ctx, taskOp(t, "", changes.Create))
+	return t, nil
 }
 
 // NewMailNote crée une note depuis un email, liée à cet email.
@@ -156,7 +214,11 @@ func (s *Service) NewMailNote(ctx context.Context, mailID, title, body string) (
 		title = untitled
 	}
 	n := Note{ID: id, Title: title, Body: body, MailID: mailID, CreatedAt: now, UpdatedAt: now}
-	return n, s.db(ctx).CreateNote(ctx, n)
+	if err := s.db(ctx).CreateNote(ctx, n); err != nil {
+		return Note{}, err
+	}
+	s.Changes.Record(ctx, noteOp(n, "", changes.Create))
+	return n, nil
 }
 
 // ToggleTask coche ou décoche une tâche.
@@ -165,12 +227,19 @@ func (s *Service) ToggleTask(ctx context.Context, id string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
+	was := t.Done
 	t.Done = !t.Done
 	t.DoneAt = time.Time{}
 	if t.Done {
 		t.DoneAt = s.now()
 	}
-	return t, s.db(ctx).UpdateTask(ctx, t)
+	if err := s.db(ctx).UpdateTask(ctx, t); err != nil {
+		return Task{}, err
+	}
+	if op, ok := setOp(taskOp(t, "done", changes.Set), was, t.Done); ok {
+		s.Changes.Record(ctx, op)
+	}
+	return t, nil
 }
 
 // SaveTask enregistre une tâche modifiée. due : "AAAA-MM-JJ" ou "".
@@ -188,13 +257,41 @@ func (s *Service) SaveTask(ctx context.Context, id, title, due, priority, noteID
 			return Task{}, fmt.Errorf("échéance invalide %q (AAAA-MM-JJ attendu)", due)
 		}
 	}
+	before := t
 	t.Due, t.Priority, t.NoteID, t.DocID = due, ParsePriority(priority), noteID, docID
-	return t, s.db(ctx).UpdateTask(ctx, t)
+	if err := s.db(ctx).UpdateTask(ctx, t); err != nil {
+		return Task{}, err
+	}
+	var ops []changes.Op
+	for _, c := range []struct {
+		field         string
+		before, after any
+	}{
+		{"title", before.Title, t.Title},
+		{"due", before.Due, t.Due},
+		{"priority", before.Priority, t.Priority},
+		{"note_id", before.NoteID, t.NoteID},
+		{"doc_id", before.DocID, t.DocID},
+	} {
+		if op, ok := setOp(taskOp(t, c.field, changes.Set), c.before, c.after); ok {
+			ops = append(ops, op)
+		}
+	}
+	s.Changes.Record(ctx, ops...)
+	return t, nil
 }
 
 // DeleteTask supprime une tâche.
 func (s *Service) DeleteTask(ctx context.Context, id string) error {
-	return s.db(ctx).DeleteTask(ctx, id)
+	t, err := s.task(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.db(ctx).DeleteTask(ctx, id); err != nil {
+		return err
+	}
+	s.Changes.Record(ctx, taskOp(t, "", changes.Delete))
+	return nil
 }
 
 func (s *Service) note(ctx context.Context, id string) (Note, error) {
@@ -235,4 +332,25 @@ func newID() (string, error) {
 		return "", fmt.Errorf("notes: generate id: %w", err)
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// noteOp et taskOp : une opération du journal visant cette entité.
+func noteOp(n Note, field string, action changes.Action) changes.Op {
+	return changes.Op{Kind: changes.KindNote, Target: n.ID, Label: n.Title, Field: field, Action: action}
+}
+
+func taskOp(t Task, field string, action changes.Action) changes.Op {
+	return changes.Op{Kind: changes.KindTask, Target: t.ID, Label: t.Title, Field: field, Action: action}
+}
+
+// setOp : une opération « ce champ passe de before à after », ou rien du
+// tout si la valeur n'a pas bougé. Un enregistrement sans modification ne
+// doit pas remplir le journal.
+func setOp(base changes.Op, before, after any) (changes.Op, bool) {
+	b, a := changes.JSON(before), changes.JSON(after)
+	if b == a {
+		return changes.Op{}, false
+	}
+	base.Action, base.Before, base.After = changes.Set, b, a
+	return base, true
 }
