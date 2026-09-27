@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/accounts"
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
 	"github.com/JulianAndrieux/Jarvis/internal/agents"
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
@@ -35,6 +36,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
 	"github.com/JulianAndrieux/Jarvis/internal/gate"
+	"github.com/JulianAndrieux/Jarvis/internal/googleauth"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
 	"github.com/JulianAndrieux/Jarvis/internal/models"
@@ -106,6 +108,8 @@ func main() {
 	agentDev := flag.Bool("agent-dev", true, "Développement automatique des tickets au plan validé (copie de travail git isolée, vérification complète, diff à relire)")
 	worktreesDir := flag.String("worktrees-dir", "", "Dossier des copies de travail des tickets ; vide = ~/.jarvis/worktrees")
 	deployOn := flag.Bool("deploy", true, "Déploiement des tickets au diff accepté : fusion vérifiée dans main, essai à blanc, redémarrage sur la nouvelle version (nécessite --agent-dev)")
+	authConfig := flag.String("auth-config", defaultAuthConfig(), "Fournisseur d'identité (client OAuth Google + propriétaire de l'instance) — fichier local 0600, jamais une option de ligne de commande (un secret en argument est lisible dans ps) ; fichier absent = authentification désactivée, comportement mono-utilisateur d'avant le jalon 45")
+	accountsPrefix := flag.String("accounts-prefix", "accounts_", "Préfixe des collections MongoDB des comptes (users, envs, memberships, sessions)")
 	deployMarker := flag.String("deploy-marker", "", "Marqueur du déploiement en attente de confirmation ; vide = ~/.jarvis/deploy.json (le lanceur lit le même)")
 	flag.Parse()
 
@@ -467,6 +471,54 @@ func main() {
 	}
 
 	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore}, Mail: mailService}
+
+	// Authentification (jalon 45). Sans fichier de configuration, rien ne
+	// change : un seul environnement, aucun écran de connexion — c'est ce
+	// qui permet de continuer à lancer l'application depuis le Dock sans
+	// rien préparer.
+	authCfg, hasAuth, err := accounts.LoadConfig(*authConfig)
+	if err != nil {
+		log.Fatalf("jarvisapp: %v", err)
+	}
+	if hasAuth {
+		if loose, err := accounts.InsecurePermissions(*authConfig); err == nil && loose {
+			log.Printf("jarvisapp: ATTENTION — %s est lisible par d'autres utilisateurs : chmod 600 (il contient le secret du client OAuth)", *authConfig)
+		}
+		accCtx, cancelAcc := context.WithTimeout(context.Background(), 10*time.Second)
+		accStore, err := accounts.NewMongoStore(accCtx, mongoConn, *mongoDB, *accountsPrefix)
+		cancelAcc()
+		if err != nil {
+			log.Fatalf("jarvisapp: comptes : %v", err)
+		}
+		mgr := &accounts.Manager{Store: accStore, OwnerEmail: authCfg.OwnerEmail}
+		if err := mgr.Bootstrap(context.Background()); err != nil {
+			log.Fatalf("jarvisapp: comptes : %v", err)
+		}
+		if n, err := mgr.PurgeExpired(context.Background()); err != nil {
+			log.Printf("jarvisapp: purge des sessions expirées : %v", err)
+		} else if n > 0 {
+			log.Printf("jarvisapp: %d session(s) expirée(s) purgée(s)", n)
+		}
+		srv.Accounts = mgr
+		if authCfg.ClientID != "" {
+			srv.OAuth = googleauth.Google(authCfg.ClientID, authCfg.ClientSecret, "http://"+loopbackAddr(*addr)+"/auth/callback")
+			log.Printf("jarvisapp: authentification Google active (%s)", authCfg)
+		} else {
+			log.Printf("jarvisapp: authentification active sans Google (%s) : seul le lien de secours du propriétaire ouvre une session", authCfg)
+		}
+		// Le lien de secours : se connecter par Google demande Internet, et
+		// une panne du fournisseur ne doit pas interdire d'ouvrir une
+		// application par ailleurs locale. Écrit ici seulement — donc
+		// lisible par qui a accès à la machine.
+		token, err := accounts.RandomToken()
+		if err != nil {
+			log.Fatalf("jarvisapp: jeton de secours : %v", err)
+		}
+		srv.LocalLogin = NewLocalLogin(token, time.Now(), localLoginTTL)
+		log.Printf("jarvisapp: lien de secours du propriétaire (un seul usage, %s) : %s", localLoginTTL, localLoginURL(*addr, token))
+	} else {
+		log.Printf("jarvisapp: authentification désactivée (%s absent) : un seul environnement, aucun écran de connexion", *authConfig)
+	}
 	if *agentDev {
 		srv.Unpushed = git.Unpushed
 	}
@@ -623,4 +675,33 @@ func migrateTenancy(ctx context.Context, env tenancy.EnvID, stores map[string]en
 			log.Printf("jarvisapp: ATTENTION — %s : %d enregistrement(s) sans environnement, donc invisibles dans l'application", name, left)
 		}
 	}
+}
+
+// localLoginTTL : durée de validité du lien de secours écrit au démarrage.
+// Assez pour ouvrir le journal et cliquer, pas assez pour qu'il traîne.
+const localLoginTTL = 15 * time.Minute
+
+// defaultAuthConfig : ~/.jarvis/oauth.json ("" si le dossier personnel est
+// inconnu : authentification désactivée).
+func defaultAuthConfig() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".jarvis", "oauth.json")
+}
+
+// loopbackAddr : l'adresse d'écoute sous une forme utilisable dans une URI
+// de redirection. Google n'accepte http:// que sur l'adresse de boucle
+// locale, et refuse "localhost" pour les clients récents : on écrit donc
+// toujours 127.0.0.1.
+func loopbackAddr(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if host == "" || host == "0.0.0.0" || host == "localhost" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
 }

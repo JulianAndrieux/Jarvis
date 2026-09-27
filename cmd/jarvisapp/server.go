@@ -18,13 +18,16 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
+	"github.com/JulianAndrieux/Jarvis/internal/accounts"
 	"github.com/JulianAndrieux/Jarvis/internal/agents"
 	"github.com/JulianAndrieux/Jarvis/internal/codemap"
 	"github.com/JulianAndrieux/Jarvis/internal/diagram"
 	"github.com/JulianAndrieux/Jarvis/internal/doctype"
 	"github.com/JulianAndrieux/Jarvis/internal/formats"
+	"github.com/JulianAndrieux/Jarvis/internal/googleauth"
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/projectinfo"
@@ -55,6 +58,19 @@ type Server struct {
 	// Mail : la boîte de réception relevée et triée (jalon 39) ; nil
 	// désactive l'onglet.
 	Mail *mail.Service
+	// Accounts : comptes, environnements et sessions (jalon 45). nil
+	// désactive l'authentification : l'application se comporte alors comme
+	// avant, un seul environnement et aucun écran de connexion — c'est ce
+	// qui permet de continuer à la lancer depuis le Dock sans rien
+	// configurer.
+	Accounts *accounts.Manager
+	// OAuth : le client Google. ClientID vide, la connexion Google n'est
+	// pas proposée (le lien de secours du propriétaire reste, lui).
+	OAuth googleauth.Config
+	// LocalLogin : jeton de secours du propriétaire, écrit dans le journal
+	// au démarrage — une panne de Google ne doit pas interdire d'ouvrir une
+	// application par ailleurs locale.
+	LocalLogin *LocalLogin
 	// Infra : composants sondés et dessinés sur la page Architecture
 	// (jalon 29) ; vide, le schéma est vide.
 	Infra projectinfo.Diagram
@@ -123,7 +139,20 @@ func (s *Server) Routes() chi.Router {
 	// internal/webguard. Monté ici, sur le routeur racine, pour qu'une route
 	// ajoutée plus tard soit couverte sans qu'on y pense (verrouillé par
 	// TestMutatingRoutes_RejectCrossSiteRequests).
+	// Un handler qui panique ne doit pas emporter le processus : avec
+	// plusieurs users, une page en erreur couperait le service de tous.
+	// (Constaté en écrivant les tests du jalon 45 : une page
+	// d'administration sans modèle de code analysé panique.)
+	r.Use(middleware.Recoverer)
+
 	r.Use(webguard.Guard{Logf: log.Printf}.Middleware)
+
+	// Puis l'identité : chaque requête repart avec la portée de sa session
+	// (ou est renvoyée vers la connexion). C'est le seul endroit où une
+	// portée entre dans l'application.
+	r.Use(s.withScope)
+
+	s.authRoutes(r)
 
 	// Upload / suivi de documents (ex-cmd/jarvisweb).
 	r.Get("/", s.handleIndex)
