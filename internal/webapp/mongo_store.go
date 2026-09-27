@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // MongoStore implémente Store via MongoDB (Atlas en production).
@@ -25,6 +26,12 @@ import (
 // --out-dir`) sont inchangés et n'envoient toujours rien nulle part.
 type MongoStore struct {
 	Collection *mongo.Collection
+	// scope : l'environnement vu par cette instance. Renseigné par For ;
+	// vide, toute opération est refusée (voir ensure). Chaque filtre passe
+	// par key() ou y ajoute env_id — c'est ce qui rend un oubli de
+	// cloisonnement structurellement difficile, et le contrat d'isolation
+	// le vérifie méthode par méthode.
+	scope tenancy.Scope
 	// Files est le bucket GridFS des fichiers des jobs (original, version
 	// PDF, aperçu) — jalon 25 : plus de limite de 16 Mo par document, et
 	// Get ne transfère plus le fichier à chaque lecture (le volet d'un
@@ -48,11 +55,40 @@ func NewMongoStore(ctx context.Context, uri, database, collection string) (*Mong
 	return &MongoStore{
 		Collection: db.Collection(collection),
 		Files:      db.GridFSBucket(options.GridFSBucket().SetName(collection + "_files")),
+		// Scopé sur l'unique environnement tant que l'authentification
+		// n'existe pas : choix du câblage, explicite ici, que le jalon 45
+		// remplacera par la portée de la session.
+		scope: tenancy.Scope{Env: tenancy.Local, Role: tenancy.RoleOwner},
 	}, nil
 }
 
+func (s *MongoStore) For(scope tenancy.Scope) Store {
+	c := *s
+	c.scope = scope
+	return &c
+}
+
+// key : le filtre d'un job précis. Un identifiant d'un autre
+// environnement ne correspond à rien — donc 404, jamais 403 : un 403
+// confirmerait son existence.
+func (s *MongoStore) key(id string) bson.M {
+	return bson.M{"_id": id, "env_id": string(s.scope.Env)}
+}
+
+// ensure refuse une opération sans environnement plutôt que d'écrire dans
+// un environnement vide.
+func (s *MongoStore) ensure() error {
+	if err := s.scope.Valid(); err != nil {
+		return fmt.Errorf("webapp: mongo: %w", err)
+	}
+	return nil
+}
+
 func (s *MongoStore) Create(ctx context.Context, job Job) (Job, error) {
-	doc, err := jobToDoc(job)
+	if err := s.ensure(); err != nil {
+		return Job{}, err
+	}
+	doc, err := jobToDoc(s.scope.Env, job)
 	if err != nil {
 		return Job{}, fmt.Errorf("webapp: mongo create %s: %w", job.ID, err)
 	}
@@ -70,21 +106,32 @@ func (s *MongoStore) Create(ctx context.Context, job Job) (Job, error) {
 	return job, nil
 }
 
-func fileID(id string, name FileName) string { return id + "/" + string(name) }
+// fileID : identifiant d'un fichier dans GridFS, préfixé par
+// l'environnement — ainsi une lecture mal scopée ne peut pas tomber sur
+// les octets d'un autre environnement, même si l'identifiant du job fuit.
+// legacyFileID est la forme d'avant le cloisonnement, encore lue par
+// ReadFile mais seulement après avoir vérifié que le job appartient bien à
+// l'environnement courant (voir ReadFile) : pas besoin de déplacer des
+// octets pour migrer.
+func fileID(env tenancy.EnvID, id string, name FileName) string {
+	return string(env) + "/" + id + "/" + string(name)
+}
+
+func legacyFileID(id string, name FileName) string { return id + "/" + string(name) }
 
 // putFile remplace le fichier name du job id dans GridFS.
 func (s *MongoStore) putFile(ctx context.Context, id string, name FileName, data []byte) error {
 	if err := s.deleteFile(ctx, id, name); err != nil {
 		return err
 	}
-	if err := s.Files.UploadFromStreamWithID(ctx, fileID(id, name), string(name), bytes.NewReader(data)); err != nil {
+	if err := s.Files.UploadFromStreamWithID(ctx, fileID(s.scope.Env, id, name), string(name), bytes.NewReader(data)); err != nil {
 		return fmt.Errorf("upload %s: %w", name, err)
 	}
 	return nil
 }
 
 func (s *MongoStore) deleteFile(ctx context.Context, id string, name FileName) error {
-	err := s.Files.Delete(ctx, fileID(id, name))
+	err := s.Files.Delete(ctx, fileID(s.scope.Env, id, name))
 	if err != nil && !errors.Is(err, mongo.ErrFileNotFound) {
 		return fmt.Errorf("delete %s: %w", name, err)
 	}
@@ -92,7 +139,10 @@ func (s *MongoStore) deleteFile(ctx context.Context, id string, name FileName) e
 }
 
 func (s *MongoStore) WriteFile(ctx context.Context, id string, name FileName, data []byte) error {
-	n, err := s.Collection.CountDocuments(ctx, bson.M{"_id": id})
+	if err := s.ensure(); err != nil {
+		return err
+	}
+	n, err := s.Collection.CountDocuments(ctx, s.key(id))
 	if err != nil {
 		return fmt.Errorf("webapp: mongo write %s/%s: %w", id, name, err)
 	}
@@ -106,13 +156,34 @@ func (s *MongoStore) WriteFile(ctx context.Context, id string, name FileName, da
 }
 
 func (s *MongoStore) ReadFile(ctx context.Context, id string, name FileName) ([]byte, bool, error) {
+	if err := s.ensure(); err != nil {
+		return nil, false, err
+	}
 	var buf bytes.Buffer
-	_, err := s.Files.DownloadToStream(ctx, fileID(id, name), &buf)
+	_, err := s.Files.DownloadToStream(ctx, fileID(s.scope.Env, id, name), &buf)
 	if err == nil {
 		return buf.Bytes(), true, nil
 	}
 	if !errors.Is(err, mongo.ErrFileNotFound) {
 		return nil, false, fmt.Errorf("webapp: mongo read %s/%s: %w", id, name, err)
+	}
+	// Fichier écrit avant le cloisonnement (identifiant sans
+	// environnement). On ne le lit qu'après avoir vérifié que le job
+	// appartient à cet environnement : sans cette vérification, un
+	// identifiant d'un autre environnement suffirait à récupérer ses
+	// octets.
+	n, cerr := s.Collection.CountDocuments(ctx, s.key(id))
+	if cerr != nil {
+		return nil, false, fmt.Errorf("webapp: mongo read %s/%s: %w", id, name, cerr)
+	}
+	if n == 0 {
+		return nil, false, nil
+	}
+	buf.Reset()
+	if _, err := s.Files.DownloadToStream(ctx, legacyFileID(id, name), &buf); err == nil {
+		return buf.Bytes(), true, nil
+	} else if !errors.Is(err, mongo.ErrFileNotFound) {
+		return nil, false, fmt.Errorf("webapp: mongo read legacy %s/%s: %w", id, name, err)
 	}
 	if name != FileOriginal {
 		return nil, false, nil
@@ -122,7 +193,7 @@ func (s *MongoStore) ReadFile(ctx context.Context, id string, name FileName) ([]
 	var legacy struct {
 		Content []byte `bson:"content"`
 	}
-	err = s.Collection.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"content": 1})).Decode(&legacy)
+	err = s.Collection.FindOne(ctx, s.key(id), options.FindOne().SetProjection(bson.M{"content": 1})).Decode(&legacy)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, false, nil
 	}
@@ -136,8 +207,11 @@ func (s *MongoStore) ReadFile(ctx context.Context, id string, name FileName) ([]
 }
 
 func (s *MongoStore) Get(ctx context.Context, id string) (Job, bool, error) {
+	if err := s.ensure(); err != nil {
+		return Job{}, false, err
+	}
 	var doc mongoJobDoc
-	err := s.Collection.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"content": 0})).Decode(&doc)
+	err := s.Collection.FindOne(ctx, s.key(id), options.FindOne().SetProjection(bson.M{"content": 0})).Decode(&doc)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return Job{}, false, nil
 	}
@@ -165,6 +239,9 @@ func (s *MongoStore) Get(ctx context.Context, id string) (Job, bool, error) {
 // l'information. Trouvé en testant un vrai upload bout en bout, pas en
 // relecture.
 func (s *MongoStore) Update(ctx context.Context, job Job) error {
+	if err := s.ensure(); err != nil {
+		return err
+	}
 	var resultJSON []byte
 	if job.Result != nil {
 		b, err := json.Marshal(job.Result)
@@ -184,7 +261,7 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 		"search_text": job.SearchText,
 	}}
 
-	res, err := s.Collection.UpdateByID(ctx, job.ID, update)
+	res, err := s.Collection.UpdateOne(ctx, s.key(job.ID), update)
 	if err != nil {
 		return fmt.Errorf("webapp: mongo update %s: %w", job.ID, err)
 	}
@@ -197,7 +274,10 @@ func (s *MongoStore) Update(ctx context.Context, job Job) error {
 // Delete supprime définitivement le job id (bibliothèque de documents,
 // jalon 18).
 func (s *MongoStore) SetThumbnail(ctx context.Context, id string, png []byte) error {
-	res, err := s.Collection.UpdateByID(ctx, id, bson.M{"$set": bson.M{"thumbnail": png}})
+	if err := s.ensure(); err != nil {
+		return err
+	}
+	res, err := s.Collection.UpdateOne(ctx, s.key(id), bson.M{"$set": bson.M{"thumbnail": png}})
 	if err != nil {
 		return fmt.Errorf("webapp: mongo set thumbnail %s: %w", id, err)
 	}
@@ -217,7 +297,10 @@ func (s *MongoStore) SetComment(ctx context.Context, id, comment string) error {
 }
 
 func (s *MongoStore) setField(ctx context.Context, id, field string, value any) error {
-	res, err := s.Collection.UpdateByID(ctx, id, bson.M{"$set": bson.M{field: value}})
+	if err := s.ensure(); err != nil {
+		return err
+	}
+	res, err := s.Collection.UpdateOne(ctx, s.key(id), bson.M{"$set": bson.M{field: value}})
 	if err != nil {
 		return fmt.Errorf("webapp: mongo set %s %s: %w", field, id, err)
 	}
@@ -228,6 +311,9 @@ func (s *MongoStore) setField(ctx context.Context, id, field string, value any) 
 }
 
 func (s *MongoStore) SetProgress(ctx context.Context, id string, progress *pipeline.Progress) error {
+	if err := s.ensure(); err != nil {
+		return err
+	}
 	update := bson.M{"$unset": bson.M{"progress_json": ""}}
 	if progress != nil {
 		b, err := json.Marshal(progress)
@@ -236,7 +322,7 @@ func (s *MongoStore) SetProgress(ctx context.Context, id string, progress *pipel
 		}
 		update = bson.M{"$set": bson.M{"progress_json": b}}
 	}
-	res, err := s.Collection.UpdateByID(ctx, id, update)
+	res, err := s.Collection.UpdateOne(ctx, s.key(id), update)
 	if err != nil {
 		return fmt.Errorf("webapp: mongo set progress %s: %w", id, err)
 	}
@@ -247,7 +333,10 @@ func (s *MongoStore) SetProgress(ctx context.Context, id string, progress *pipel
 }
 
 func (s *MongoStore) Delete(ctx context.Context, id string) error {
-	res, err := s.Collection.DeleteOne(ctx, bson.M{"_id": id})
+	if err := s.ensure(); err != nil {
+		return err
+	}
+	res, err := s.Collection.DeleteOne(ctx, s.key(id))
 	if err != nil {
 		return fmt.Errorf("webapp: mongo delete %s: %w", id, err)
 	}
@@ -267,8 +356,11 @@ func (s *MongoStore) Delete(ctx context.Context, id string) error {
 // document") et retourne le nombre de documents modifiés. Idempotente :
 // lancée à chaque démarrage, elle ne touche jamais un commentaire écrit.
 func (s *MongoStore) MigrateComments(ctx context.Context) (int64, error) {
+	if err := s.ensure(); err != nil {
+		return 0, err
+	}
 	res, err := s.Collection.UpdateMany(ctx,
-		bson.M{"comment": bson.M{"$exists": false}},
+		bson.M{"comment": bson.M{"$exists": false}, "env_id": string(s.scope.Env)},
 		bson.M{"$set": bson.M{"comment": ""}})
 	if err != nil {
 		return 0, fmt.Errorf("webapp: mongo migrate comments: %w", err)
@@ -283,12 +375,16 @@ func (s *MongoStore) MigrateComments(ctx context.Context) (int64, error) {
 // pas d'index de recherche plein texte dédié : la collection est petite,
 // $regex suffit et reste remplaçable en un jour si le volume grandit.
 func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
+	if err := s.ensure(); err != nil {
+		return nil, err
+	}
 	limit := int64(q.Limit)
 	if limit == 0 {
 		limit = int64(DefaultListLimit)
 	}
 
-	var and bson.A
+	// Le cloisonnement d'abord : aucune liste ne traverse un environnement.
+	and := bson.A{bson.M{"env_id": string(s.scope.Env)}}
 	if q.Search != "" {
 		re := bson.M{"$regex": q.Search, "$options": "i"}
 		and = append(and, bson.M{"$or": bson.A{
@@ -320,10 +416,7 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 	default:
 		and = append(and, bson.M{"format": q.Format})
 	}
-	filter := bson.M{}
-	if len(and) > 0 {
-		filter["$and"] = and
-	}
+	filter := bson.M{"$and": and}
 
 	// Le contenu inline des jobs d'avant le jalon 25 n'est jamais rechargé
 	// par une liste.
@@ -363,7 +456,12 @@ func (s *MongoStore) List(ctx context.Context, q ListQuery) ([]Job, error) {
 // façon déjà le format canonique du projet (mêmes octets que
 // internal/store écrit sur disque).
 type mongoJobDoc struct {
-	ID         string    `bson:"_id"`
+	ID string `bson:"_id"`
+	// EnvID : l'environnement propriétaire. Sans omitempty — un document
+	// sans ce champ est un enregistrement d'avant le cloisonnement, qu'on
+	// veut pouvoir compter (CountUnstamped) plutôt que confondre avec un
+	// environnement nommé "".
+	EnvID      string    `bson:"env_id"`
 	DocType    string    `bson:"doc_type"`
 	Filename   string    `bson:"filename"`
 	Content    []byte    `bson:"content"`
@@ -389,9 +487,9 @@ type mongoJobDoc struct {
 	SourceHash string `bson:"source_hash,omitempty"`
 }
 
-func jobToDoc(job Job) (mongoJobDoc, error) {
+func jobToDoc(env tenancy.EnvID, job Job) (mongoJobDoc, error) {
 	doc := mongoJobDoc{
-		ID: job.ID, DocType: job.DocType, Filename: job.Filename,
+		ID: job.ID, EnvID: string(env), DocType: job.DocType, Filename: job.Filename,
 		Status:    string(job.Status),
 		CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, FinishedAt: job.FinishedAt, Err: job.Err,
 		Tags: job.Tags, Comment: job.Comment, SearchText: job.SearchText, Thumbnail: job.Thumbnail,
@@ -416,7 +514,7 @@ func jobToDoc(job Job) (mongoJobDoc, error) {
 
 func docToJob(doc mongoJobDoc) (Job, error) {
 	job := Job{
-		ID: doc.ID, DocType: doc.DocType, Filename: doc.Filename,
+		ID: doc.ID, Env: tenancy.EnvID(doc.EnvID), DocType: doc.DocType, Filename: doc.Filename,
 		Status:    Status(doc.Status),
 		CreatedAt: doc.CreatedAt, StartedAt: doc.StartedAt, FinishedAt: doc.FinishedAt, Err: doc.Err,
 		Tags: doc.Tags, Comment: doc.Comment, SearchText: doc.SearchText, Thumbnail: doc.Thumbnail,
@@ -437,4 +535,43 @@ func docToJob(doc mongoJobDoc) (Job, error) {
 		job.Progress = &progress
 	}
 	return job, nil
+}
+
+// MigrateToEnv attribue l'environnement env à tout job qui n'en a pas
+// encore — les documents d'avant le cloisonnement — et retourne le nombre
+// de documents estampillés.
+//
+// Idempotente, donc sans risque à chaque démarrage (même principe que
+// MigrateComments) : elle ne touche jamais un document déjà estampillé,
+// donc jamais un document d'un autre environnement. Elle n'est correcte
+// que tant qu'il n'existe qu'un seul environnement — ce qui est
+// exactement la situation d'une installation qui vient de passer au
+// cloisonnement. Après cette transition, elle ne trouve plus rien.
+//
+// Les fichiers GridFS ne sont pas déplacés : leur ancien identifiant est
+// encore lu par ReadFile, mais seulement après vérification que le job
+// appartient à l'environnement demandé (voir ReadFile).
+func (s *MongoStore) MigrateToEnv(ctx context.Context, env tenancy.EnvID) (int64, error) {
+	if env == "" {
+		return 0, fmt.Errorf("webapp: migrate: %w", tenancy.ErrNoEnv)
+	}
+	res, err := s.Collection.UpdateMany(ctx,
+		bson.M{"env_id": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"env_id": string(env)}})
+	if err != nil {
+		return 0, fmt.Errorf("webapp: migrate to env %s: %w", env, err)
+	}
+	return res.ModifiedCount, nil
+}
+
+// CountUnstamped compte les jobs sans environnement. Sert à le dire au
+// démarrage plutôt qu'à laisser un document devenir invisible en silence :
+// toutes les requêtes filtrant sur env_id, un enregistrement non
+// estampillé ne remonterait dans aucune liste.
+func (s *MongoStore) CountUnstamped(ctx context.Context) (int64, error) {
+	n, err := s.Collection.CountDocuments(ctx, bson.M{"env_id": bson.M{"$exists": false}})
+	if err != nil {
+		return 0, fmt.Errorf("webapp: count unstamped: %w", err)
+	}
+	return n, nil
 }

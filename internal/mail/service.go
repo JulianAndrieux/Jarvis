@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // Service relève la boîte à intervalle régulier et fait trier les
@@ -35,7 +37,15 @@ type Service struct {
 	syncErr    string
 	triageErr  string
 	kick       chan struct{}
-	triageKick chan struct{}
+	triageKick chan struct{} // DefaultScope : portée du travail de fond (relève, tri) quand le
+	// contexte n'en porte pas.
+	DefaultScope tenancy.Scope
+}
+
+// DB rend la persistance des emails vue depuis la portée de l'appel — les
+// handlers passent par ici, jamais par Store directement.
+func (s *Service) DB(ctx context.Context) Store {
+	return scopedStore(ctx, s.Store, s.DefaultScope)
 }
 
 // Status : l'état de la relève, affiché dans l'interface.
@@ -134,7 +144,7 @@ func (s *Service) channelsBoth() (kick, triage chan struct{}) {
 
 // Retriage efface le tri d'un email et le fait refaire.
 func (s *Service) Retriage(ctx context.Context, id string) error {
-	if err := s.Store.SetTriage(ctx, id, Triage{}); err != nil {
+	if err := s.DB(ctx).SetTriage(ctx, id, Triage{}); err != nil {
 		return err
 	}
 	s.kickTriage()
@@ -246,7 +256,7 @@ func (s *Service) triagePending(ctx context.Context) (more bool, err error) {
 	if batch <= 0 {
 		batch = 20
 	}
-	pending, err := s.Store.List(ctx, Query{Untriaged: true, Limit: batch})
+	pending, err := s.DB(ctx).List(ctx, Query{Untriaged: true, Limit: batch})
 	if err != nil {
 		return false, err
 	}
@@ -267,7 +277,7 @@ func (s *Service) triagePending(ctx context.Context) (more bool, err error) {
 		} else if err != nil {
 			return false, err
 		}
-		if err := s.Store.SetTriage(ctx, m.ID, t); err != nil {
+		if err := s.DB(ctx).SetTriage(ctx, m.ID, t); err != nil {
 			return false, err
 		}
 	}

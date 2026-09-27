@@ -7,14 +7,19 @@ package notes
 import (
 	"context"
 	"time"
+
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // Note est une note en Markdown.
 type Note struct {
-	ID    string   `bson:"_id"`
-	Title string   `bson:"title"`
-	Body  string   `bson:"body"`
-	Tags  []string `bson:"tags"`
+	ID string `bson:"_id"`
+	// Env : l'environnement propriétaire. Renseigné par le Store, jamais
+	// par l'appelant.
+	Env   tenancy.EnvID `bson:"env_id"`
+	Title string        `bson:"title"`
+	Body  string        `bson:"body"`
+	Tags  []string      `bson:"tags"`
 	// Pinned : affichée en tête de liste.
 	Pinned bool `bson:"pinned"`
 	// DocIDs : documents de la bibliothèque liés à la note.
@@ -67,8 +72,10 @@ func ParsePriority(s string) Priority {
 
 // Task est une tâche de la todo.
 type Task struct {
-	ID    string `bson:"_id"`
-	Title string `bson:"title"`
+	ID string `bson:"_id"`
+	// Env : l'environnement propriétaire, renseigné par le Store.
+	Env   tenancy.EnvID `bson:"env_id"`
+	Title string        `bson:"title"`
 	// Due : échéance "AAAA-MM-JJ" ("" : sans échéance). Une date, pas un
 	// instant : aucune question de fuseau horaire, et l'ordre
 	// alphabétique est l'ordre chronologique.
@@ -104,6 +111,10 @@ type TaskQuery struct {
 // test). Get : ok=false si l'élément n'existe pas ; Update et Delete
 // échouent sur un élément inconnu.
 type Store interface {
+	// For rend la même persistance vue depuis un environnement : toutes
+	// les lectures et écritures de la vue rendue portent sur ce seul
+	// environnement. Un store sans portée refuse toute opération.
+	For(scope tenancy.Scope) Store
 	CreateNote(ctx context.Context, n Note) error
 	GetNote(ctx context.Context, id string) (Note, bool, error)
 	UpdateNote(ctx context.Context, n Note) error

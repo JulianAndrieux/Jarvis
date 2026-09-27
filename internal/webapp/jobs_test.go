@@ -738,11 +738,7 @@ func (c *fakeConverter) Convert(ctx context.Context, f formats.Format, srcPath s
 	c.gotSrc, _ = os.ReadFile(srcPath)
 	c.gotExt = filepath.Ext(srcPath)
 	if c.store != nil {
-		for _, j := range c.store.jobs {
-			if j.Progress != nil {
-				c.gotStage = j.Progress.Stage
-			}
-		}
+		c.gotStage = c.store.anyStage()
 	}
 	return c.rendition, c.err
 }

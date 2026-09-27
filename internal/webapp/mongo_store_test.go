@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // newTestMongoStore se connecte à une vraie base (MONGO_URI doit être
@@ -601,4 +602,21 @@ func TestMongoStore_List_FiltersByCreationDate(t *testing.T) {
 		}
 		t.Errorf("jobs = %v, want the 12th then the 10th", ids)
 	}
+}
+
+// Le contrat d'isolation, contre une vraie base : c'est là qu'un filtre
+// Mongo oublié se verrait. La fake le passe aussi
+// (TestFakeStore_IsolationContract) — les deux doivent se comporter
+// pareil, leçon du jalon 23.
+func TestMongoStore_IsolationContract(t *testing.T) {
+	store := newTestMongoStore(t)
+	stamp := fmt.Sprintf("iso-%d", time.Now().UnixNano())
+	t.Cleanup(func() {
+		ctx := context.Background()
+		for _, env := range []string{"A-" + stamp, "B-" + stamp} {
+			_, _ = store.Collection.DeleteMany(ctx, bson.M{"env_id": env})
+			_ = store.Files.Delete(ctx, fileID(tenancy.EnvID(env), "job-"+stamp, FileOriginal))
+		}
+	})
+	storeIsolationContract(t, store, stamp)
 }

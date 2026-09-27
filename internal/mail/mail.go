@@ -9,6 +9,8 @@ package mail
 import (
 	"context"
 	"time"
+
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // Mailbox : la seule boîte relevée pour l'instant.
@@ -105,17 +107,21 @@ type Triage struct {
 
 // Mail : un email relevé.
 type Mail struct {
-	ID          string    `bson:"_id"`
-	Account     string    `bson:"account"`
-	Mailbox     string    `bson:"mailbox"`
-	UIDValidity uint32    `bson:"uid_validity"`
-	UID         uint32    `bson:"uid"`
-	MessageID   string    `bson:"message_id"`
-	From        Address   `bson:"from"`
-	To          []Address `bson:"to"`
-	Cc          []Address `bson:"cc"`
-	Subject     string    `bson:"subject"`
-	Date        time.Time `bson:"date"`
+	ID string `bson:"_id"`
+	// Env : l'environnement propriétaire, renseigné par le Store. La
+	// boîte est aujourd'hui celle de l'instance ; quand chaque user aura
+	// la sienne (jalon 50), la portée se resserrera sur (env, user).
+	Env         tenancy.EnvID `bson:"env_id"`
+	Account     string        `bson:"account"`
+	Mailbox     string        `bson:"mailbox"`
+	UIDValidity uint32        `bson:"uid_validity"`
+	UID         uint32        `bson:"uid"`
+	MessageID   string        `bson:"message_id"`
+	From        Address       `bson:"from"`
+	To          []Address     `bson:"to"`
+	Cc          []Address     `bson:"cc"`
+	Subject     string        `bson:"subject"`
+	Date        time.Time     `bson:"date"`
 	// Text : le corps en texte (le HTML converti, jamais affiché tel quel).
 	Text        string       `bson:"text"`
 	Seen        bool         `bson:"seen"` // déjà lu dans la boîte à la relève
@@ -144,6 +150,9 @@ const DefaultLimit = 200
 
 // Store persiste les emails (MongoStore en production, FakeStore en test).
 type Store interface {
+	// For rend la même persistance vue depuis un environnement. Un store
+	// sans portée refuse toute opération.
+	For(scope tenancy.Scope) Store
 	// Save enregistre un email et le contenu de ses pièces jointes (par
 	// index) ; déjà présent (même ID) : rien ne change, created=false.
 	Save(ctx context.Context, m Mail, files map[int][]byte) (created bool, err error)
@@ -158,4 +167,18 @@ type Store interface {
 	// LastUID : le plus grand UID relevé pour ce compte, cette boîte et
 	// cette UIDVALIDITY (0 : aucun).
 	LastUID(ctx context.Context, account, mailbox string, uidValidity uint32) (uint32, error)
+}
+
+// scopedStore : la persistance vue depuis la portée du contexte, ou depuis
+// fallback quand le contexte n'en porte pas (travail de fond démarré au
+// lancement). fallback vide vaut l'unique environnement d'aujourd'hui —
+// choix de câblage que le jalon 45 remplacera par la portée de la session.
+func scopedStore(ctx context.Context, st Store, fallback tenancy.Scope) Store {
+	if sc, ok := tenancy.FromContext(ctx); ok {
+		return st.For(sc)
+	}
+	if fallback.Env == "" {
+		fallback = tenancy.Scope{Env: tenancy.Local, Role: tenancy.RoleOwner}
+	}
+	return st.For(fallback)
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/gate"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // Status est l'état d'avancement d'un job.
@@ -43,7 +44,13 @@ const (
 // Result n'est renseigné que si Status == StatusDone ; Err seulement si
 // Status == StatusFailed.
 type Job struct {
-	ID        string
+	ID string
+	// Env est l'environnement propriétaire du document. Renseigné par le
+	// Store à la lecture (jamais par l'appelant) : un job sait ainsi dans
+	// quel environnement il vit, ce dont le traitement de fond a besoin
+	// pour se scoper lui-même — il tourne dans sa propre goroutine, hors
+	// de toute requête.
+	Env       tenancy.EnvID
 	DocType   string
 	Filename  string
 	Content   []byte
@@ -153,14 +160,32 @@ type JobManager struct {
 	// fois le job terminé (Done ou Failed), avec l'état final du job.
 	OnFinish func(job Job)
 
+	// DefaultScope est la portée utilisée quand le contexte n'en porte
+	// pas. C'est un choix de câblage explicite, pas un repli caché :
+	// NewJobManager la fixe sur l'unique environnement d'aujourd'hui, et
+	// le jalon 45 (authentification) la remplacera par la portée de la
+	// session, résolue par le middleware.
+	DefaultScope tenancy.Scope
+
 	newID func() (string, error) // injectable pour les tests
+}
+
+// db rend la persistance vue depuis la portée de cette opération.
+// Toute lecture et toute écriture du JobManager passent par ici : c'est
+// le seul point où l'environnement entre en jeu.
+func (m *JobManager) db(ctx context.Context) Store {
+	if s, ok := tenancy.FromContext(ctx); ok {
+		return m.store.For(s)
+	}
+	return m.store.For(m.DefaultScope)
 }
 
 func NewJobManager(store Store, runner Runner) *JobManager {
 	return &JobManager{
-		store:  store,
-		runner: runner,
-		newID:  randomID,
+		store:        store,
+		runner:       runner,
+		newID:        randomID,
+		DefaultScope: tenancy.Scope{Env: tenancy.Local, Role: tenancy.RoleOwner},
 	}
 }
 
@@ -193,7 +218,7 @@ func (m *JobManager) SubmitWithTags(ctx context.Context, filename string, conten
 		SourceHash: fmt.Sprintf("%x", sha256.Sum256(content)),
 	}
 
-	created, err := m.store.Create(ctx, job)
+	created, err := m.db(ctx).Create(ctx, job)
 	if err != nil {
 		return Job{}, fmt.Errorf("webapp: create job: %w", err)
 	}
@@ -212,7 +237,14 @@ type runFunc func(ctx context.Context, path string, onProgress pipeline.Progress
 // ensuite), puis pipeline sur le PDF. Les fichiers seulement stockés
 // (zip, dmg...) se terminent sans conversion ni pipeline.
 func (m *JobManager) process(job Job, run runFunc) {
-	ctx := context.Background()
+	// Le traitement tourne hors de toute requête : il se scope lui-même
+	// sur l'environnement du job, sans session — ses écritures sont celles
+	// de la machine, elles ne passeront jamais par un changeset.
+	env := job.Env
+	if env == "" {
+		env = m.DefaultScope.Env
+	}
+	ctx := tenancy.WithScope(context.Background(), tenancy.System(env))
 	release, err := m.acquire(ctx)
 	if err != nil {
 		// Bascule vers les modèles de documents impossible (jalon 37) :
@@ -286,7 +318,7 @@ func (m *JobManager) pipelineInput(ctx context.Context, job Job, fam formats.Fam
 	if !fam.NeedsRendition() {
 		return m.readRequired(ctx, job.ID, FileOriginal)
 	}
-	if pdf, ok, err := m.store.ReadFile(ctx, job.ID, FileRendition); err == nil && ok {
+	if pdf, ok, err := m.db(ctx).ReadFile(ctx, job.ID, FileRendition); err == nil && ok {
 		return pdf, nil
 	}
 	if m.Converter == nil {
@@ -297,7 +329,7 @@ func (m *JobManager) pipelineInput(ctx context.Context, job Job, fam formats.Fam
 	if err != nil {
 		return nil, err
 	}
-	if err := m.store.SetProgress(ctx, job.ID, &pipeline.Progress{Stage: pipeline.StageConverting}); err != nil {
+	if err := m.db(ctx).SetProgress(ctx, job.ID, &pipeline.Progress{Stage: pipeline.StageConverting}); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: store progress %s: %v\n", job.ID, err)
 	}
 	src, cleanup, err := m.materialize(original, sourceExt(job, fam))
@@ -310,11 +342,11 @@ func (m *JobManager) pipelineInput(ctx context.Context, job Job, fam formats.Fam
 	if err != nil {
 		return nil, conversionError(job.Filename, err)
 	}
-	if err := m.store.WriteFile(ctx, job.ID, FileRendition, r.PDF); err != nil {
+	if err := m.db(ctx).WriteFile(ctx, job.ID, FileRendition, r.PDF); err != nil {
 		return nil, fmt.Errorf("webapp: store rendition %s: %w", job.ID, err)
 	}
 	if r.Preview != nil {
-		if err := m.store.WriteFile(ctx, job.ID, FilePreview, r.Preview); err != nil {
+		if err := m.db(ctx).WriteFile(ctx, job.ID, FilePreview, r.Preview); err != nil {
 			fmt.Fprintf(os.Stderr, "webapp: store preview %s: %v\n", job.ID, err)
 		}
 	}
@@ -351,7 +383,7 @@ func sourceExt(job Job, fam formats.Family) string {
 }
 
 func (m *JobManager) readRequired(ctx context.Context, id string, name FileName) ([]byte, error) {
-	data, ok, err := m.store.ReadFile(ctx, id, name)
+	data, ok, err := m.db(ctx).ReadFile(ctx, id, name)
 	if err != nil {
 		return nil, fmt.Errorf("webapp: read %s of %s: %w", name, id, err)
 	}
@@ -364,7 +396,7 @@ func (m *JobManager) readRequired(ctx context.Context, id string, name FileName)
 // ReadFile lit un fichier rattaché au job id (original, version PDF,
 // aperçu) — pour les routes de téléchargement et d'aperçu.
 func (m *JobManager) ReadFile(ctx context.Context, id string, name FileName) ([]byte, bool, error) {
-	return m.store.ReadFile(ctx, id, name)
+	return m.db(ctx).ReadFile(ctx, id, name)
 }
 
 // finishStored termine un job de fichier seulement stocké : terminé, sans
@@ -386,7 +418,7 @@ func (m *JobManager) finishStored(ctx context.Context, job Job) {
 // modifie pendant le traitement n'est jamais écrasé par la copie prise au
 // démarrage — bug réel, trouvé par un test devenu intermittent au jalon 27.
 func (m *JobManager) save(ctx context.Context, job Job) error {
-	return m.store.Update(ctx, job)
+	return m.db(ctx).Update(ctx, job)
 }
 
 // progressRecorder enregistre chaque étape d'avancement du job id. Un
@@ -394,7 +426,7 @@ func (m *JobManager) save(ctx context.Context, job Job) error {
 // suivi est un confort, le résultat final reste enregistré par finish.
 func (m *JobManager) progressRecorder(ctx context.Context, id string) pipeline.ProgressFunc {
 	return func(p pipeline.Progress) {
-		if err := m.store.SetProgress(ctx, id, &p); err != nil {
+		if err := m.db(ctx).SetProgress(ctx, id, &p); err != nil {
 			fmt.Fprintf(os.Stderr, "webapp: store progress %s: %v\n", id, err)
 		}
 	}
@@ -452,7 +484,7 @@ const ThumbnailDPI = 40
 // évite toute migration. ok=false (err=nil) si le job n'existe pas.
 // Un échec de rendu n'est jamais mémorisé : l'appel suivant réessaie.
 func (m *JobManager) Thumbnail(ctx context.Context, id string) ([]byte, bool, error) {
-	job, ok, err := m.store.Get(ctx, id)
+	job, ok, err := m.db(ctx).Get(ctx, id)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -473,7 +505,7 @@ func (m *JobManager) Thumbnail(ctx context.Context, id string) ([]byte, bool, er
 	if fam.NeedsRendition() {
 		source = FileRendition
 	}
-	pdf, found, err := m.store.ReadFile(ctx, id, source)
+	pdf, found, err := m.db(ctx).ReadFile(ctx, id, source)
 	if err != nil {
 		return nil, true, fmt.Errorf("webapp: thumbnail %s: %w", id, err)
 	}
@@ -491,7 +523,7 @@ func (m *JobManager) Thumbnail(ctx context.Context, id string) ([]byte, bool, er
 	if err != nil {
 		return nil, true, fmt.Errorf("webapp: thumbnail %s: %w", id, err)
 	}
-	if err := m.store.SetThumbnail(ctx, id, png); err != nil {
+	if err := m.db(ctx).SetThumbnail(ctx, id, png); err != nil {
 		// La miniature est valide, seule sa mise en cache a échoué : on
 		// la sert quand même, elle sera regénérée au prochain appel.
 		fmt.Fprintf(os.Stderr, "webapp: store thumbnail %s: %v\n", id, err)
@@ -501,7 +533,7 @@ func (m *JobManager) Thumbnail(ctx context.Context, id string) ([]byte, bool, er
 
 // Get retourne le job id, s'il existe.
 func (m *JobManager) Get(ctx context.Context, id string) (Job, bool, error) {
-	return m.store.Get(ctx, id)
+	return m.db(ctx).Get(ctx, id)
 }
 
 // Delete supprime définitivement le job id (bibliothèque de documents,
@@ -509,7 +541,7 @@ func (m *JobManager) Get(ctx context.Context, id string) (Job, bool, error) {
 // copie locale additionnelle éventuelle (--out-dir) : celle-ci reste un
 // filet de secours indépendant, jamais purgé automatiquement.
 func (m *JobManager) Delete(ctx context.Context, id string) error {
-	return m.store.Delete(ctx, id)
+	return m.db(ctx).Delete(ctx, id)
 }
 
 // RecoverOrphaned marque en échec tout job resté StatusPending ou
@@ -524,7 +556,7 @@ func (m *JobManager) Delete(ctx context.Context, id string) error {
 func (m *JobManager) RecoverOrphaned(ctx context.Context) (int, error) {
 	n := 0
 	for _, status := range []Status{StatusRunning, StatusPending} {
-		jobs, err := m.store.List(ctx, ListQuery{Status: status, Limit: DefaultListLimit})
+		jobs, err := m.db(ctx).List(ctx, ListQuery{Status: status, Limit: DefaultListLimit})
 		if err != nil {
 			return n, fmt.Errorf("webapp: recover orphaned (%s): %w", status, err)
 		}
@@ -532,7 +564,7 @@ func (m *JobManager) RecoverOrphaned(ctx context.Context) (int, error) {
 			job.Status = StatusFailed
 			job.Err = "traitement interrompu par un redémarrage du serveur — relance-le (changer le type relance l'extraction)"
 			job.FinishedAt = time.Now()
-			if err := m.store.Update(ctx, job); err != nil {
+			if err := m.db(ctx).Update(ctx, job); err != nil {
 				fmt.Fprintf(os.Stderr, "webapp: recover orphaned job %s: %v\n", job.ID, err)
 				continue
 			}
@@ -545,7 +577,7 @@ func (m *JobManager) RecoverOrphaned(ctx context.Context) (int, error) {
 // List retourne les jobs correspondant à q (bibliothèque de documents,
 // jalon 17) — délègue directement à Store.List.
 func (m *JobManager) List(ctx context.Context, q ListQuery) ([]Job, error) {
-	return m.store.List(ctx, q)
+	return m.db(ctx).List(ctx, q)
 }
 
 // SetTags remplace les tags du job id — n'a aucune incidence sur le
@@ -553,7 +585,7 @@ func (m *JobManager) List(ctx context.Context, q ListQuery) ([]Job, error) {
 // ciblée (Store.SetTags) : jamais une relecture/réécriture du job entier,
 // qui pourrait annuler une fin de traitement concurrente.
 func (m *JobManager) SetTags(ctx context.Context, id string, tags []string) error {
-	if err := m.store.SetTags(ctx, id, tags); err != nil {
+	if err := m.db(ctx).SetTags(ctx, id, tags); err != nil {
 		return fmt.Errorf("webapp: set tags %s: %w", id, err)
 	}
 	return nil
@@ -563,7 +595,7 @@ func (m *JobManager) SetTags(ctx context.Context, id string, tags []string) erro
 // fin retirés). Comme les tags, sans incidence sur le traitement, et par
 // écriture ciblée.
 func (m *JobManager) SetComment(ctx context.Context, id, comment string) error {
-	if err := m.store.SetComment(ctx, id, strings.TrimSpace(comment)); err != nil {
+	if err := m.db(ctx).SetComment(ctx, id, strings.TrimSpace(comment)); err != nil {
 		return fmt.Errorf("webapp: set comment %s: %w", id, err)
 	}
 	return nil
@@ -577,7 +609,7 @@ func (m *JobManager) SetComment(ctx context.Context, id, comment string) error {
 // le job passe à StatusRunning, le résultat s'obtient via Get comme pour
 // un job normal.
 func (m *JobManager) Reprocess(ctx context.Context, id, docType string) error {
-	job, ok, err := m.store.Get(ctx, id)
+	job, ok, err := m.db(ctx).Get(ctx, id)
 	if err != nil {
 		return fmt.Errorf("webapp: reprocess %s: get: %w", id, err)
 	}
@@ -590,10 +622,10 @@ func (m *JobManager) Reprocess(ctx context.Context, id, docType string) error {
 	job.Status = StatusPending
 	job.StartedAt = time.Time{}
 	job.Err = ""
-	if err := m.store.Update(ctx, job); err != nil {
+	if err := m.db(ctx).Update(ctx, job); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: update job %s to pending: %v\n", job.ID, err)
 	}
-	if err := m.store.SetProgress(ctx, job.ID, nil); err != nil {
+	if err := m.db(ctx).SetProgress(ctx, job.ID, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "webapp: clear progress %s: %v\n", job.ID, err)
 	}
 

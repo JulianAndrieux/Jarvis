@@ -14,6 +14,8 @@ import (
 
 	"github.com/JulianAndrieux/Jarvis/internal/email"
 	"github.com/JulianAndrieux/Jarvis/internal/imap"
+
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // Session : une connexion à la boîte (*imap.Client en production).
@@ -56,8 +58,13 @@ type Syncer struct {
 	// remonte ce nombre de jours (0 : 30).
 	Days int
 	// Batch : messages relevés par requête (0 : 10).
-	Batch int
-	Now   func() time.Time
+	Batch        int
+	Now          func() time.Time // DefaultScope : portée de la relève quand le contexte n'en porte pas.
+	DefaultScope tenancy.Scope
+}
+
+func (s *Syncer) db(ctx context.Context) Store {
+	return scopedStore(ctx, s.Store, s.DefaultScope)
 }
 
 // Report : le résultat d'une relève.
@@ -81,7 +88,7 @@ func (s *Syncer) Sync(ctx context.Context, cfg Config) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	last, err := s.Store.LastUID(ctx, cfg.User, Mailbox, box.UIDValidity)
+	last, err := s.db(ctx).LastUID(ctx, cfg.User, Mailbox, box.UIDValidity)
 	if err != nil {
 		return rep, err
 	}
@@ -113,7 +120,7 @@ func (s *Syncer) Sync(ctx context.Context, cfg Config) (Report, error) {
 		}
 		for _, im := range msgs {
 			m, files := fromIMAP(cfg.User, box.UIDValidity, im, s.now())
-			created, err := s.Store.Save(ctx, m, files)
+			created, err := s.db(ctx).Save(ctx, m, files)
 			if err != nil {
 				return rep, err
 			}

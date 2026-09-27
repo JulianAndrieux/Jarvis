@@ -2,9 +2,11 @@ package webapp
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // DefaultListLimit borne le nombre de jobs retournés par List quand
@@ -46,6 +48,54 @@ type ListQuery struct {
 	CreatedBefore time.Time
 }
 
+// Matches dit si un job satisfait la requête — hors cloisonnement par
+// environnement (c'est la portée du store qui s'en charge), hors tri et
+// hors limite.
+//
+// Le prédicat est en Go, et c'est délibéré : il était déjà écrit dans
+// FakeStore.List, MongoStore exprime le même filtre en $regex, et le
+// contrat commun aux deux (mongo_store_test.go) surveille qu'ils
+// s'accordent. L'extraire ici en fait le seul exemplaire, et le rend
+// réutilisable par l'overlay du changeset (jalon 48), qui doit appliquer
+// la même requête à des entités modifiées en mémoire que Mongo ne peut
+// pas filtrer.
+func (q ListQuery) Matches(j Job) bool {
+	if q.Status != "" && j.Status != q.Status {
+		return false
+	}
+	if q.Format != "" && string(familyOf(j)) != q.Format {
+		return false
+	}
+	if !q.CreatedFrom.IsZero() && j.CreatedAt.Before(q.CreatedFrom) {
+		return false
+	}
+	if !q.CreatedBefore.IsZero() && !j.CreatedAt.Before(q.CreatedBefore) {
+		return false
+	}
+	if q.Search == "" {
+		return true
+	}
+	return jobMatchesSearch(j, strings.ToLower(q.Search))
+}
+
+func jobMatchesSearch(j Job, lowerSearch string) bool {
+	if strings.Contains(strings.ToLower(j.Filename), lowerSearch) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(j.DocType), lowerSearch) {
+		return true
+	}
+	for _, tag := range j.Tags {
+		if strings.Contains(strings.ToLower(tag), lowerSearch) {
+			return true
+		}
+	}
+	if strings.Contains(strings.ToLower(j.Comment), lowerSearch) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(j.SearchText), lowerSearch)
+}
+
 // Store est le port de persistance des jobs : création, lecture, mise à
 // jour de statut/résultat, liste (pour la bibliothèque de documents).
 // Même principe que triage.TextExtractor / vlm.Client / llm.Client /
@@ -53,6 +103,12 @@ type ListQuery struct {
 // mémoire pour les tests (FakeStore), aucun autre code du paquet ne
 // connaît la différence.
 type Store interface {
+	// For rend la même persistance vue depuis un environnement : toutes
+	// les lectures et écritures de la vue rendue portent sur ce seul
+	// environnement. C'est le seul moyen d'accéder aux données — un store
+	// sans portée refuse toute opération (tenancy.ErrNoEnv) plutôt que de
+	// travailler dans un environnement vide.
+	For(scope tenancy.Scope) Store
 	// Create persiste job (déjà pourvu d'un ID par l'appelant) et retourne
 	// l'enregistrement tel que persisté. job.Content est écrit comme
 	// FileOriginal ; Get ne le recharge jamais (voir ReadFile).

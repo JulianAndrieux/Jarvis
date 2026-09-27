@@ -70,19 +70,19 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 	default:
 		q.Category = mail.Category(view)
 	}
-	list, err := s.Mail.Store.List(ctx, q)
+	list, err := s.Mail.DB(ctx).List(ctx, q)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
 	v := templates.MailListView{Status: s.Mail.Status(), Search: search, Category: cat, ReplyView: view == filterReply}
 	if v.ReplyView {
-		all, err := s.Mail.Store.Count(ctx, mail.Query{Search: search})
+		all, err := s.Mail.DB(ctx).Count(ctx, mail.Query{Search: search})
 		if err != nil {
 			serverError(w, err)
 			return
 		}
-		pending, err := s.Mail.Store.Count(ctx, mail.Query{Search: search, Untriaged: true})
+		pending, err := s.Mail.DB(ctx).Count(ctx, mail.Query{Search: search, Untriaged: true})
 		if err != nil {
 			serverError(w, err)
 			return
@@ -175,7 +175,7 @@ func (s *Server) email(w http.ResponseWriter, r *http.Request) (mail.Mail, bool)
 	if !s.mailEnabled(w) {
 		return mail.Mail{}, false
 	}
-	m, ok, err := s.Mail.Store.Get(r.Context(), chi.URLParam(r, "id"))
+	m, ok, err := s.Mail.DB(r.Context()).Get(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		serverError(w, err)
 		return mail.Mail{}, false
@@ -295,7 +295,7 @@ func (s *Server) attachment(w http.ResponseWriter, r *http.Request) (mail.Mail, 
 	index, err := strconv.Atoi(chi.URLParam(r, "index"))
 	for _, a := range m.Attachments {
 		if err == nil && a.Index == index && a.Stored {
-			data, found, err := s.Mail.Store.Attachment(r.Context(), m.ID, index)
+			data, found, err := s.Mail.DB(r.Context()).Attachment(r.Context(), m.ID, index)
 			if err != nil {
 				serverError(w, err)
 				return m, a, nil, false
@@ -345,7 +345,7 @@ func (s *Server) handleEmailAttachmentImport(w http.ResponseWriter, r *http.Requ
 		serverError(w, err)
 		return
 	}
-	if err := s.Mail.Store.SetAttachmentDoc(ctx, m.ID, a.Index, job.ID); err != nil {
+	if err := s.Mail.DB(ctx).SetAttachmentDoc(ctx, m.ID, a.Index, job.ID); err != nil {
 		serverError(w, err)
 		return
 	}
@@ -362,7 +362,7 @@ func (s *Server) mailSubjects(ctx context.Context, ids []string) map[string]stri
 		if _, done := out[id]; done {
 			continue
 		}
-		if m, ok, err := s.Mail.Store.Get(ctx, id); err == nil && ok {
+		if m, ok, err := s.Mail.DB(ctx).Get(ctx, id); err == nil && ok {
 			out[id] = m.Subject
 		} else {
 			out[id] = "email"

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // Service : les opérations de l'interface sur les notes et les tâches.
@@ -15,6 +17,24 @@ type Service struct {
 	Store Store
 	// Now : horloge (nil : time.Now) — fixée dans les tests.
 	Now func() time.Time
+	// DefaultScope est la portée utilisée quand le contexte n'en porte
+	// pas : choix de câblage explicite (l'unique environnement
+	// d'aujourd'hui), que le jalon 45 remplacera par la portée de la
+	// session.
+	DefaultScope tenancy.Scope
+}
+
+// db rend la persistance vue depuis la portée de cette opération — le seul
+// point du Service où l'environnement entre en jeu.
+func (s *Service) db(ctx context.Context) Store {
+	if sc, ok := tenancy.FromContext(ctx); ok {
+		return s.Store.For(sc)
+	}
+	scope := s.DefaultScope
+	if scope.Env == "" {
+		scope = tenancy.Scope{Env: tenancy.Local, Role: tenancy.RoleOwner}
+	}
+	return s.Store.For(scope)
 }
 
 func (s *Service) now() time.Time {
@@ -37,7 +57,7 @@ func (s *Service) NewNote(ctx context.Context, docID string) (Note, error) {
 	if docID != "" {
 		n.DocIDs = []string{docID}
 	}
-	if err := s.Store.CreateNote(ctx, n); err != nil {
+	if err := s.db(ctx).CreateNote(ctx, n); err != nil {
 		return Note{}, err
 	}
 	return n, nil
@@ -55,22 +75,22 @@ func (s *Service) SaveNote(ctx context.Context, id, title, body, tags string, pi
 		n.Title = untitled
 	}
 	n.Body, n.Tags, n.Pinned, n.UpdatedAt = body, splitTags(tags), pinned, s.now()
-	return n, s.Store.UpdateNote(ctx, n)
+	return n, s.db(ctx).UpdateNote(ctx, n)
 }
 
 // DeleteNote supprime une note ; ses tâches restent, déliées.
 func (s *Service) DeleteNote(ctx context.Context, id string) error {
-	tasks, err := s.Store.ListTasks(ctx, TaskQuery{NoteID: id})
+	tasks, err := s.db(ctx).ListTasks(ctx, TaskQuery{NoteID: id})
 	if err != nil {
 		return err
 	}
 	for _, t := range tasks {
 		t.NoteID = ""
-		if err := s.Store.UpdateTask(ctx, t); err != nil {
+		if err := s.db(ctx).UpdateTask(ctx, t); err != nil {
 			return err
 		}
 	}
-	return s.Store.DeleteNote(ctx, id)
+	return s.db(ctx).DeleteNote(ctx, id)
 }
 
 // LinkDoc lie le document docID à la note (une seule fois).
@@ -80,7 +100,7 @@ func (s *Service) LinkDoc(ctx context.Context, noteID, docID string) error {
 		return err
 	}
 	n.DocIDs = append(n.DocIDs, docID)
-	return s.Store.UpdateNote(ctx, n)
+	return s.db(ctx).UpdateNote(ctx, n)
 }
 
 // UnlinkDoc retire le lien entre la note et le document docID.
@@ -90,7 +110,7 @@ func (s *Service) UnlinkDoc(ctx context.Context, noteID, docID string) error {
 		return err
 	}
 	n.DocIDs = slices.DeleteFunc(n.DocIDs, func(d string) bool { return d == docID })
-	return s.Store.UpdateNote(ctx, n)
+	return s.db(ctx).UpdateNote(ctx, n)
 }
 
 // AddTask crée une tâche depuis une saisie rapide (cf. ParseQuickAdd),
@@ -106,7 +126,7 @@ func (s *Service) AddTask(ctx context.Context, input, noteID, docID string) (Tas
 		return Task{}, err
 	}
 	t := Task{ID: id, Title: q.Title, Due: q.Due, Priority: q.Priority, NoteID: noteID, DocID: docID, CreatedAt: now}
-	return t, s.Store.CreateTask(ctx, t)
+	return t, s.db(ctx).CreateTask(ctx, t)
 }
 
 // AddMailTask crée une tâche depuis un email (saisie rapide, cf.
@@ -122,7 +142,7 @@ func (s *Service) AddMailTask(ctx context.Context, input, mailID string) (Task, 
 		return Task{}, err
 	}
 	t := Task{ID: id, Title: q.Title, Due: q.Due, Priority: q.Priority, MailID: mailID, CreatedAt: now}
-	return t, s.Store.CreateTask(ctx, t)
+	return t, s.db(ctx).CreateTask(ctx, t)
 }
 
 // NewMailNote crée une note depuis un email, liée à cet email.
@@ -136,7 +156,7 @@ func (s *Service) NewMailNote(ctx context.Context, mailID, title, body string) (
 		title = untitled
 	}
 	n := Note{ID: id, Title: title, Body: body, MailID: mailID, CreatedAt: now, UpdatedAt: now}
-	return n, s.Store.CreateNote(ctx, n)
+	return n, s.db(ctx).CreateNote(ctx, n)
 }
 
 // ToggleTask coche ou décoche une tâche.
@@ -150,7 +170,7 @@ func (s *Service) ToggleTask(ctx context.Context, id string) (Task, error) {
 	if t.Done {
 		t.DoneAt = s.now()
 	}
-	return t, s.Store.UpdateTask(ctx, t)
+	return t, s.db(ctx).UpdateTask(ctx, t)
 }
 
 // SaveTask enregistre une tâche modifiée. due : "AAAA-MM-JJ" ou "".
@@ -169,16 +189,16 @@ func (s *Service) SaveTask(ctx context.Context, id, title, due, priority, noteID
 		}
 	}
 	t.Due, t.Priority, t.NoteID, t.DocID = due, ParsePriority(priority), noteID, docID
-	return t, s.Store.UpdateTask(ctx, t)
+	return t, s.db(ctx).UpdateTask(ctx, t)
 }
 
 // DeleteTask supprime une tâche.
 func (s *Service) DeleteTask(ctx context.Context, id string) error {
-	return s.Store.DeleteTask(ctx, id)
+	return s.db(ctx).DeleteTask(ctx, id)
 }
 
 func (s *Service) note(ctx context.Context, id string) (Note, error) {
-	n, ok, err := s.Store.GetNote(ctx, id)
+	n, ok, err := s.db(ctx).GetNote(ctx, id)
 	if err != nil {
 		return Note{}, err
 	}
@@ -189,7 +209,7 @@ func (s *Service) note(ctx context.Context, id string) (Note, error) {
 }
 
 func (s *Service) task(ctx context.Context, id string) (Task, error) {
-	t, ok, err := s.Store.GetTask(ctx, id)
+	t, ok, err := s.db(ctx).GetTask(ctx, id)
 	if err != nil {
 		return Task{}, err
 	}

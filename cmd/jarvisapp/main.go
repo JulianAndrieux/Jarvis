@@ -42,6 +42,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 	"github.com/JulianAndrieux/Jarvis/internal/store"
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 	"github.com/JulianAndrieux/Jarvis/internal/triage"
 	"github.com/JulianAndrieux/Jarvis/internal/visual"
@@ -213,6 +214,19 @@ func main() {
 	} else if n > 0 {
 		log.Printf("jarvisapp: %d document(s) ont reçu un commentaire vide", n)
 	}
+
+	// Cloisonnement par environnement : les documents, notes, tâches et
+	// emails d'avant reçoivent l'environnement de cette installation.
+	// Idempotent — après la transition, ne trouve plus rien. Puis on
+	// compte ce qui reste sans environnement : toutes les requêtes
+	// filtrant sur env_id, un enregistrement non estampillé ne
+	// remonterait dans aucune liste, et il vaut mieux le dire que le
+	// laisser disparaître en silence.
+	migrateTenancy(context.Background(), tenancy.Local, map[string]envMigrator{
+		"documents":    jobStore,
+		"notes/tâches": notesStore,
+		"emails":       mailStore,
+	})
 
 	jobs := webapp.NewJobManager(jobStore, runner)
 	jobs.Renderer = parsing.PdftoppmRenderer{}
@@ -577,4 +591,36 @@ func findClaude(flagValue string) (string, error) {
 	}
 	home, _ := os.UserHomeDir()
 	return exec.LookPath(filepath.Join(home, ".local", "bin", "claude"))
+}
+
+// envMigrator : un store qui sait estampiller ses enregistrements d'avant
+// le cloisonnement, et compter ceux qui ne le sont pas.
+type envMigrator interface {
+	MigrateToEnv(ctx context.Context, env tenancy.EnvID) (int64, error)
+	CountUnstamped(ctx context.Context) (int64, error)
+}
+
+// migrateTenancy estampille puis vérifie. Un échec n'empêche pas
+// l'application de servir (comme la migration des commentaires), mais il
+// est dit clairement : sans environnement, les enregistrements concernés
+// sont invisibles.
+func migrateTenancy(ctx context.Context, env tenancy.EnvID, stores map[string]envMigrator) {
+	for name, st := range stores {
+		n, err := st.MigrateToEnv(ctx, env)
+		if err != nil {
+			log.Printf("jarvisapp: ATTENTION — %s : estampillage de l'environnement impossible : %v", name, err)
+			continue
+		}
+		if n > 0 {
+			log.Printf("jarvisapp: %s : %d enregistrement(s) rattaché(s) à l'environnement %q", name, n, env)
+		}
+		left, err := st.CountUnstamped(ctx)
+		if err != nil {
+			log.Printf("jarvisapp: %s : comptage des enregistrements sans environnement impossible : %v", name, err)
+			continue
+		}
+		if left > 0 {
+			log.Printf("jarvisapp: ATTENTION — %s : %d enregistrement(s) sans environnement, donc invisibles dans l'application", name, left)
+		}
+	}
 }

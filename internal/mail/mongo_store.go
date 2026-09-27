@@ -9,6 +9,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
 
 // MongoStore persiste les emails dans une collection, le contenu des
@@ -16,7 +18,26 @@ import (
 // email et ses pièces jointes dépasseraient vite les 16 Mo d'un document).
 type MongoStore struct {
 	Mails *mongo.Collection
-	Files *mongo.Collection
+	Files *mongo.Collection // scope : l'environnement vu par cette instance (voir For).
+	scope tenancy.Scope
+}
+
+func (s *MongoStore) For(scope tenancy.Scope) Store {
+	c := *s
+	c.scope = scope
+	return &c
+}
+
+// key : le filtre d'un email précis de cet environnement.
+func (s *MongoStore) key(id string) bson.M {
+	return bson.M{"_id": id, "env_id": string(s.scope.Env)}
+}
+
+func (s *MongoStore) ensure() error {
+	if err := s.scope.Valid(); err != nil {
+		return fmt.Errorf("mail: mongo: %w", err)
+	}
+	return nil
 }
 
 func NewMongoStore(ctx context.Context, uri, database, mailsCollection, filesCollection string) (*MongoStore, error) {
@@ -28,10 +49,15 @@ func NewMongoStore(ctx context.Context, uri, database, mailsCollection, filesCol
 		return nil, fmt.Errorf("mail: ping mongodb: %w", err)
 	}
 	db := client.Database(database)
-	s := &MongoStore{Mails: db.Collection(mailsCollection), Files: db.Collection(filesCollection)}
+	s := &MongoStore{
+		Mails: db.Collection(mailsCollection),
+		Files: db.Collection(filesCollection),
+		// Scopé sur l'unique environnement d'aujourd'hui (choix de câblage).
+		scope: tenancy.Scope{Env: tenancy.Local, Role: tenancy.RoleOwner},
+	}
 	// Index de la relève (dernier UID) et de la liste (par date).
 	if _, err := s.Mails.Indexes().CreateMany(ctx, []mongo.IndexModel{
-		{Keys: bson.D{{Key: "account", Value: 1}, {Key: "mailbox", Value: 1}, {Key: "uid_validity", Value: 1}, {Key: "uid", Value: -1}}},
+		{Keys: bson.D{{Key: "env_id", Value: 1}, {Key: "account", Value: 1}, {Key: "mailbox", Value: 1}, {Key: "uid_validity", Value: 1}, {Key: "uid", Value: -1}}},
 		{Keys: bson.D{{Key: "date", Value: -1}}},
 	}); err != nil {
 		return nil, fmt.Errorf("mail: index: %w", err)
@@ -45,7 +71,11 @@ type fileDoc struct {
 }
 
 func (s *MongoStore) Save(ctx context.Context, m Mail, files map[int][]byte) (bool, error) {
-	n, err := s.Mails.CountDocuments(ctx, bson.M{"_id": m.ID}, options.Count().SetLimit(1))
+	if err := s.ensure(); err != nil {
+		return false, err
+	}
+	m.Env = s.scope.Env
+	n, err := s.Mails.CountDocuments(ctx, s.key(m.ID), options.Count().SetLimit(1))
 	if err != nil {
 		return false, fmt.Errorf("mail: save %s: %w", m.ID, err)
 	}
@@ -69,8 +99,11 @@ func (s *MongoStore) Save(ctx context.Context, m Mail, files map[int][]byte) (bo
 }
 
 func (s *MongoStore) Get(ctx context.Context, id string) (Mail, bool, error) {
+	if err := s.ensure(); err != nil {
+		return Mail{}, false, err
+	}
 	var m Mail
-	err := s.Mails.FindOne(ctx, bson.M{"_id": id}).Decode(&m)
+	err := s.Mails.FindOne(ctx, s.key(id)).Decode(&m)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return Mail{}, false, nil
 	}
@@ -81,8 +114,10 @@ func (s *MongoStore) Get(ctx context.Context, id string) (Mail, bool, error) {
 }
 
 // filter : le filtre MongoDB de q.
-func filter(q Query) bson.M {
-	var and bson.A
+func (s *MongoStore) filter(q Query) bson.M {
+	// Le cloisonnement d'abord : aucune liste ni aucun compte ne traverse
+	// un environnement.
+	and := bson.A{bson.M{"env_id": string(s.scope.Env)}}
 	if q.Search != "" {
 		// Recherche littérale : le texte saisi n'est jamais une expression
 		// régulière.
@@ -105,15 +140,14 @@ func filter(q Query) bson.M {
 			bson.M{"triage.version": bson.M{"$not": bson.M{"$gte": TriageVersion}}},
 		}})
 	}
-	f := bson.M{}
-	if len(and) > 0 {
-		f["$and"] = and
-	}
-	return f
+	return bson.M{"$and": and}
 }
 
 func (s *MongoStore) Count(ctx context.Context, q Query) (int, error) {
-	n, err := s.Mails.CountDocuments(ctx, filter(q))
+	if err := s.ensure(); err != nil {
+		return 0, err
+	}
+	n, err := s.Mails.CountDocuments(ctx, s.filter(q))
 	if err != nil {
 		return 0, fmt.Errorf("mail: count: %w", err)
 	}
@@ -121,12 +155,15 @@ func (s *MongoStore) Count(ctx context.Context, q Query) (int, error) {
 }
 
 func (s *MongoStore) List(ctx context.Context, q Query) ([]Mail, error) {
+	if err := s.ensure(); err != nil {
+		return nil, err
+	}
 	limit := q.Limit
 	if limit <= 0 {
 		limit = DefaultLimit
 	}
 	opts := options.Find().SetSort(bson.D{{Key: "date", Value: -1}, {Key: "_id", Value: 1}}).SetLimit(int64(limit))
-	cur, err := s.Mails.Find(ctx, filter(q), opts)
+	cur, err := s.Mails.Find(ctx, s.filter(q), opts)
 	if err != nil {
 		return nil, fmt.Errorf("mail: list: %w", err)
 	}
@@ -138,7 +175,10 @@ func (s *MongoStore) List(ctx context.Context, q Query) ([]Mail, error) {
 }
 
 func (s *MongoStore) SetTriage(ctx context.Context, id string, t Triage) error {
-	res, err := s.Mails.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"triage": t}})
+	if err := s.ensure(); err != nil {
+		return err
+	}
+	res, err := s.Mails.UpdateOne(ctx, s.key(id), bson.M{"$set": bson.M{"triage": t}})
 	if err != nil {
 		return fmt.Errorf("mail: tri de %s: %w", id, err)
 	}
@@ -149,8 +189,11 @@ func (s *MongoStore) SetTriage(ctx context.Context, id string, t Triage) error {
 }
 
 func (s *MongoStore) SetAttachmentDoc(ctx context.Context, id string, index int, docID string) error {
+	if err := s.ensure(); err != nil {
+		return err
+	}
 	res, err := s.Mails.UpdateOne(ctx,
-		bson.M{"_id": id, "attachments.index": index},
+		bson.M{"_id": id, "env_id": string(s.scope.Env), "attachments.index": index},
 		bson.M{"$set": bson.M{"attachments.$.doc_id": docID}})
 	if err != nil {
 		return fmt.Errorf("mail: pièce jointe %d de %s: %w", index, id, err)
@@ -162,8 +205,22 @@ func (s *MongoStore) SetAttachmentDoc(ctx context.Context, id string, index int,
 }
 
 func (s *MongoStore) Attachment(ctx context.Context, id string, index int) ([]byte, bool, error) {
+	if err := s.ensure(); err != nil {
+		return nil, false, err
+	}
 	var f fileDoc
-	err := s.Files.FindOne(ctx, bson.M{"_id": fileKey(id, index)}).Decode(&f)
+	// Les pièces jointes sont dans une collection à part, indexée par
+	// l'identifiant de l'email : on vérifie d'abord que l'email appartient
+	// bien à cet environnement, sinon son identifiant suffirait à en
+	// récupérer les octets.
+	n, err := s.Mails.CountDocuments(ctx, s.key(id), options.Count().SetLimit(1))
+	if err != nil {
+		return nil, false, fmt.Errorf("mail: pièce jointe %s/%d: %w", id, index, err)
+	}
+	if n == 0 {
+		return nil, false, nil
+	}
+	err = s.Files.FindOne(ctx, bson.M{"_id": fileKey(id, index)}).Decode(&f)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, false, nil
 	}
@@ -174,11 +231,14 @@ func (s *MongoStore) Attachment(ctx context.Context, id string, index int) ([]by
 }
 
 func (s *MongoStore) LastUID(ctx context.Context, account, mailbox string, uidValidity uint32) (uint32, error) {
+	if err := s.ensure(); err != nil {
+		return 0, err
+	}
 	var m struct {
 		UID uint32 `bson:"uid"`
 	}
 	err := s.Mails.FindOne(ctx,
-		bson.M{"account": account, "mailbox": mailbox, "uid_validity": uidValidity},
+		bson.M{"env_id": string(s.scope.Env), "account": account, "mailbox": mailbox, "uid_validity": uidValidity},
 		options.FindOne().SetSort(bson.D{{Key: "uid", Value: -1}}).SetProjection(bson.M{"uid": 1}),
 	).Decode(&m)
 	if errors.Is(err, mongo.ErrNoDocuments) {
@@ -188,4 +248,31 @@ func (s *MongoStore) LastUID(ctx context.Context, account, mailbox string, uidVa
 		return 0, fmt.Errorf("mail: dernier UID: %w", err)
 	}
 	return m.UID, nil
+}
+
+// MigrateToEnv attribue l'environnement env aux emails qui n'en ont pas —
+// ceux d'avant le cloisonnement. Idempotente (voir
+// webapp.MongoStore.MigrateToEnv pour le raisonnement). Les pièces jointes
+// vivent dans une collection indexée par l'identifiant de l'email : rien à
+// y estampiller, l'appartenance est vérifiée sur l'email (voir Attachment).
+func (s *MongoStore) MigrateToEnv(ctx context.Context, env tenancy.EnvID) (int64, error) {
+	if env == "" {
+		return 0, fmt.Errorf("mail: migrate: %w", tenancy.ErrNoEnv)
+	}
+	res, err := s.Mails.UpdateMany(ctx,
+		bson.M{"env_id": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"env_id": string(env)}})
+	if err != nil {
+		return 0, fmt.Errorf("mail: migrate to env %s: %w", env, err)
+	}
+	return res.ModifiedCount, nil
+}
+
+// CountUnstamped compte les emails sans environnement.
+func (s *MongoStore) CountUnstamped(ctx context.Context) (int64, error) {
+	n, err := s.Mails.CountDocuments(ctx, bson.M{"env_id": bson.M{"$exists": false}})
+	if err != nil {
+		return 0, fmt.Errorf("mail: count unstamped: %w", err)
+	}
+	return n, nil
 }
