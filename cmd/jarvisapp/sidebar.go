@@ -80,7 +80,7 @@ func buildSidebar(now time.Time, tasks []notes.Task, active, failed []webapp.Job
 		}
 	}
 	for _, m := range mails {
-		if m.Triage.Category != mail.Action || handled[m.ID] || m.Date.Before(now.AddDate(0, 0, -weekDays)) || len(v.Mails) == sidebarMax {
+		if m.Archived || m.Triage.Category != mail.Action || handled[m.ID] || m.Date.Before(now.AddDate(0, 0, -weekDays)) || len(v.Mails) == sidebarMax {
 			continue
 		}
 		from := m.From.Name

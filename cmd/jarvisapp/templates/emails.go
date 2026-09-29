@@ -23,6 +23,7 @@ type MailRow struct {
 	// Reply : une réponse est attendue ; Question : ce qui est demandé.
 	Reply    bool
 	Question string
+	Archived bool
 }
 
 // MailFilter : un filtre par catégorie.
@@ -47,6 +48,18 @@ type MailListView struct {
 	ReplyView bool
 	Hidden    int
 	Pending   int
+	// NoReplyCount : les emails triés sans réponse attendue, archivables
+	// d'un clic ; Back : l'adresse de la liste, pour y revenir sans HTMX.
+	NoReplyCount int
+	Back         string
+}
+
+// archiveNoReplyLabel : le libellé du bouton d'archivage groupé.
+func archiveNoReplyLabel(n int) string {
+	if n == 1 {
+		return "🗄 Archiver l'email sans réponse attendue"
+	}
+	return fmt.Sprintf("🗄 Archiver les %d emails sans réponse attendue", n)
 }
 
 // hiddenLine : ce que la vue « à répondre » masque.

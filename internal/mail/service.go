@@ -156,6 +156,22 @@ func (s *Service) Retriage(ctx context.Context, id string) error {
 	return nil
 }
 
+// Archive range un email dans Jarvis (la boîte n'est pas modifiée).
+func (s *Service) Archive(ctx context.Context, id string) error {
+	return s.DB(ctx).SetArchived(ctx, id, true, s.now())
+}
+
+// Unarchive le remet dans les listes.
+func (s *Service) Unarchive(ctx context.Context, id string) error {
+	return s.DB(ctx).SetArchived(ctx, id, false, time.Time{})
+}
+
+// ArchiveNoReply archive les emails triés sans réponse attendue et rend
+// leur nombre ; ceux que le modèle n'a pas encore lus restent.
+func (s *Service) ArchiveNoReply(ctx context.Context) (int, error) {
+	return s.DB(ctx).ArchiveMatching(ctx, Query{NoReply: true}, s.now())
+}
+
 // Run relève tout de suite, puis à chaque intervalle ou demande ; le tri
 // tourne à côté, relancé après chaque relève. Jusqu'à l'arrêt de ctx.
 func (s *Service) Run(ctx context.Context) {
@@ -261,7 +277,7 @@ func (s *Service) triagePending(ctx context.Context) (more bool, err error) {
 	if batch <= 0 {
 		batch = 20
 	}
-	pending, err := s.DB(ctx).List(ctx, Query{Untriaged: true, Limit: batch})
+	pending, err := s.DB(ctx).List(ctx, Query{Untriaged: true, Archive: ArchiveAny, Limit: batch})
 	if err != nil {
 		return false, err
 	}

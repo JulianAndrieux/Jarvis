@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -273,6 +274,106 @@ func TestEmails_DisabledWithoutService(t *testing.T) {
 	s, _ := newNotesServer(t)
 	if rec := do(s, http.MethodGet, "/emails", nil); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", rec.Code)
+	}
+}
+
+// Archivage (ticket « Emails raccourcis ») : un bouton par ligne, en HTMX.
+func TestEmails_ArchiveRowButton(t *testing.T) {
+	s, store, _ := newMailServer(t)
+	if page := do(s, http.MethodGet, "/emails?cat=tous", nil).Body.String(); !strings.Contains(page, `hx-post="/emails/m-promo/archive"`) {
+		t.Fatal("list lacks the archive button")
+	}
+	req := httptest.NewRequest(http.MethodPost, "/emails/m-promo/archive", nil)
+	req.Header.Set("HX-Request", "true")
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Fatalf("archive (htmx): %d %q, want 200 and an empty body", rec.Code, rec.Body.String())
+	}
+	if m, _, _ := store.Get(context.Background(), "m-promo"); !m.Archived {
+		t.Error("mail not archived")
+	}
+	if page := do(s, http.MethodGet, "/emails?cat=tous", nil).Body.String(); strings.Contains(page, "Soldes") {
+		t.Error("archived mail still listed")
+	}
+}
+
+func TestEmails_ArchiveWithoutHTMXRedirects(t *testing.T) {
+	s, _, _ := newMailServer(t)
+	rec := do(s, http.MethodPost, "/emails/m-promo/archive", url.Values{"back": {"/emails?cat=tous"}})
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/emails?cat=tous" {
+		t.Errorf("archive: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	rec = do(s, http.MethodPost, "/emails/m-facture/archive", url.Values{"back": {"//evil.example"}})
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/emails" {
+		t.Errorf("archive with foreign back: %d %q, want /emails", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestEmails_ArchiveUnknownIs404(t *testing.T) {
+	s, _, _ := newMailServer(t)
+	if rec := do(s, http.MethodPost, "/emails/inconnu/archive", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+// Un clic archive tous les emails triés sans réponse attendue ; ceux que
+// le modèle n'a pas encore lus restent.
+func TestEmails_ArchiveNoReplyButton(t *testing.T) {
+	s, store, _ := newMailServer(t)
+	page := do(s, http.MethodGet, "/emails", nil).Body.String()
+	if !strings.Contains(page, `action="/emails/archive-no-reply"`) || !strings.Contains(page, "Archiver les 2 emails sans réponse attendue") {
+		t.Fatal("default view lacks the bulk archive button")
+	}
+	rec := do(s, http.MethodPost, "/emails/archive-no-reply", nil)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/emails" {
+		t.Fatalf("archive-no-reply: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	for id, want := range map[string]bool{"m-facture": true, "m-promo": true, "m-alice": false, "m-new": false} {
+		if m, _, _ := store.Get(context.Background(), id); m.Archived != want {
+			t.Errorf("%s archived = %v, want %v", id, m.Archived, want)
+		}
+	}
+	if page := do(s, http.MethodGet, "/emails", nil).Body.String(); strings.Contains(page, "archive-no-reply") {
+		t.Error("bulk button still shown with nothing left to archive")
+	}
+}
+
+func TestEmails_ArchivedFilterAndUnarchive(t *testing.T) {
+	s, _, _ := newMailServer(t)
+	do(s, http.MethodPost, "/emails/m-promo/archive", nil)
+	page := do(s, http.MethodGet, "/emails?cat=archives", nil).Body.String()
+	if !strings.Contains(page, "Soldes") || strings.Contains(page, "Votre facture") || !strings.Contains(page, "🗄 Archivés") {
+		t.Error("archived filter does not list only the archived mails")
+	}
+	if strings.Contains(page, `hx-post="/emails/m-promo/archive"`) {
+		t.Error("archived mail offers to be archived again")
+	}
+	detail := do(s, http.MethodGet, "/emails/m-promo", nil).Body.String()
+	if !strings.Contains(detail, "Archivé") || !strings.Contains(detail, `action="/emails/m-promo/unarchive"`) {
+		t.Error("detail of an archived mail lacks the unarchive action")
+	}
+	rec := do(s, http.MethodPost, "/emails/m-promo/unarchive", nil)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/emails/m-promo" {
+		t.Fatalf("unarchive: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if page := do(s, http.MethodGet, "/emails?cat=tous", nil).Body.String(); !strings.Contains(page, "Soldes") {
+		t.Error("unarchived mail not listed again")
+	}
+	if detail := do(s, http.MethodGet, "/emails/m-facture", nil).Body.String(); !strings.Contains(detail, `action="/emails/m-facture/archive"`) {
+		t.Error("detail lacks the archive action")
+	}
+	if page := do(s, http.MethodGet, "/emails?cat=archives", nil).Body.String(); !strings.Contains(page, "Aucun email archivé") {
+		t.Error("empty archived filter not explained")
+	}
+}
+
+func TestEmails_HiddenCountIgnoresArchived(t *testing.T) {
+	s, _, _ := newMailServer(t)
+	do(s, http.MethodPost, "/emails/m-promo/archive", nil)
+	page := do(s, http.MethodGet, "/emails", nil).Body.String()
+	if !strings.Contains(page, "1 email masqué") || strings.Contains(page, "2 emails masqués") {
+		t.Error("hidden count still includes the archived mail")
 	}
 }
 

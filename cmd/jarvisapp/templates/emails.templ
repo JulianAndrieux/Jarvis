@@ -47,21 +47,30 @@ templ EmailsPage(v MailListView) {
 						<a class={ "chip", "filter-chip", templ.KV("active", f.Active) } href={ templ.SafeURL(f.Href) }>{ f.Label }</a>
 					}
 				</div>
-				if v.ReplyView && hiddenLine(v) != "" {
-					<p class="muted mail-hidden">
-						{ hiddenLine(v) } · <a href="/emails?cat=tous">Tout afficher</a>
-					</p>
+				if v.ReplyView && (hiddenLine(v) != "" || v.NoReplyCount > 0) {
+					<div class="muted mail-hidden">
+						if hiddenLine(v) != "" {
+							<span>{ hiddenLine(v) } · <a href="/emails?cat=tous">Tout afficher</a></span>
+						}
+						if v.NoReplyCount > 0 {
+							<form class="inline-form" method="post" action="/emails/archive-no-reply">
+								<button type="submit" class="button-ghost" title="Range dans Jarvis les emails que le modèle a lus et qui n'attendent pas de réponse (la boîte mail n'est pas modifiée ; filtre « Archivés » pour les retrouver)">{ archiveNoReplyLabel(v.NoReplyCount) }</button>
+							</form>
+						}
+					</div>
 				}
 				if len(v.Rows) == 0 {
 					if v.ReplyView {
 						<div class="empty-state"><p>Aucun email n'attend de réponse de ta part.</p></div>
+					} else if v.Category == "archives" {
+						<div class="empty-state"><p>Aucun email archivé.</p></div>
 					} else {
 						<div class="empty-state"><p>Aucun email.</p></div>
 					}
 				} else {
 					<ul class="mail-list">
 						for _, m := range v.Rows {
-							<li>
+							<li class="mail-item">
 								<a class={ "mail-row", templ.KV("mail-unread", m.Unread) } href={ templ.SafeURL("/emails/" + m.ID) }>
 									<span class="mail-from">{ m.From }</span>
 									<span class="mail-main">
@@ -87,6 +96,12 @@ templ EmailsPage(v MailListView) {
 										<span class="doc-date">{ m.Date }</span>
 									</span>
 								</a>
+								if !m.Archived {
+									<form class="mail-archive" method="post" action={ templ.SafeURL("/emails/" + m.ID + "/archive") } hx-post={ "/emails/" + m.ID + "/archive" } hx-target="closest li" hx-swap="outerHTML">
+										<input type="hidden" name="back" value={ v.Back }/>
+										<button type="submit" class="button-ghost" title="Archiver (reste dans Jarvis, la boîte mail n'est pas modifiée)" aria-label="Archiver">🗄</button>
+									</form>
+								}
 							</li>
 						}
 					</ul>
@@ -124,6 +139,17 @@ templ EmailPage(v MailView) {
 					<form class="inline-form" method="post" action={ templ.SafeURL("/emails/" + v.Mail.ID + "/retriage") }>
 						<button type="submit" class="button-ghost" title="Refaire le tri avec les consignes en vigueur">↻ Retrier</button>
 					</form>
+					if v.Mail.Archived {
+						<span class="chip">🗄 Archivé</span>
+						<form class="inline-form" method="post" action={ templ.SafeURL("/emails/" + v.Mail.ID + "/unarchive") }>
+							<button type="submit" class="button-ghost">Désarchiver</button>
+						</form>
+					} else {
+						<form class="inline-form" method="post" action={ templ.SafeURL("/emails/" + v.Mail.ID + "/archive") }>
+							<input type="hidden" name="back" value="/emails"/>
+							<button type="submit" class="button-ghost" title="Reste dans Jarvis, la boîte mail n'est pas modifiée">🗄 Archiver</button>
+						</form>
+					}
 				</div>
 				if v.Mail.Triage.Error != "" {
 					<p class="form-error">Tri impossible : { v.Mail.Triage.Error }</p>

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 )
@@ -116,25 +117,79 @@ func (s *FakeStore) matching(q Query) []Mail {
 	search := strings.ToLower(q.Search)
 	var out []Mail
 	for k, m := range s.shared.mails {
-		if !s.mine(k) {
-			continue
+		if s.mine(k) && matches(m, q, search) {
+			out = append(out, clone(m))
 		}
-		if q.Category != "" && m.Triage.Category != q.Category {
-			continue
-		}
-		if q.Reply && !m.Triage.Reply {
-			continue
-		}
-		pending := (m.Triage.Category == "" && m.Triage.Error == "") || m.Triage.Version < TriageVersion
-		if q.Untriaged && !pending {
-			continue
-		}
-		if search != "" && !strings.Contains(strings.ToLower(strings.Join([]string{m.Subject, m.From.Name, m.From.Email, m.Text, m.Triage.Summary}, "\x00")), search) {
-			continue
-		}
-		out = append(out, clone(m))
 	}
 	return out
+}
+
+// matches : m correspond à q (search : q.Search en minuscules).
+func matches(m Mail, q Query, search string) bool {
+	switch q.Archive {
+	case ArchiveHide:
+		if m.Archived {
+			return false
+		}
+	case ArchiveOnly:
+		if !m.Archived {
+			return false
+		}
+	}
+	if q.Category != "" && m.Triage.Category != q.Category {
+		return false
+	}
+	if q.Reply && !m.Triage.Reply {
+		return false
+	}
+	pending := (m.Triage.Category == "" && m.Triage.Error == "") || m.Triage.Version < TriageVersion
+	if q.Untriaged && !pending {
+		return false
+	}
+	if q.NoReply && !(m.Triage.Version >= TriageVersion && m.Triage.Category != "" && m.Triage.Error == "" && !m.Triage.Reply) {
+		return false
+	}
+	if search != "" && !strings.Contains(strings.ToLower(strings.Join([]string{m.Subject, m.From.Name, m.From.Email, m.Text, m.Triage.Summary}, "\x00")), search) {
+		return false
+	}
+	return true
+}
+
+func (s *FakeStore) SetArchived(ctx context.Context, id string, archived bool, at time.Time) error {
+	if err := s.ensure(); err != nil {
+		return err
+	}
+	s.shared.mu.Lock()
+	defer s.shared.mu.Unlock()
+	m, ok := s.shared.mails[s.key(id)]
+	if !ok {
+		return fmt.Errorf("mail: email %s introuvable", id)
+	}
+	if !archived {
+		at = time.Time{}
+	}
+	m.Archived, m.ArchivedAt = archived, at
+	s.shared.mails[s.key(id)] = m
+	return nil
+}
+
+func (s *FakeStore) ArchiveMatching(ctx context.Context, q Query, at time.Time) (int, error) {
+	if err := s.ensure(); err != nil {
+		return 0, err
+	}
+	s.shared.mu.Lock()
+	defer s.shared.mu.Unlock()
+	q.Archive = ArchiveHide
+	search := strings.ToLower(q.Search)
+	n := 0
+	for k, m := range s.shared.mails {
+		if s.mine(k) && matches(m, q, search) {
+			m.Archived, m.ArchivedAt = true, at
+			s.shared.mails[k] = m
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (s *FakeStore) SetTriage(ctx context.Context, id string, t Triage) error {

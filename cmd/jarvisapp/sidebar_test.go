@@ -145,10 +145,27 @@ func TestBuildSidebar_MailsToHandle(t *testing.T) {
 		{ID: "m2", Subject: "Déjà une tâche", Date: notesNow.Add(-time.Hour), Triage: mail.Triage{Category: mail.Action}},
 		{ID: "m3", Subject: "Vieux", Date: notesNow.AddDate(0, 0, -10), Triage: mail.Triage{Category: mail.Action}},
 		{ID: "m4", Subject: "Promo", Date: notesNow, Triage: mail.Triage{Category: mail.Newsletter}},
+		{ID: "m5", Subject: "Archivé", Date: notesNow.Add(-time.Hour), Archived: true, Triage: mail.Triage{Category: mail.Action}},
 	}
 	tasks := []notes.Task{{ID: "t", Title: "Répondre", MailID: "m2"}}
 	v := buildSidebar(notesNow, tasks, nil, nil, nil, mails)
 	if len(v.Mails) != 1 || v.Mails[0].Href != "/emails/m1" || v.Mails[0].Title != "Facture Acme" || v.Mails[0].Detail != "Acme" {
 		t.Errorf("Mails = %+v", v.Mails)
+	}
+}
+
+// Critère d'acceptation du ticket « Emails raccourcis » : un email archivé
+// ne figure plus dans « Emails à traiter ».
+func TestSidebar_ArchivedMailNotInMailsToHandle(t *testing.T) {
+	s, _, _ := newMailServer(t)
+	if body := do(s, http.MethodGet, "/sidebar", nil).Body.String(); !strings.Contains(body, "Votre facture n° 42") {
+		t.Fatal("sidebar lacks the mail to handle before archiving")
+	}
+	if rec := do(s, http.MethodPost, "/emails/m-facture/archive", nil); rec.Code != http.StatusSeeOther {
+		t.Fatalf("archive: %d", rec.Code)
+	}
+	body := do(s, http.MethodGet, "/sidebar", nil).Body.String()
+	if strings.Contains(body, "Votre facture n° 42") || strings.Contains(body, "Emails à traiter") {
+		t.Error("archived mail still in « Emails à traiter »")
 	}
 }

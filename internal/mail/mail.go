@@ -128,7 +128,21 @@ type Mail struct {
 	Attachments []Attachment `bson:"attachments"`
 	Triage      Triage       `bson:"triage"`
 	FetchedAt   time.Time    `bson:"fetched_at"`
+	// Archived : rangé dans Jarvis seulement, la boîte n'est jamais
+	// modifiée (relève en lecture seule). Hors de Triage : un nouveau tri
+	// ne le défait pas.
+	Archived   bool      `bson:"archived"`
+	ArchivedAt time.Time `bson:"archived_at"`
 }
+
+// ArchiveFilter : la place des emails archivés dans une liste.
+type ArchiveFilter int
+
+const (
+	ArchiveHide ArchiveFilter = iota // défaut : sans les archivés
+	ArchiveOnly                      // seulement les archivés
+	ArchiveAny                       // tous (le tri, par exemple)
+)
 
 // Query filtre une liste d'emails.
 type Query struct {
@@ -142,7 +156,11 @@ type Query struct {
 	// triés par une version plus ancienne que TriageVersion (un tri en
 	// erreur de la version en vigueur n'y est plus).
 	Untriaged bool
-	Limit     int // 0 : DefaultLimit
+	// NoReply : triés par la version en vigueur, sans erreur, sans réponse
+	// attendue (un email pas encore lu par le modèle n'y est jamais).
+	NoReply bool
+	Archive ArchiveFilter
+	Limit   int // 0 : DefaultLimit
 }
 
 // DefaultLimit : taille d'une liste.
@@ -162,6 +180,12 @@ type Store interface {
 	// Count : le nombre d'emails correspondant à q (Limit ignoré).
 	Count(ctx context.Context, q Query) (int, error)
 	SetTriage(ctx context.Context, id string, t Triage) error
+	// SetArchived : écriture ciblée de l'archivage (archived=false remet la
+	// date à zéro) ; email inconnu : erreur.
+	SetArchived(ctx context.Context, id string, archived bool, at time.Time) error
+	// ArchiveMatching archive les emails non archivés correspondant à q
+	// (Limit ignoré) et rend leur nombre.
+	ArchiveMatching(ctx context.Context, q Query, at time.Time) (int, error)
 	SetAttachmentDoc(ctx context.Context, id string, index int, docID string) error
 	Attachment(ctx context.Context, id string, index int) ([]byte, bool, error)
 	// LastUID : le plus grand UID relevé pour ce compte, cette boîte et

@@ -246,3 +246,61 @@ func TestService_SyncDoesNotWaitForTheModelQueue(t *testing.T) {
 	close(blocked)
 	waitFor(t, func() bool { p, _ := store.List(ctx, Query{Untriaged: true}); return len(p) == 0 })
 }
+
+func TestService_ArchiveAndUnarchive(t *testing.T) {
+	s, store := newService(t, oneMailbox(), &scriptedLLM{})
+	ctx := context.Background()
+	store.Save(ctx, Mail{ID: "m1", Subject: "Promo"}, nil)
+	if err := s.Archive(ctx, "m1"); err != nil {
+		t.Fatal(err)
+	}
+	if m, _, _ := store.Get(ctx, "m1"); !m.Archived || !m.ArchivedAt.Equal(now) {
+		t.Errorf("after Archive = %v, %v", m.Archived, m.ArchivedAt)
+	}
+	if err := s.Unarchive(ctx, "m1"); err != nil {
+		t.Fatal(err)
+	}
+	if m, _, _ := store.Get(ctx, "m1"); m.Archived || !m.ArchivedAt.IsZero() {
+		t.Errorf("after Unarchive = %v, %v", m.Archived, m.ArchivedAt)
+	}
+	if err := s.Archive(ctx, "inconnu"); err == nil {
+		t.Error("Archive(unknown) = nil")
+	}
+}
+
+// Seuls les emails triés par la version en vigueur, sans erreur et sans
+// réponse attendue sont archivés d'un clic.
+func TestService_ArchiveNoReply(t *testing.T) {
+	s, store := newService(t, oneMailbox(), &scriptedLLM{})
+	ctx := context.Background()
+	for _, id := range []string{"promo", "question", "nouveau", "erreur"} {
+		store.Save(ctx, Mail{ID: id}, nil)
+	}
+	store.SetTriage(ctx, "promo", Triage{Category: Newsletter, Version: TriageVersion})
+	store.SetTriage(ctx, "question", Triage{Category: Action, Reply: true, Version: TriageVersion})
+	store.SetTriage(ctx, "erreur", Triage{Error: "illisible", Version: TriageVersion})
+	n, err := s.ArchiveNoReply(ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("ArchiveNoReply = %d, %v, want 1", n, err)
+	}
+	for id, want := range map[string]bool{"promo": true, "question": false, "nouveau": false, "erreur": false} {
+		if m, _, _ := store.Get(ctx, id); m.Archived != want {
+			t.Errorf("%s archived = %v, want %v", id, m.Archived, want)
+		}
+	}
+}
+
+// Un email archivé reste trié (« Retrier » doit rester possible).
+func TestService_TriageStillSeesArchived(t *testing.T) {
+	model := &scriptedLLM{reply: `{"category":"newsletter","summary":"promo","action":""}`}
+	s, store := newService(t, oneMailbox(), model)
+	ctx := context.Background()
+	store.Save(ctx, Mail{ID: "m1", Subject: "Promo"}, nil)
+	if err := s.Archive(ctx, "m1"); err != nil {
+		t.Fatal(err)
+	}
+	s.Cycle(ctx)
+	if m, _, _ := store.Get(ctx, "m1"); m.Triage.Category != Newsletter || !m.Archived {
+		t.Errorf("archived mail = %+v, archived=%v, want triaged and still archived", m.Triage, m.Archived)
+	}
+}

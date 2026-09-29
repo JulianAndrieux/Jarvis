@@ -140,6 +140,76 @@ func storeContract(t *testing.T, s Store, stamp string) {
 		}
 	}
 
+	// Archivage : masqué par défaut, visible avec ArchiveOnly/ArchiveAny,
+	// toujours vu par le tri, conservé par un nouveau tri.
+	promoID := stamp + "-promo"
+	if err := s.SetArchived(ctx, promoID, true, at(5)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := s.Get(ctx, promoID); !got.Archived || !got.ArchivedAt.Equal(at(5)) {
+		t.Errorf("archived = %v, %v", got.Archived, got.ArchivedAt)
+	}
+	if err := s.SetArchived(ctx, stamp+"-absent", true, at(5)); err == nil {
+		t.Error("SetArchived(unknown) = nil")
+	}
+	for q, want := range map[Query]string{
+		{Search: stamp}:                                       "réunion,facture",
+		{Search: stamp, Archive: ArchiveOnly}:                 "promo",
+		{Search: stamp, Archive: ArchiveAny}:                  "réunion,promo,facture",
+		{Search: stamp, Untriaged: true, Archive: ArchiveAny}: "promo",
+		{Search: stamp, Untriaged: true}:                      "",
+	} {
+		ms, err := s.List(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := ids(ms); got != want {
+			t.Errorf("List(%+v) = %q, want %q", q, got, want)
+		}
+	}
+	if n, err := s.Count(ctx, Query{Search: stamp}); err != nil || n != 2 {
+		t.Errorf("Count(without archived) = %d, %v, want 2", n, err)
+	}
+	if n, err := s.Count(ctx, Query{Search: stamp, Archive: ArchiveAny}); err != nil || n != 3 {
+		t.Errorf("Count(any) = %d, %v, want 3", n, err)
+	}
+	if err := s.SetTriage(ctx, promoID, Triage{Category: Newsletter, Summary: "Promo"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := s.Get(ctx, promoID); !got.Archived {
+		t.Error("SetTriage unarchived the mail")
+	}
+	if err := s.SetArchived(ctx, promoID, false, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := s.Get(ctx, promoID); got.Archived || !got.ArchivedAt.IsZero() {
+		t.Errorf("after unarchive = %v, %v", got.Archived, got.ArchivedAt)
+	}
+	if n, _ := s.Count(ctx, Query{Search: stamp}); n != 3 {
+		t.Errorf("Count after unarchive = %d, want 3", n)
+	}
+
+	// Sans réponse attendue : trié par la version en vigueur, sans erreur,
+	// Reply faux (promo : ancienne version ; réunion : réponse attendue).
+	if ms, _ := s.List(ctx, Query{Search: stamp, NoReply: true}); ids(ms) != "facture" {
+		t.Errorf("List(no reply) = %q, want facture", ids(ms))
+	}
+	if n, err := s.ArchiveMatching(ctx, Query{Search: stamp, NoReply: true}, at(6)); err != nil || n != 1 {
+		t.Errorf("ArchiveMatching = %d, %v, want 1", n, err)
+	}
+	if got, _, _ := s.Get(ctx, facture.ID); !got.Archived || !got.ArchivedAt.Equal(at(6)) {
+		t.Errorf("facture archived = %v, %v", got.Archived, got.ArchivedAt)
+	}
+	if n, err := s.ArchiveMatching(ctx, Query{Search: stamp, NoReply: true}, at(7)); err != nil || n != 0 {
+		t.Errorf("ArchiveMatching again = %d, %v, want 0", n, err)
+	}
+	if got, _, _ := s.Get(ctx, facture.ID); !got.ArchivedAt.Equal(at(6)) {
+		t.Errorf("second ArchiveMatching rewrote the date: %v", got.ArchivedAt)
+	}
+	if err := s.SetArchived(ctx, facture.ID, false, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+
 	// Pièce jointe envoyée dans Documents.
 	if err := s.SetAttachmentDoc(ctx, facture.ID, 0, "job-1"); err != nil {
 		t.Fatal(err)

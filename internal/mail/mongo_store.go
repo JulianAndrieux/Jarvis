@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -140,7 +141,51 @@ func (s *MongoStore) filter(q Query) bson.M {
 			bson.M{"triage.version": bson.M{"$not": bson.M{"$gte": TriageVersion}}},
 		}})
 	}
+	if q.NoReply {
+		and = append(and, bson.M{
+			"triage.version":  bson.M{"$gte": TriageVersion},
+			"triage.error":    "",
+			"triage.category": bson.M{"$ne": ""},
+			"triage.reply":    bson.M{"$ne": true},
+		})
+	}
+	switch q.Archive {
+	case ArchiveHide:
+		// $ne : un email d'avant l'archivage n'a pas le champ.
+		and = append(and, bson.M{"archived": bson.M{"$ne": true}})
+	case ArchiveOnly:
+		and = append(and, bson.M{"archived": true})
+	}
 	return bson.M{"$and": and}
+}
+
+func (s *MongoStore) SetArchived(ctx context.Context, id string, archived bool, at time.Time) error {
+	if err := s.ensure(); err != nil {
+		return err
+	}
+	if !archived {
+		at = time.Time{}
+	}
+	res, err := s.Mails.UpdateOne(ctx, s.key(id), bson.M{"$set": bson.M{"archived": archived, "archived_at": at}})
+	if err != nil {
+		return fmt.Errorf("mail: archivage de %s: %w", id, err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("mail: email %s introuvable", id)
+	}
+	return nil
+}
+
+func (s *MongoStore) ArchiveMatching(ctx context.Context, q Query, at time.Time) (int, error) {
+	if err := s.ensure(); err != nil {
+		return 0, err
+	}
+	q.Archive = ArchiveHide
+	res, err := s.Mails.UpdateMany(ctx, s.filter(q), bson.M{"$set": bson.M{"archived": true, "archived_at": at}})
+	if err != nil {
+		return 0, fmt.Errorf("mail: archivage: %w", err)
+	}
+	return int(res.ModifiedCount), nil
 }
 
 func (s *MongoStore) Count(ctx context.Context, q Query) (int, error) {

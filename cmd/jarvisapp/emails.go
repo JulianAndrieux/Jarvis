@@ -23,7 +23,10 @@ func (s *Server) emailRoutes(r chi.Router) {
 	r.Post("/emails/sync", s.handleEmailSync)
 	r.Get("/emails/settings", s.handleEmailSettings)
 	r.Post("/emails/settings", s.handleEmailSettingsSave)
+	r.Post("/emails/archive-no-reply", s.handleEmailArchiveNoReply)
 	r.Get("/emails/{id}", s.handleEmail)
+	r.Post("/emails/{id}/archive", s.handleEmailArchive)
+	r.Post("/emails/{id}/unarchive", s.handleEmailUnarchive)
 	r.Post("/emails/{id}/retriage", s.handleEmailRetriage)
 	r.Post("/emails/{id}/task", s.handleEmailTask)
 	r.Post("/emails/{id}/note", s.handleEmailNote)
@@ -41,10 +44,12 @@ func (s *Server) mailEnabled(w http.ResponseWriter) bool {
 
 // Filtres de la liste, en plus des catégories : la vue par défaut ne
 // montre que les emails qui attendent une réponse, les autres sont
-// masqués (« Tous » les montre).
+// masqués (« Tous » les montre). Les archivés ne sont dans aucune vue,
+// sauf « Archivés ».
 const (
-	filterReply = "repondre"
-	filterAll   = "tous"
+	filterReply    = "repondre"
+	filterAll      = "tous"
+	filterArchived = "archives"
 )
 
 func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +72,8 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 	case filterReply:
 		q.Reply = true
 	case filterAll:
+	case filterArchived:
+		q.Archive = mail.ArchiveOnly
 	default:
 		q.Category = mail.Category(view)
 	}
@@ -75,8 +82,13 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	v := templates.MailListView{Status: s.Mail.Status(), Search: search, Category: cat, ReplyView: view == filterReply}
+	v := templates.MailListView{Status: s.Mail.Status(), Search: search, Category: cat, ReplyView: view == filterReply, Back: r.URL.RequestURI()}
 	if v.ReplyView {
+		v.NoReplyCount, err = s.Mail.DB(ctx).Count(ctx, mail.Query{NoReply: true})
+		if err != nil {
+			serverError(w, err)
+			return
+		}
 		all, err := s.Mail.DB(ctx).Count(ctx, mail.Query{Search: search})
 		if err != nil {
 			serverError(w, err)
@@ -113,6 +125,7 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 	for _, c := range mail.Categories {
 		v.Filters = append(v.Filters, filter(mail.CategoryLabel(c), string(c)))
 	}
+	v.Filters = append(v.Filters, filter("🗄 Archivés", filterArchived))
 	for _, m := range list {
 		from := m.From.Name
 		if from == "" {
@@ -122,7 +135,7 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 			ID: m.ID, From: from, Subject: m.Subject, Summary: m.Triage.Summary,
 			Date: m.Date.Local().Format("02/01 15:04"), Category: m.Triage.Category,
 			Unread: !m.Seen, Attachments: len(m.Attachments), TriageError: m.Triage.Error != "",
-			Reply: m.Triage.Reply, Question: m.Triage.Question,
+			Reply: m.Triage.Reply, Question: m.Triage.Question, Archived: m.Archived,
 		})
 	}
 	renderPage(w, r, http.StatusOK, templates.EmailsPage(v), "emails")
@@ -242,6 +255,50 @@ func (s *Server) handleEmailRetriage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/emails/"+m.ID, http.StatusSeeOther)
+}
+
+// handleEmailArchive range un email dans Jarvis (la boîte n'est pas
+// modifiée). Depuis la liste (HTMX) : réponse vide, la ligne disparaît ;
+// sinon retour à la page d'origine.
+func (s *Server) handleEmailArchive(w http.ResponseWriter, r *http.Request) {
+	m, ok := s.email(w, r)
+	if !ok {
+		return
+	}
+	if err := s.Mail.Archive(r.Context(), m.ID); err != nil {
+		serverError(w, err)
+		return
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, localBack(r.FormValue("back"), "/emails"), http.StatusSeeOther)
+}
+
+func (s *Server) handleEmailUnarchive(w http.ResponseWriter, r *http.Request) {
+	m, ok := s.email(w, r)
+	if !ok {
+		return
+	}
+	if err := s.Mail.Unarchive(r.Context(), m.ID); err != nil {
+		serverError(w, err)
+		return
+	}
+	http.Redirect(w, r, "/emails/"+m.ID, http.StatusSeeOther)
+}
+
+// handleEmailArchiveNoReply archive d'un clic les emails triés sans
+// réponse attendue.
+func (s *Server) handleEmailArchiveNoReply(w http.ResponseWriter, r *http.Request) {
+	if !s.mailEnabled(w) {
+		return
+	}
+	if _, err := s.Mail.ArchiveNoReply(r.Context()); err != nil {
+		serverError(w, err)
+		return
+	}
+	http.Redirect(w, r, "/emails", http.StatusSeeOther)
 }
 
 func (s *Server) handleEmailTask(w http.ResponseWriter, r *http.Request) {

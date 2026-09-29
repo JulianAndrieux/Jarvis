@@ -58,6 +58,12 @@ func storeIsolationContract(t *testing.T, root Store, stamp string) {
 	if err := b.SetAttachmentDoc(ctx, id, 0, "doc-pirate"); err == nil {
 		t.Error("B.SetAttachmentDoc a réussi sur un email de A")
 	}
+	if err := b.SetArchived(ctx, id, true, time.Now()); err == nil {
+		t.Error("B.SetArchived a réussi sur un email de A")
+	}
+	if n, err := b.ArchiveMatching(ctx, Query{}, time.Now()); err != nil || n != 0 {
+		t.Errorf("B.ArchiveMatching = %d (err=%v), veut 0", n, err)
+	}
 
 	got, ok, err := a.Get(ctx, id)
 	if err != nil || !ok {
@@ -65,6 +71,9 @@ func storeIsolationContract(t *testing.T, root Store, stamp string) {
 	}
 	if got.Triage.Category != "" {
 		t.Errorf("B a trié l'email de A (%q)", got.Triage.Category)
+	}
+	if got.Archived {
+		t.Error("B a archivé l'email de A")
 	}
 	if got.Env != tenancy.EnvID("A-"+stamp) {
 		t.Errorf("Env = %q, veut %q", got.Env, "A-"+stamp)
