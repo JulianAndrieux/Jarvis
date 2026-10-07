@@ -24,6 +24,70 @@ type MailRow struct {
 	Reply    bool
 	Question string
 	Archived bool
+	// ToPay : quelque chose à payer, pas encore payé ; Amount : « 120,00
+	// EUR » ; Due : l'échéance en JJ/MM ; PayReview : à vérifier.
+	ToPay     bool
+	Amount    string
+	Due       string
+	PayReview bool
+}
+
+// PaymentView : ce qu'il faut pour payer, sur la fiche d'un email. Les
+// valeurs viennent d'un email : affichées en texte, le lien jamais
+// cliquable.
+type PaymentView struct {
+	ToPay       bool
+	AutoDebit   bool
+	Payee       string
+	Amount      string // « 120,00 EUR »
+	DueDate     string // JJ/MM/AAAA
+	Reference   string
+	IBAN        string // groupé par 4
+	IBANValid   bool
+	BIC         string
+	Method      string
+	Link        string
+	Evidence    string
+	Confidence  float64
+	NeedsReview bool
+	Checks      []string
+	Sources     []string
+	Paid        bool
+	PaidAt      string // JJ/MM/AAAA
+	Error       string
+	Model       string
+}
+
+// GroupIBAN : l'IBAN par groupes de 4, comme sur un RIB.
+func GroupIBAN(iban string) string {
+	var parts []string
+	for len(iban) > 4 {
+		parts = append(parts, iban[:4])
+		iban = iban[4:]
+	}
+	if iban != "" {
+		parts = append(parts, iban)
+	}
+	return strings.Join(parts, " ")
+}
+
+// paymentMethodLabel : le moyen de paiement, lisible.
+func paymentMethodLabel(m string) string {
+	switch m {
+	case "virement":
+		return "Virement"
+	case "prelevement":
+		return "Prélèvement"
+	case "carte":
+		return "Carte bancaire"
+	case "lien":
+		return "Paiement en ligne"
+	case "cheque":
+		return "Chèque"
+	case "autre":
+		return "Autre"
+	}
+	return m
 }
 
 // MailFilter : un filtre par catégorie.
@@ -98,7 +162,9 @@ type MailView struct {
 	Cc   string
 	Date string
 	// TaskInput : la tâche proposée (l'action suggérée, sinon l'objet).
-	TaskInput   string
+	TaskInput string
+	// Payment : le bloc de paiement (nil : rien à payer).
+	Payment     *PaymentView
 	Attachments []MailAttachmentView
 	Tasks       []TaskGroupView
 	Notes       []NoteCard

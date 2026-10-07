@@ -149,6 +149,12 @@ func matches(m Mail, q Query, search string) bool {
 	if q.NoReply && !(m.Triage.Version >= TriageVersion && m.Triage.Category != "" && m.Triage.Error == "" && !m.Triage.Reply) {
 		return false
 	}
+	if q.PaymentPending && !(PaymentCandidate(m) && m.Payment.Version < PaymentVersion) {
+		return false
+	}
+	if q.ToPay && !(m.Payment.ToPay && !m.Paid) {
+		return false
+	}
 	if search != "" && !strings.Contains(strings.ToLower(strings.Join([]string{m.Subject, m.From.Name, m.From.Email, m.Text, m.Triage.Summary}, "\x00")), search) {
 		return false
 	}
@@ -190,6 +196,33 @@ func (s *FakeStore) ArchiveMatching(ctx context.Context, q Query, at time.Time) 
 		}
 	}
 	return n, nil
+}
+
+func (s *FakeStore) SetPayment(ctx context.Context, id string, p Payment) error {
+	return s.update(id, func(m *Mail) { m.Payment = clonePayment(p) })
+}
+
+func (s *FakeStore) SetPaid(ctx context.Context, id string, paid bool, at time.Time) error {
+	if !paid {
+		at = time.Time{}
+	}
+	return s.update(id, func(m *Mail) { m.Paid, m.PaidAt = paid, at })
+}
+
+// update applique f à un email de cet environnement ; inconnu : erreur.
+func (s *FakeStore) update(id string, f func(*Mail)) error {
+	if err := s.ensure(); err != nil {
+		return err
+	}
+	s.shared.mu.Lock()
+	defer s.shared.mu.Unlock()
+	m, ok := s.shared.mails[s.key(id)]
+	if !ok {
+		return fmt.Errorf("mail: email %s introuvable", id)
+	}
+	f(&m)
+	s.shared.mails[s.key(id)] = m
+	return nil
 }
 
 func (s *FakeStore) SetTriage(ctx context.Context, id string, t Triage) error {
@@ -259,5 +292,12 @@ func clone(m Mail) Mail {
 	m.To = slices.Clone(m.To)
 	m.Cc = slices.Clone(m.Cc)
 	m.Attachments = slices.Clone(m.Attachments)
+	m.Payment = clonePayment(m.Payment)
 	return m
+}
+
+func clonePayment(p Payment) Payment {
+	p.Checks = slices.Clone(p.Checks)
+	p.Sources = slices.Clone(p.Sources)
+	return p
 }

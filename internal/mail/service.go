@@ -21,6 +21,9 @@ type Service struct {
 	Store   Store
 	Syncer  *Syncer
 	Triager *Triager // nil : pas de tri
+	// Payments : l'analyse des paiements, après le tri, dans la même file
+	// des modèles. nil : pas d'analyse.
+	Payments *PaymentAnalyzer
 	// Acquire : la file d'accès aux modèles (profil documents) — le tri
 	// ne passe jamais pendant un autre traitement. nil : sans file.
 	Acquire func(ctx context.Context) (func(), error)
@@ -38,6 +41,7 @@ type Service struct {
 	status     Status
 	syncErr    string
 	triageErr  string
+	payErr     string
 	kick       chan struct{}
 	triageKick chan struct{} // DefaultScope : portée du travail de fond (relève, tri) quand le
 	// contexte n'en porte pas.
@@ -114,6 +118,9 @@ func (s *Service) Status() Status {
 	if s.triageErr != "" {
 		errs = append(errs, "Tri : "+s.triageErr)
 	}
+	if s.payErr != "" {
+		errs = append(errs, "Paiements : "+s.payErr)
+	}
 	st.LastError = strings.Join(errs, " — ")
 	return st
 }
@@ -147,13 +154,27 @@ func (s *Service) channelsBoth() (kick, triage chan struct{}) {
 	return s.kick, s.triageKick
 }
 
-// Retriage efface le tri d'un email et le fait refaire.
+// Retriage efface le tri d'un email et son analyse des paiements, et les
+// fait refaire (la marque « payé » de l'utilisateur reste).
 func (s *Service) Retriage(ctx context.Context, id string) error {
 	if err := s.DB(ctx).SetTriage(ctx, id, Triage{}); err != nil {
 		return err
 	}
+	if err := s.DB(ctx).SetPayment(ctx, id, Payment{}); err != nil {
+		return err
+	}
 	s.kickTriage()
 	return nil
+}
+
+// MarkPaid : l'utilisateur a payé (rien n'est payé par Jarvis).
+func (s *Service) MarkPaid(ctx context.Context, id string) error {
+	return s.DB(ctx).SetPaid(ctx, id, true, s.now())
+}
+
+// MarkUnpaid défait MarkPaid.
+func (s *Service) MarkUnpaid(ctx context.Context, id string) error {
+	return s.DB(ctx).SetPaid(ctx, id, false, time.Time{})
 }
 
 // Archive range un email dans Jarvis (la boîte n'est pas modifiée).
@@ -240,7 +261,8 @@ func (s *Service) syncOnce(ctx context.Context) {
 	}
 }
 
-// triageOnce trie un lot ; more : d'autres attendent encore.
+// triageOnce trie un lot, puis analyse un lot de paiements ; more : d'autres
+// attendent encore.
 func (s *Service) triageOnce(ctx context.Context) bool {
 	more, err := s.triagePending(ctx)
 	s.mu.Lock()
@@ -253,7 +275,58 @@ func (s *Service) triageOnce(ctx context.Context) bool {
 		s.logf("mail: tri : %v", err)
 		return false
 	}
-	return more
+	morePay, err := s.analyzePayments(ctx)
+	s.mu.Lock()
+	s.payErr = ""
+	if err != nil {
+		s.payErr = strings.TrimPrefix(err.Error(), "mail: paiement : ")
+	}
+	s.mu.Unlock()
+	if err != nil {
+		s.logf("mail: paiement : %v", err)
+		return false
+	}
+	return more || morePay
+}
+
+// analyzePayments analyse les candidats en attente (un lot au plus : more
+// si d'autres attendent). Une réponse inutilisable est notée sur l'email ;
+// un modèle indisponible arrête l'analyse (retentée au cycle suivant).
+func (s *Service) analyzePayments(ctx context.Context) (more bool, err error) {
+	if s.Payments == nil {
+		return false, nil
+	}
+	batch := s.TriageBatch
+	if batch <= 0 {
+		batch = 20
+	}
+	db := s.DB(ctx)
+	pending, err := db.List(ctx, Query{PaymentPending: true, Archive: ArchiveAny, Limit: batch})
+	if err != nil {
+		return false, err
+	}
+	for _, m := range pending {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		release := func() {}
+		if s.Acquire != nil {
+			if release, err = s.Acquire(ctx); err != nil {
+				return false, err
+			}
+		}
+		p, err := s.Payments.Analyze(ctx, db, m)
+		release()
+		if errors.Is(err, errBadReply) {
+			p = Payment{Error: err.Error(), Model: s.Payments.Model, At: s.now(), Version: PaymentVersion}
+		} else if err != nil {
+			return false, err
+		}
+		if err := db.SetPayment(ctx, m.ID, p); err != nil {
+			return false, err
+		}
+	}
+	return len(pending) == batch, nil
 }
 
 func (s *Service) setSyncErr(err error) {

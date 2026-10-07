@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -27,6 +28,8 @@ func (s *Server) emailRoutes(r chi.Router) {
 	r.Get("/emails/{id}", s.handleEmail)
 	r.Post("/emails/{id}/archive", s.handleEmailArchive)
 	r.Post("/emails/{id}/unarchive", s.handleEmailUnarchive)
+	r.Post("/emails/{id}/paid", s.handleEmailPaid)
+	r.Post("/emails/{id}/unpaid", s.handleEmailUnpaid)
 	r.Post("/emails/{id}/retriage", s.handleEmailRetriage)
 	r.Post("/emails/{id}/task", s.handleEmailTask)
 	r.Post("/emails/{id}/note", s.handleEmailNote)
@@ -48,6 +51,7 @@ func (s *Server) mailEnabled(w http.ResponseWriter) bool {
 // sauf « Archivés ».
 const (
 	filterReply    = "repondre"
+	filterPay      = "payer"
 	filterAll      = "tous"
 	filterArchived = "archives"
 )
@@ -71,6 +75,8 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 	switch view {
 	case filterReply:
 		q.Reply = true
+	case filterPay:
+		q.ToPay = true
 	case filterAll:
 	case filterArchived:
 		q.Archive = mail.ArchiveOnly
@@ -81,6 +87,9 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		serverError(w, err)
 		return
+	}
+	if view == filterPay {
+		sortByDueDate(list)
 	}
 	v := templates.MailListView{Status: s.Mail.Status(), Search: search, Category: cat, ReplyView: view == filterReply, Back: r.URL.RequestURI()}
 	if v.ReplyView {
@@ -121,7 +130,7 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 		q.Set("cat", value)
 		return templates.MailFilter{Label: label, Href: "/emails?" + q.Encode(), Active: view == value}
 	}
-	v.Filters = append(v.Filters, filter("↩ À répondre", filterReply), filter("Tous", filterAll))
+	v.Filters = append(v.Filters, filter("↩ À répondre", filterReply), filter("💶 À payer", filterPay), filter("Tous", filterAll))
 	for _, c := range mail.Categories {
 		v.Filters = append(v.Filters, filter(mail.CategoryLabel(c), string(c)))
 	}
@@ -131,12 +140,19 @@ func (s *Server) handleEmails(w http.ResponseWriter, r *http.Request) {
 		if from == "" {
 			from = m.From.Email
 		}
-		v.Rows = append(v.Rows, templates.MailRow{
+		row := templates.MailRow{
 			ID: m.ID, From: from, Subject: m.Subject, Summary: m.Triage.Summary,
 			Date: m.Date.Local().Format("02/01 15:04"), Category: m.Triage.Category,
 			Unread: !m.Seen, Attachments: len(m.Attachments), TriageError: m.Triage.Error != "",
 			Reply: m.Triage.Reply, Question: m.Triage.Question, Archived: m.Archived,
-		})
+		}
+		if m.Payment.ToPay && !m.Paid {
+			row.ToPay, row.Amount, row.PayReview = true, paymentAmount(m.Payment), m.Payment.NeedsReview
+			if d, err := time.Parse("2006-01-02", m.Payment.DueDate); err == nil {
+				row.Due = d.Format("02/01")
+			}
+		}
+		v.Rows = append(v.Rows, row)
 	}
 	renderPage(w, r, http.StatusOK, templates.EmailsPage(v), "emails")
 }
@@ -213,6 +229,10 @@ func (s *Server) handleEmail(w http.ResponseWriter, r *http.Request) {
 	if v.TaskInput == "" {
 		v.TaskInput = m.Subject
 	}
+	if m.Payment.ToPay {
+		v.TaskInput = mail.PaymentTaskInput(m)
+	}
+	v.Payment = paymentView(m)
 	var docIDs []string
 	for _, a := range m.Attachments {
 		if a.DocID != "" {

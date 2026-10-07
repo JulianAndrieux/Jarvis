@@ -42,13 +42,15 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 	if s.Tickets != nil {
 		tks, _ = s.Tickets.Store.List(ctx, "")
 	}
-	var mails []mail.Mail
+	var mails, toPay []mail.Mail
 	if s.Mail != nil {
 		mails, _ = s.Mail.DB(ctx).List(ctx, mail.Query{Category: mail.Action, Limit: 50})
+		toPay, _ = s.Mail.DB(ctx).List(ctx, mail.Query{ToPay: true, Limit: 50})
 	}
 	// Une source illisible laisse son bloc vide plutôt que de casser la
 	// barre (affichée sur toutes les pages).
 	v := buildSidebar(now, tasks, active, failed, tks, mails)
+	v.Payments, v.PaymentsMore = buildPayments(now, toPay)
 	v.Pending = s.pendingCount(r)
 	v.Envs, v.CurrentEnv = s.envOptions(r)
 	w.Header().Set("Cache-Control", "no-store")

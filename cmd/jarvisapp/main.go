@@ -368,6 +368,12 @@ func main() {
 		Store:   mailStore,
 		Syncer:  &mail.Syncer{Store: mailStore, Connect: mail.ConnectIMAP, Days: *mailDays},
 		Triager: &mail.Triager{LLM: llmClient, Model: *llmModel, Prompt: agentRegistry.PromptFunc(agents.MailTriage)},
+		// Paiements : après le tri, même LLM et même file ; texte des PDF
+		// joints par pdftotext (couche texte seulement, jamais le VLM).
+		Payments: &mail.PaymentAnalyzer{
+			LLM: llmClient, Model: *llmModel, Prompt: agentRegistry.PromptFunc(agents.MailPayment),
+			PDFText: triage.PdftotextExtractor{}, WorkDir: *workDir,
+		},
 		Acquire: func(ctx context.Context) (func(), error) {
 			// Le tri des emails appartient à un environnement, comme les
 			// documents : même file équitable.

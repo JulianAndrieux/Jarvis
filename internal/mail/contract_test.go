@@ -220,6 +220,105 @@ func storeContract(t *testing.T, s Store, stamp string) {
 	if err := s.SetAttachmentDoc(ctx, facture.ID, 5, "job-1"); err == nil {
 		t.Error("SetAttachmentDoc(unknown index) = nil")
 	}
+
+	paymentContract(t, s, stamp, mk)
+}
+
+// paymentContract : les paiements repérés (passe dédiée après le tri) et
+// la marque « payé » de l'utilisateur.
+func paymentContract(t *testing.T, s Store, stamp string, mk func(uint32, string, int) Mail) {
+	ctx := context.Background()
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	ids := func(ms []Mail) string {
+		var out []string
+		for _, m := range ms {
+			// Seulement p1…p5 (« promo » commence aussi par p).
+			if name := strings.TrimPrefix(m.ID, stamp+"-"); len(name) == 2 && name[0] == 'p' {
+				out = append(out, name)
+			}
+		}
+		return strings.Join(out, ",")
+	}
+	// p1 : candidat non analysé ; p2 : candidat déjà analysé ; p3 :
+	// newsletter ; p4 : tri d'une ancienne version ; p5 : document.
+	triages := map[string]Triage{
+		"p1": {Category: Action, Version: TriageVersion},
+		"p2": {Category: Action, Version: TriageVersion},
+		"p3": {Category: Newsletter, Version: TriageVersion},
+		"p4": {Category: Action, Version: TriageVersion - 1},
+		"p5": {Category: Document, Version: TriageVersion},
+	}
+	for i, name := range []string{"p1", "p2", "p3", "p4", "p5"} {
+		if _, err := s.Save(ctx, mk(uint32(100+i), name, 10+i), nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetTriage(ctx, stamp+"-"+name, triages[name]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pay := Payment{
+		ToPay: true, Payee: "Acme", Amount: "120,00", Currency: "EUR", DueDate: "2026-10-15", Reference: "F42",
+		IBAN: "FR7630006000011234567890189", IBANValid: true, BIC: "AGRIFRPP", Method: "virement", Link: "https://pay.acme.fr",
+		Evidence: "120,00 €", Confidence: 0.9, NeedsReview: true, Checks: []string{"contrôle"}, Sources: []string{"corps", "f.pdf"},
+		Version: PaymentVersion, Model: "qwen3-8b", Prompt: "p", At: at,
+	}
+	if err := s.SetPayment(ctx, stamp+"-p2", pay); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := s.Get(ctx, stamp+"-p2")
+	if got.Payment.Payee != "Acme" || got.Payment.IBAN != pay.IBAN || !got.Payment.IBANValid || got.Payment.DueDate != "2026-10-15" ||
+		strings.Join(got.Payment.Checks, "|") != "contrôle" || strings.Join(got.Payment.Sources, "|") != "corps|f.pdf" ||
+		got.Payment.Version != PaymentVersion || !got.Payment.At.Equal(at) || got.Payment.Confidence != 0.9 || !got.Payment.NeedsReview {
+		t.Errorf("Payment = %+v", got.Payment)
+	}
+	if err := s.SetPayment(ctx, stamp+"-absent", pay); err == nil {
+		t.Error("SetPayment(unknown) = nil")
+	}
+	if ms, err := s.List(ctx, Query{Search: stamp, PaymentPending: true, Archive: ArchiveAny}); err != nil || ids(ms) != "p5,p1" {
+		t.Errorf("List(payment pending) = %q, %v, want p5,p1", ids(ms), err)
+	}
+	// p1, p5 et la facture du contrat principal (triée « à traiter »).
+	if n, err := s.Count(ctx, Query{Search: stamp, PaymentPending: true}); err != nil || n != 3 {
+		t.Errorf("Count(payment pending) = %d, %v, want 3", n, err)
+	}
+
+	// Un nouveau tri ne touche ni le paiement ni la marque « payé ».
+	if err := s.SetPaid(ctx, stamp+"-p2", true, at); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetTriage(ctx, stamp+"-p2", Triage{Category: Action, Version: TriageVersion}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = s.Get(ctx, stamp+"-p2")
+	if !got.Paid || !got.PaidAt.Equal(at) || got.Payment.Payee != "Acme" {
+		t.Errorf("after SetTriage: paid=%v %v, payment %+v", got.Paid, got.PaidAt, got.Payment)
+	}
+	if err := s.SetPaid(ctx, stamp+"-absent", true, at); err == nil {
+		t.Error("SetPaid(unknown) = nil")
+	}
+
+	// À payer : ni payé ni (par défaut) archivé.
+	if err := s.SetPayment(ctx, stamp+"-p5", pay); err != nil {
+		t.Fatal(err)
+	}
+	if ms, _ := s.List(ctx, Query{Search: stamp, ToPay: true}); ids(ms) != "p5" {
+		t.Errorf("List(to pay) = %q, want p5 (p2 is paid)", ids(ms))
+	}
+	if err := s.SetPaid(ctx, stamp+"-p2", false, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := s.Get(ctx, stamp+"-p2"); got.Paid || !got.PaidAt.IsZero() {
+		t.Errorf("after unpaid = %v, %v", got.Paid, got.PaidAt)
+	}
+	if err := s.SetArchived(ctx, stamp+"-p5", true, at); err != nil {
+		t.Fatal(err)
+	}
+	if ms, _ := s.List(ctx, Query{Search: stamp, ToPay: true}); ids(ms) != "p2" {
+		t.Errorf("List(to pay) = %q, want p2 (p5 archived)", ids(ms))
+	}
+	if n, _ := s.Count(ctx, Query{Search: stamp, ToPay: true, Archive: ArchiveAny}); n != 2 {
+		t.Errorf("Count(to pay, any) = %d, want 2", n)
+	}
 }
 
 func TestFakeStore_Contract(t *testing.T) {

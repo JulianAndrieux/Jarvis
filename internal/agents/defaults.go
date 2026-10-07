@@ -14,6 +14,7 @@ const (
 	Classification = "classification"
 	Extraction     = "extraction"
 	MailTriage     = "mail_triage"
+	MailPayment    = "mail_payment"
 	Analysis       = "analysis"
 	Development    = "development"
 	Review         = "review"
@@ -51,6 +52,13 @@ func Defaults(m Models) []Definition {
 			Model:         m.Documents,
 			DefaultPrompt: mail.DefaultTriagePrompt,
 			Appended:      "L'expéditeur, les destinataires (et si l'utilisateur est destinataire direct, en copie ou absent), l'objet, la date, les noms des pièces jointes et le début du corps (5000 caractères), puis le schéma JSON de la réponse. Le prompt utilisé est conservé avec le tri.",
+		},
+		{
+			ID: MailPayment, Name: "Paiements des emails", Group: "Emails",
+			Role:          "Repère, parmi les emails triés « à traiter » ou « document », ce que l'utilisateur doit payer, et prépare bénéficiaire, montant, échéance, référence, IBAN et lien de paiement. Après le modèle, des contrôles du code : un IBAN, un BIC ou un lien absents du texte sont écartés, l'IBAN est vérifié par sa clé, un montant introuvable ou une confiance basse passent en revue. Un prélèvement automatique n'est pas « à payer ». Jarvis ne paie jamais rien.",
+			Model:         m.Documents,
+			DefaultPrompt: mail.DefaultPaymentPrompt,
+			Appended:      "L'en-tête et le début du corps de l'email (5000 caractères), le texte des PDF joints (couche texte seulement, 3000 caractères au plus), puis le schéma JSON de la réponse. Le prompt utilisé est conservé avec le résultat.",
 		},
 		{
 			ID: Analysis, Name: "Analyse de ticket", Group: "Tickets",

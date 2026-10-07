@@ -149,6 +149,18 @@ func (s *MongoStore) filter(q Query) bson.M {
 			"triage.reply":    bson.M{"$ne": true},
 		})
 	}
+	if q.PaymentPending {
+		// $not/$gte : un email jamais analysé n'a pas le champ.
+		and = append(and, bson.M{
+			"triage.version":  bson.M{"$gte": TriageVersion},
+			"triage.error":    "",
+			"triage.category": bson.M{"$in": bson.A{Action, Document}},
+			"payment.version": bson.M{"$not": bson.M{"$gte": PaymentVersion}},
+		})
+	}
+	if q.ToPay {
+		and = append(and, bson.M{"payment.to_pay": true, "paid": bson.M{"$ne": true}})
+	}
 	switch q.Archive {
 	case ArchiveHide:
 		// $ne : un email d'avant l'archivage n'a pas le champ.
@@ -217,6 +229,33 @@ func (s *MongoStore) List(ctx context.Context, q Query) ([]Mail, error) {
 		return nil, fmt.Errorf("mail: list: %w", err)
 	}
 	return out, nil
+}
+
+func (s *MongoStore) SetPayment(ctx context.Context, id string, p Payment) error {
+	return s.set(ctx, id, "paiement", bson.M{"payment": p})
+}
+
+func (s *MongoStore) SetPaid(ctx context.Context, id string, paid bool, at time.Time) error {
+	if !paid {
+		at = time.Time{}
+	}
+	return s.set(ctx, id, "paiement", bson.M{"paid": paid, "paid_at": at})
+}
+
+// set : $set de fields sur un email de cet environnement ; inconnu :
+// erreur.
+func (s *MongoStore) set(ctx context.Context, id, what string, fields bson.M) error {
+	if err := s.ensure(); err != nil {
+		return err
+	}
+	res, err := s.Mails.UpdateOne(ctx, s.key(id), bson.M{"$set": fields})
+	if err != nil {
+		return fmt.Errorf("mail: %s de %s: %w", what, id, err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("mail: email %s introuvable", id)
+	}
+	return nil
 }
 
 func (s *MongoStore) SetTriage(ctx context.Context, id string, t Triage) error {

@@ -15,8 +15,12 @@ type SidebarView struct {
 	Week     []TaskView // tâches en retard ou à échéance dans les 7 jours
 	WeekMore int        // tâches de la semaine non affichées
 	Mails    []SideItem // emails « à traiter » de la semaine sans tâche
-	Running  []SideItem
-	Errors   []SideItem
+	// Payments : emails à payer, en retard, sans échéance ou à échéance
+	// sous 14 jours ; PaymentsMore : ceux non affichés.
+	Payments     []SideItem
+	PaymentsMore int
+	Running      []SideItem
+	Errors       []SideItem
 	// Pending : nombre de modifications en attente de commit (jalon 48). Un
 	// compteur permanent, parce qu'un changeset oublié est invisible de
 	// tous — y compris de son auteur.

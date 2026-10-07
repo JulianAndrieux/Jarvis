@@ -2848,6 +2848,58 @@ décisions : `docs/plan-multi-environnement.md`.
     doit implémenter `For`, sinon l'embedding rend la fake nue et le test
     passe en ne testant plus rien.
 
+- **Jalon 52 — paiements repérés dans les emails (ticket « Ce que j'ai
+  besoin de payer ») : fait, testé sans modèle, à valider sur la vraie
+  boîte.** Le LLM local repère ce que l'utilisateur doit payer et prépare
+  de quoi le faire : bénéficiaire, montant, devise, échéance, référence,
+  IBAN/BIC, moyen, lien de paiement.
+  - **Une passe dédiée, pas un tri v3** (`mail.PaymentAnalyzer`,
+    `PaymentVersion`) : augmenter `TriageVersion` aurait fait retrier toute
+    la boîte (1300+ emails, des heures). Ne lit que les candidats
+    (`PaymentCandidate` : triés par la version en vigueur, sans erreur,
+    « à traiter » ou « document »), après le tri, dans la même boucle et la
+    même file des modèles. Réponse inutilisable notée sur l'email (pas
+    retentée seule), modèle indisponible : arrêt sans rien noter
+    (« Paiements : » dans l'état de la relève). Agent « Paiements des
+    emails » dans l'onglet Agents (prompt modifiable).
+  - **Texte des PDF joints lu** (2 au plus, 3000 caractères), couche texte
+    seulement (`triage.PdftotextExtractor`, fichier temporaire sous
+    `--work-dir` supprimé aussitôt) — jamais le VLM : une pièce jointe
+    scannée est signalée (« envoie-la dans Documents »), jamais devinée.
+  - **Décision assumée : contrôles déterministes après le modèle** — pas
+    une extraction par regex, seulement un contrôle de sa sortie contre le
+    texte qu'il a lu : IBAN, BIC ou lien absents du texte écartés, lien non
+    `https://` écarté, clé d'IBAN (ISO 13616, mod 97) fausse gardée mais
+    « à vérifier », montant introuvable (espaces et `,`/`.` confondus) en
+    revue, échéance non `AAAA-MM-JJ` vidée, confiance sous
+    `extraction.DefaultConfidenceThreshold` en revue, prélèvement
+    automatique jamais « à payer ». Chaque contrôle est écrit sur le
+    résultat (`Payment.Checks`), lisible sur la fiche.
+  - **« Payé » est une marque de l'utilisateur** (`Mail.Paid`, hors de
+    `Payment`, comme `Archived`) : une nouvelle analyse ne la défait pas ;
+    écriture ciblée (`Store.SetPaid`), hors changeset comme l'archivage.
+    « Retrier » efface aussi l'analyse des paiements, pas la marque.
+  - **UI** : filtre « 💶 À payer » (par échéance, sans échéance en
+    dernier ; montant et échéance en pastille ; ✓ payé en HTMX) ; bloc
+    « 💶 Paiement » de la fiche (valeurs dans des `<code>` à recopier, IBAN
+    groupé par 4, extrait source, contrôles, **lien affiché en texte,
+    jamais cliquable**, avec un avertissement d'hameçonnage) ; tâche
+    pré-remplie « Payer Acme 120,00 EUR 15/10/2026 » (l'échéance est lue
+    par la saisie rapide) ; barre latérale « 💶 À payer » (en retard, sans
+    échéance ou sous 14 jours).
+  - **Non fait** : PDF joints scannés (pas de VLM dans cette passe), et le
+    paiement lui-même — Jarvis ne paie jamais rien. Aucune nouvelle sortie
+    de données : informations dérivées des emails déjà copiés dans Atlas
+    (exception 4), calcul local.
+  - Testé : `mail` (candidats, IBAN, analyse et chacun de ses contrôles,
+    PDF joint et fichier temporaire supprimé, scan signalé, prompt
+    modifiable, réponses inutilisables, service : après le tri, file des
+    modèles, erreurs, retri, payé), contrat Fake/Mongo et isolation
+    (`SetPayment`, `SetPaid`, `PaymentPending`, `ToPay`), `agents`,
+    `cmd/jarvisapp` (filtre, ordre, fiche échappée, lien sans `href`,
+    tâche, payé/non payé, barre latérale). Contrat Mongo à passer sur Atlas
+    (`-tags=integration`).
+
 **Reste à valider en conditions réelles** (impossible depuis
 l'environnement de développement de ce chantier) : les contrats Mongo
 contre Atlas (`-tags=integration`, `MONGO_URI`), le flux Google avec un

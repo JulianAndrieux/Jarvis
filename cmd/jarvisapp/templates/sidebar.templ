@@ -59,6 +59,18 @@ templ Sidebar(v SidebarView) {
 			@sideItems(v.Mails, false)
 		</section>
 	}
+	if len(v.Payments) > 0 {
+		<section class="side-block">
+			<div class="side-title">💶 À payer <span class="count">{ fmt.Sprint(len(v.Payments) + v.PaymentsMore) }</span></div>
+			@sideItems(v.Payments, false)
+			<a class="side-more" href="/emails?cat=payer">
+				if v.PaymentsMore > 0 {
+					+ { fmt.Sprint(v.PaymentsMore) } autre(s) —
+				}
+				Tout ce qui est à payer →
+			</a>
+		</section>
+	}
 	<section class="side-block">
 		<div class="side-title">⏳ En cours <span class="count">{ fmt.Sprint(len(v.Running)) }</span></div>
 		if len(v.Running) == 0 {

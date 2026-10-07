@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
 )
@@ -83,6 +84,17 @@ templ EmailsPage(v MailListView) {
 										}
 									</span>
 									<span class="mail-side">
+										if m.ToPay {
+											<span class={ "chip", "chip-pay", templ.KV("chip-pay-review", m.PayReview) } title="À payer (repéré par le modèle local)">
+												💶 { m.Amount }
+												if m.Due != "" {
+													· { m.Due }
+												}
+												if m.PayReview {
+													· à vérifier
+												}
+											</span>
+										}
 										if m.Reply && !v.ReplyView {
 											<span class="chip chip-reply">↩ À répondre</span>
 										}
@@ -96,6 +108,12 @@ templ EmailsPage(v MailListView) {
 										<span class="doc-date">{ m.Date }</span>
 									</span>
 								</a>
+								if m.ToPay {
+									<form class="mail-archive" method="post" action={ templ.SafeURL("/emails/" + m.ID + "/paid") } hx-post={ "/emails/" + m.ID + "/paid" } hx-target="closest li" hx-swap="outerHTML">
+										<input type="hidden" name="back" value={ v.Back }/>
+										<button type="submit" class="button-ghost" title="Marquer comme payé (Jarvis ne paie rien lui-même)" aria-label="Marquer comme payé">✓</button>
+									</form>
+								}
 								if !m.Archived {
 									<form class="mail-archive" method="post" action={ templ.SafeURL("/emails/" + m.ID + "/archive") } hx-post={ "/emails/" + m.ID + "/archive" } hx-target="closest li" hx-swap="outerHTML">
 										<input type="hidden" name="back" value={ v.Back }/>
@@ -169,6 +187,9 @@ templ EmailPage(v MailView) {
 					<p class="muted">Trié par { v.Mail.Triage.Model } le { v.Mail.Triage.At.Local().Format("02/01/2006 15:04") }</p>
 				}
 			</div>
+			if v.Payment != nil {
+				@paymentBlock(v.Mail.ID, *v.Payment)
+			}
 			<div class="section-title">Tâches de cet email</div>
 			<form class="quick-add" method="post" action={ templ.SafeURL("/emails/" + v.Mail.ID + "/task") }>
 				<input type="text" name="input" value={ v.TaskInput } aria-label="Nouvelle tâche"/>
@@ -213,6 +234,101 @@ templ EmailPage(v MailView) {
 			<pre class="card mail-body">{ v.Mail.Text }</pre>
 		</div>
 	}
+}
+
+// paymentBlock : ce qu'il faut pour payer, prêt à recopier dans
+// l'application de la banque. Tout vient d'un email : affiché en texte,
+// le lien jamais cliquable.
+templ paymentBlock(id string, p PaymentView) {
+	<div class="card mail-payment">
+		<div class="agent-card-head">
+			<strong>💶 Paiement</strong>
+			if p.Paid {
+				<span class="chip chip-done">✓ Payé le { p.PaidAt }</span>
+				<form class="inline-form" method="post" action={ templ.SafeURL("/emails/" + id + "/unpaid") }>
+					<button type="submit" class="button-ghost">Annuler</button>
+				</form>
+			} else if p.ToPay {
+				if p.NeedsReview {
+					<span class="chip chip-pay-review">⚠ à vérifier</span>
+				}
+				<form class="inline-form" method="post" action={ templ.SafeURL("/emails/" + id + "/paid") }>
+					<button type="submit" class="button-primary" title="Jarvis ne paie rien lui-même">✓ Marquer comme payé</button>
+				</form>
+			}
+		</div>
+		if p.Error != "" {
+			<p class="form-error">Analyse impossible : { p.Error }</p>
+		} else if p.AutoDebit {
+			<p class="muted">Prélèvement automatique : rien à payer soi-même (pour information).</p>
+		} else if !p.ToPay && p.Paid {
+			<p class="muted">Rien à payer selon la dernière analyse.</p>
+		}
+		if p.Error == "" && (p.ToPay || p.AutoDebit) {
+			<dl class="agent-facts payment-facts">
+				if p.Payee != "" {
+					<dt>Bénéficiaire</dt>
+					<dd><code>{ p.Payee }</code></dd>
+				}
+				if p.Amount != "" {
+					<dt>Montant</dt>
+					<dd><code>{ p.Amount }</code></dd>
+				}
+				if p.DueDate != "" {
+					<dt>Échéance</dt>
+					<dd><code>{ p.DueDate }</code></dd>
+				}
+				if p.Reference != "" {
+					<dt>Référence</dt>
+					<dd><code>{ p.Reference }</code></dd>
+				}
+				if p.IBAN != "" {
+					<dt>IBAN</dt>
+					<dd>
+						<code>{ p.IBAN }</code>
+						if !p.IBANValid {
+							<span class="chip chip-pay-review">clé invalide</span>
+						}
+					</dd>
+				}
+				if p.BIC != "" {
+					<dt>BIC</dt>
+					<dd><code>{ p.BIC }</code></dd>
+				}
+				if p.Method != "" {
+					<dt>Moyen</dt>
+					<dd>{ paymentMethodLabel(p.Method) }</dd>
+				}
+				if p.Link != "" {
+					<dt>Lien</dt>
+					<dd>
+						<code>{ p.Link }</code>
+						<span class="muted">— lien venu d'un email : vérifie l'adresse avant de l'ouvrir.</span>
+					</dd>
+				}
+			</dl>
+			if p.Evidence != "" {
+				<p class="muted">Extrait : « { p.Evidence } »</p>
+			}
+		}
+		if len(p.Checks) > 0 {
+			<ul class="payment-checks">
+				for _, c := range p.Checks {
+					<li>{ c }</li>
+				}
+			</ul>
+		}
+		<p class="muted">
+			Repéré par { p.Model }
+			if len(p.Sources) > 0 {
+				dans : { strings.Join(p.Sources, ", ") }
+			}
+			if p.Confidence > 0 {
+				· confiance { fmt.Sprintf("%.2f", p.Confidence) }
+			}
+			. Vérifie l'expéditeur : un email frauduleux peut porter un IBAN valide.
+		</p>
+	</div>
 }
 
 // EmailSettingsPage : connecter la boîte mail.

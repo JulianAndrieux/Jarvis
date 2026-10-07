@@ -61,6 +61,12 @@ func storeIsolationContract(t *testing.T, root Store, stamp string) {
 	if err := b.SetArchived(ctx, id, true, time.Now()); err == nil {
 		t.Error("B.SetArchived a réussi sur un email de A")
 	}
+	if err := b.SetPayment(ctx, id, Payment{ToPay: true, IBAN: "FR76PIRATE"}); err == nil {
+		t.Error("B.SetPayment a réussi sur un email de A")
+	}
+	if err := b.SetPaid(ctx, id, true, time.Now()); err == nil {
+		t.Error("B.SetPaid a réussi sur un email de A")
+	}
 	if n, err := b.ArchiveMatching(ctx, Query{}, time.Now()); err != nil || n != 0 {
 		t.Errorf("B.ArchiveMatching = %d (err=%v), veut 0", n, err)
 	}
@@ -74,6 +80,9 @@ func storeIsolationContract(t *testing.T, root Store, stamp string) {
 	}
 	if got.Archived {
 		t.Error("B a archivé l'email de A")
+	}
+	if got.Payment.IBAN != "" || got.Paid {
+		t.Error("B a écrit le paiement de l'email de A")
 	}
 	if got.Env != tenancy.EnvID("A-"+stamp) {
 		t.Errorf("Env = %q, veut %q", got.Env, "A-"+stamp)

@@ -133,6 +133,58 @@ type Mail struct {
 	// ne le défait pas.
 	Archived   bool      `bson:"archived"`
 	ArchivedAt time.Time `bson:"archived_at"`
+	// Payment : ce qu'il y a à payer, repéré par la passe dédiée après le
+	// tri (PaymentAnalyzer).
+	Payment Payment `bson:"payment"`
+	// Paid : marqué payé par l'utilisateur. Hors de Payment, comme
+	// Archived : une nouvelle analyse ne le défait pas.
+	Paid   bool      `bson:"paid"`
+	PaidAt time.Time `bson:"paid_at"`
+}
+
+// PaymentVersion : la version en vigueur de l'analyse des paiements. Un
+// candidat analysé par une version plus ancienne (ou jamais) est relu.
+const PaymentVersion = 1
+
+// Payment : les informations pour payer, recopiées du texte de l'email et
+// de ses PDF joints par le modèle local, puis contrôlées (Checks) — avec
+// leur provenance (modèle, prompt).
+type Payment struct {
+	// ToPay : une somme que l'utilisateur doit régler lui-même (un
+	// prélèvement automatique n'en est pas une : AutoDebit).
+	ToPay     bool   `bson:"to_pay"`
+	AutoDebit bool   `bson:"auto_debit"`
+	Payee     string `bson:"payee"`
+	Amount    string `bson:"amount"` // tel qu'écrit : "1 234,56"
+	Currency  string `bson:"currency"`
+	DueDate   string `bson:"due_date"` // "AAAA-MM-JJ" ou ""
+	Reference string `bson:"reference"`
+	IBAN      string `bson:"iban"` // normalisé, sans espaces
+	IBANValid bool   `bson:"iban_valid"`
+	BIC       string `bson:"bic"`
+	Method    string `bson:"method"` // virement|prelevement|carte|lien|cheque|autre|""
+	// Link : lien de paiement, affiché en texte (jamais cliquable :
+	// il vient d'un email).
+	Link        string  `bson:"link"`
+	Evidence    string  `bson:"evidence"` // extrait source
+	Confidence  float64 `bson:"confidence"`
+	NeedsReview bool    `bson:"needs_review"`
+	// Checks : les contrôles déterministes appliqués après le modèle,
+	// lisibles ; Sources : "corps" et les noms des PDF lus.
+	Checks  []string  `bson:"checks"`
+	Sources []string  `bson:"sources"`
+	Version int       `bson:"version"`
+	Model   string    `bson:"model"`
+	Prompt  string    `bson:"prompt"`
+	Error   string    `bson:"error"` // analyse impossible : pas retentée seule
+	At      time.Time `bson:"at"`
+}
+
+// PaymentCandidate : l'email est lu par l'analyse des paiements — trié par
+// la version en vigueur, sans erreur, « à traiter » ou « document ».
+func PaymentCandidate(m Mail) bool {
+	return m.Triage.Version >= TriageVersion && m.Triage.Error == "" &&
+		(m.Triage.Category == Action || m.Triage.Category == Document)
 }
 
 // ArchiveFilter : la place des emails archivés dans une liste.
@@ -159,6 +211,12 @@ type Query struct {
 	// NoReply : triés par la version en vigueur, sans erreur, sans réponse
 	// attendue (un email pas encore lu par le modèle n'y est jamais).
 	NoReply bool
+	// PaymentPending : candidats à l'analyse des paiements pas encore
+	// analysés par la version en vigueur (une erreur est notée avec la
+	// version : pas retentée seule, comme le tri).
+	PaymentPending bool
+	// ToPay : quelque chose à payer, pas encore marqué payé.
+	ToPay   bool
 	Archive ArchiveFilter
 	Limit   int // 0 : DefaultLimit
 }
@@ -186,6 +244,12 @@ type Store interface {
 	// ArchiveMatching archive les emails non archivés correspondant à q
 	// (Limit ignoré) et rend leur nombre.
 	ArchiveMatching(ctx context.Context, q Query, at time.Time) (int, error)
+	// SetPayment : écriture ciblée de l'analyse des paiements ; email
+	// inconnu : erreur.
+	SetPayment(ctx context.Context, id string, p Payment) error
+	// SetPaid : écriture ciblée de la marque « payé » (paid=false remet la
+	// date à zéro) ; email inconnu : erreur.
+	SetPaid(ctx context.Context, id string, paid bool, at time.Time) error
 	SetAttachmentDoc(ctx context.Context, id string, index int, docID string) error
 	Attachment(ctx context.Context, id string, index int) ([]byte, bool, error)
 	// LastUID : le plus grand UID relevé pour ce compte, cette boîte et
