@@ -386,3 +386,66 @@ func TestChangeset_TexteDUneBoiteAttendLeCommit(t *testing.T) {
 		t.Errorf("après commit, boîtes = %+v", bs)
 	}
 }
+
+// Commit automatique (ticket « Automatique ») : le même changeset, appliqué
+// dès qu'une opération est enregistrée.
+func autoCommit(f *csFixture) {
+	f.moi.Stager.AutoCommit = f.commit
+}
+
+func TestService_AutoCommit_NoteAppliqueeSansClic(t *testing.T) {
+	f := newCS(t)
+	autoCommit(f)
+	n, err := f.moi.NewNote(f.ctxMoi, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Titre", "", false); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := f.base.For(scopeOf(f.ctxAutr)).GetNote(f.ctxAutr, n.ID)
+	if err != nil || !ok {
+		t.Fatalf("l'autre ne voit pas la note : (%v, %v), veut la note appliquée sans clic", ok, err)
+	}
+	if got.Title != "Titre" {
+		t.Errorf("titre en base = %q, veut %q", got.Title, "Titre")
+	}
+	if pending, _ := f.staged.Pending(f.ctxMoi, tenancy.Local, "moi"); len(pending) != 0 {
+		t.Errorf("%d opérations en attente, veut 0", len(pending))
+	}
+}
+
+// Un conflit n'est jamais appliqué par le commit automatique : il reste en
+// attente pendant que les modifications suivantes, elles, passent.
+func TestService_AutoCommit_ConflitGarde(t *testing.T) {
+	f := newCS(t)
+	n, _ := f.autre.NewNote(f.ctxAutr, "")
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Courses", "", false); err != nil {
+		t.Fatal(err)
+	}
+	// Mon titre attend (commit manuel), l'autre modifie le même champ.
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Mon titre", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.autre.SaveNote(f.ctxAutr, n.ID, "Son titre", "", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Le commit automatique s'active ; je touche un autre champ.
+	autoCommit(f)
+	if _, err := f.moi.SaveNote(f.ctxMoi, n.ID, "Mon titre", "perso", false); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _, _ := f.base.For(scopeOf(f.ctxAutr)).GetNote(f.ctxAutr, n.ID)
+	if got.Title != "Son titre" {
+		t.Errorf("titre = %q : le commit automatique ne doit rien écraser", got.Title)
+	}
+	if len(got.Tags) != 1 || got.Tags[0] != "perso" {
+		t.Errorf("tags = %v, veut [perso] appliqué aussitôt", got.Tags)
+	}
+	pending, _ := f.staged.Pending(f.ctxMoi, tenancy.Local, "moi")
+	if len(pending) != 1 || pending[0].Field != "title" {
+		t.Errorf("en attente = %+v, veut seulement le titre en conflit", pending)
+	}
+}

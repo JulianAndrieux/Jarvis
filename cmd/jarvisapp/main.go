@@ -98,6 +98,7 @@ func main() {
 	tasksCollection := flag.String("tasks-collection", "tasks", "Collection MongoDB des tâches (onglet Tâches)")
 	changesCollection := flag.String("changes-collection", "changes", "Collection MongoDB du journal des modifications (onglet Activité)")
 	changesetCollection := flag.String("changeset-collection", "changeset", "Collection MongoDB des modifications en attente de commit (onglet Changements) ; vide = écritures directes, sans changeset")
+	changesetAutoCommit := flag.Bool("changeset-auto-commit", true, "Applique les modifications en attente dès qu'elles sont enregistrées (les conflits restent sur l'onglet Changements) ; faux = commit manuel")
 	mailCollection := flag.String("mail-collection", "emails", "Collection MongoDB des emails relevés (onglet Emails)")
 	mailFilesCollection := flag.String("mail-files-collection", "email_files", "Collection MongoDB du contenu des pièces jointes")
 	mailConfig := flag.String("mail-config", defaultMailConfig(), "Configuration de la boîte mail (serveur, adresse, mot de passe d'application — fichier local 0600, jamais dans Atlas, rempli depuis l'onglet Emails) ; vide = pas de relève ni de tri")
@@ -193,7 +194,11 @@ func main() {
 			log.Fatalf("jarvisapp: changeset : %v", err)
 		}
 		changeset, stager = cs, &changes.Stager{Store: cs}
-		log.Printf("jarvisapp: changeset activé (les modifications attendent un commit)")
+		if *changesetAutoCommit {
+			log.Printf("jarvisapp: changeset activé, commit automatique (seuls les conflits attendent)")
+		} else {
+			log.Printf("jarvisapp: changeset activé (les modifications attendent un commit)")
+		}
 	} else {
 		log.Printf("jarvisapp: changeset désactivé (écritures directes)")
 	}
@@ -538,6 +543,13 @@ func main() {
 			notes.Applier{Base: notesStore},
 			webapp.Applier{Base: jobStore},
 		}}
+		if *changesetAutoCommit {
+			// Même Committer que le bouton : les conflits par champ restent
+			// en attente, rien n'est appliqué par-dessus quelqu'un d'autre.
+			stager.AutoCommit, stager.Logf = srv.Committer, log.Printf
+			srv.AutoCommit = true
+			log.Printf("jarvisapp: commit automatique des modifications activé")
+		}
 	}
 
 	// Authentification (jalon 45). Sans fichier de configuration, rien ne

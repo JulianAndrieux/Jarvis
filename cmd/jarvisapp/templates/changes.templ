@@ -22,18 +22,30 @@ type ChangesView struct {
 	// (-1 : aucun commit dans cette requête).
 	Committed  int
 	Conflicted int
+	// AutoCommit : chaque modification est appliquée dès son
+	// enregistrement ; ne restent ici que les conflits.
+	AutoCommit bool
 }
 
 templ ChangesPage(v ChangesView) {
 	@Layout("Changements", "changes") {
 		<div class="page-title"><h2>Changements</h2></div>
-		<p class="muted">
-			Tes modifications vivent ici jusqu'à ce que tu les commites :
-			personne d'autre ne les voit. Commiter les applique une par une —
-			celle qui touche un champ que quelqu'un a modifié entre-temps
-			n'est jamais appliquée en silence, elle revient ici avec les deux
-			valeurs.
-		</p>
+		if v.AutoCommit {
+			<p class="muted">
+				<strong>Commit automatique activé :</strong> chaque modification
+				est appliquée dès que tu l'enregistres. Seules restent ici celles
+				qui touchent un champ modifié entre-temps par quelqu'un d'autre —
+				jamais appliquées en silence, à trancher avec les deux valeurs.
+			</p>
+		} else {
+			<p class="muted">
+				Tes modifications vivent ici jusqu'à ce que tu les commites :
+				personne d'autre ne les voit. Commiter les applique une par une —
+				celle qui touche un champ que quelqu'un a modifié entre-temps
+				n'est jamais appliquée en silence, elle revient ici avec les deux
+				valeurs.
+			</p>
+		}
 		if v.Committed >= 0 {
 			<div class="card commit-result">
 				if v.Committed > 0 {

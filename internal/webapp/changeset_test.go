@@ -211,3 +211,22 @@ func TestDocChangeset_ListeBornee(t *testing.T) {
 		t.Errorf("%d documents, veut 2 : la limite doit tenir malgré le filtrage en mémoire", len(got))
 	}
 }
+
+// Commit automatique (ticket « Automatique ») : retaguer un document
+// s'applique aussitôt, sans passer par l'onglet Changements.
+func TestJobManager_AutoCommit_TagsAppliques(t *testing.T) {
+	f := newDocCS(t)
+	f.moi.Stager.AutoCommit = f.commit
+	f.seedDoc(t, "d1", "facture.pdf")
+
+	if err := f.moi.SetTags(f.ctxMoi, "d1", []string{"urgent"}); err != nil {
+		t.Fatalf("SetTags : %v", err)
+	}
+	theirs, _, _ := f.base.For(f.scopeA).Get(f.ctxAutr, "d1")
+	if len(theirs.Tags) != 1 || theirs.Tags[0] != "urgent" {
+		t.Errorf("tags vus par l'autre = %v, veut [urgent] sans clic", theirs.Tags)
+	}
+	if pending, _ := f.staged.Pending(f.ctxMoi, tenancy.Local, "moi"); len(pending) != 0 {
+		t.Errorf("%d opérations en attente, veut 0", len(pending))
+	}
+}

@@ -108,7 +108,17 @@ func (s *FakeChangesetStore) DropAll(ctx context.Context, env tenancy.EnvID, use
 type Stager struct {
 	Store ChangesetStore
 	Now   func() time.Time
+	// AutoCommit, s'il est donné, applique le changeset du user dès qu'une
+	// opération est enregistrée (--changeset-auto-commit). Les conflits
+	// restent en attente, comme avec un commit manuel. Pas de récursion
+	// possible : les Applier écrivent dans la base, jamais via l'overlay.
+	AutoCommit *Committer
+	// Logf reçoit les échecs du commit automatique (nil = silencieux).
+	Logf  func(format string, args ...any)
 	newID func() (string, error)
+	// commitMu sérialise les commits automatiques : deux écritures
+	// simultanées ne doivent pas appliquer deux fois la même opération.
+	commitMu sync.Mutex
 }
 
 // Stage enregistre des opérations en attente pour la portée du contexte.
@@ -141,7 +151,36 @@ func (s *Stager) Stage(ctx context.Context, ops ...Op) error {
 		}
 		filled = append(filled, o)
 	}
-	return s.Store.Stage(ctx, filled...)
+	if err := s.Store.Stage(ctx, filled...); err != nil {
+		return err
+	}
+	s.autoCommit(ctx, scope)
+	return nil
+}
+
+// autoCommit applique le changeset juste mis à jour. Un échec n'est pas
+// remonté : la modification est déjà enregistrée dans le changeset, rien
+// n'est perdu, et un commit manuel la rattrapera.
+func (s *Stager) autoCommit(ctx context.Context, scope tenancy.Scope) {
+	if s.AutoCommit == nil {
+		return
+	}
+	s.commitMu.Lock()
+	defer s.commitMu.Unlock()
+	res, err := s.AutoCommit.Commit(ctx, scope)
+	if err != nil {
+		s.logf("changes: commit automatique : %v (les modifications restent en attente)", err)
+		return
+	}
+	if n := len(res.Conflicts); n > 0 {
+		s.logf("changes: commit automatique : %d conflit(s) à trancher", n)
+	}
+}
+
+func (s *Stager) logf(format string, args ...any) {
+	if s.Logf != nil {
+		s.Logf(format, args...)
+	}
 }
 
 func (s *Stager) id() (string, error) {

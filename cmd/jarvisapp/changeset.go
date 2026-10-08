@@ -94,7 +94,7 @@ func (s *Server) renderChanges(w http.ResponseWriter, r *http.Request, conflicts
 		serverError(w, err)
 		return
 	}
-	view := templates.ChangesView{Committed: committed, Conflicted: conflicted}
+	view := templates.ChangesView{Committed: committed, Conflicted: conflicted, AutoCommit: s.AutoCommit}
 	for _, op := range ops {
 		e := templates.PendingEntry{
 			ID:    op.ID,

@@ -25,6 +25,9 @@ type SidebarView struct {
 	// compteur permanent, parce qu'un changeset oublié est invisible de
 	// tous — y compris de son auteur.
 	Pending int
+	// AutoCommit : commit automatique actif — ce qui reste en attente est
+	// en conflit, pas privé.
+	AutoCommit bool
 	// Envs : mes environnements, pour le sélecteur (jalon 51). Il n'apparaît
 	// qu'au-delà d'un seul : choisir entre une possibilité n'est pas un
 	// choix. Le changement passe par la session, jamais par l'URL.

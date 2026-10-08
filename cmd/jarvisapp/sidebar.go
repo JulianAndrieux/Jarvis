@@ -51,7 +51,7 @@ func (s *Server) handleSidebar(w http.ResponseWriter, r *http.Request) {
 	// barre (affichée sur toutes les pages).
 	v := buildSidebar(now, tasks, active, failed, tks, mails)
 	v.Payments, v.PaymentsMore = buildPayments(now, toPay)
-	v.Pending = s.pendingCount(r)
+	v.Pending, v.AutoCommit = s.pendingCount(r), s.AutoCommit
 	v.Envs, v.CurrentEnv = s.envOptions(r)
 	w.Header().Set("Cache-Control", "no-store")
 	renderPage(w, r, http.StatusOK, templates.Sidebar(v), "sidebar")

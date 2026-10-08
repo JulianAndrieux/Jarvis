@@ -76,6 +76,9 @@ type Server struct {
 	// l'onglet Changements et rend les écritures directes.
 	Changeset changes.ChangesetStore
 	Committer *changes.Committer
+	// AutoCommit : les modifications en attente sont appliquées aussitôt
+	// (--changeset-auto-commit) ; ne restent sur /changes que les conflits.
+	AutoCommit bool
 	// LocalLogin : jeton de secours du propriétaire, écrit dans le journal
 	// au démarrage — une panne de Google ne doit pas interdire d'ouvrir une
 	// application par ailleurs locale.

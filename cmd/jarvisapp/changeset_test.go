@@ -215,3 +215,82 @@ func TestChangesPage_NotesEtDocumentsEnsemble(t *testing.T) {
 		t.Errorf("tags du document en base = %v", got.Tags)
 	}
 }
+
+// enableAutoCommit : le câblage de --changeset-auto-commit. Le Stager est
+// partagé par les notes et les documents.
+func enableAutoCommit(s *Server) {
+	s.Notes.Stager.AutoCommit = s.Committer
+	s.AutoCommit = true
+}
+
+// Commit automatique (ticket « Automatique ») : la modification est en
+// base sans clic, et rien n'attend.
+func TestChangesPage_AutoCommit_ModificationAppliquee(t *testing.T) {
+	s, autre, base := newChangesetServer(t)
+	enableAutoCommit(s)
+	ctx := context.Background()
+	n, _ := autre.NewNote(ctx, "")
+	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", false); err != nil {
+		t.Fatal(err)
+	}
+	mine, _, _ := s.Notes.Store.For(tenancy.LocalScope()).GetNote(ctx, n.ID)
+	rec := do(s, http.MethodPost, "/notes/"+n.ID, url.Values{
+		"version": {strconv.Itoa(mine.Version)}, "title": {"Courses du samedi"},
+	})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("enregistrement : %d %s", rec.Code, rec.Body.String())
+	}
+	if got, _, _ := base.GetNote(ctx, n.ID); got.Title != "Courses du samedi" {
+		t.Errorf("base = %q, veut la modification appliquée sans commit", got.Title)
+	}
+	page := do(s, http.MethodGet, "/changes", nil).Body.String()
+	for _, want := range []string{"Rien en attente", "Commit automatique activé"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("la page des changements doit contenir %q", want)
+		}
+	}
+	if side := do(s, http.MethodGet, "/sidebar", nil).Body.String(); strings.Contains(side, "non commitée") {
+		t.Error("rien n'attend : la barre latérale ne doit rien signaler")
+	}
+}
+
+// Un conflit reste en attente et la barre le dit « à trancher » plutôt que
+// « non commitée » (qui laisserait croire à une modification privée).
+func TestChangesPage_AutoCommit_ConflitAffiche(t *testing.T) {
+	s, autre, base := newChangesetServer(t)
+	ctx := context.Background()
+	n, _ := autre.NewNote(ctx, "")
+	if _, err := autre.SaveNote(ctx, n.ID, "Courses", "", false); err != nil {
+		t.Fatal(err)
+	}
+	mine, _, _ := s.Notes.Store.For(tenancy.LocalScope()).GetNote(ctx, n.ID)
+	do(s, http.MethodPost, "/notes/"+n.ID, url.Values{
+		"version": {strconv.Itoa(mine.Version)}, "title": {"Mon titre"},
+	})
+	if _, err := autre.SaveNote(ctx, n.ID, "Son titre", "", false); err != nil {
+		t.Fatal(err)
+	}
+	enableAutoCommit(s)
+	// Une autre modification déclenche le commit automatique.
+	if _, err := s.Notes.NewNote(tenancy.WithScope(ctx, tenancy.LocalScope()), ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _, _ := base.GetNote(ctx, n.ID); got.Title != "Son titre" {
+		t.Errorf("base = %q : un conflit n'est jamais appliqué", got.Title)
+	}
+	if page := do(s, http.MethodGet, "/changes", nil).Body.String(); !strings.Contains(page, "Mon titre") {
+		t.Error("le conflit doit rester listé sur la page des changements")
+	}
+	side := do(s, http.MethodGet, "/sidebar", nil).Body.String()
+	if !strings.Contains(side, "à trancher") || strings.Contains(side, "non commitée") {
+		t.Errorf("la barre doit annoncer un conflit à trancher, reçu : %s", side)
+	}
+}
+
+func TestChangesPage_SansAutoCommit_Inchange(t *testing.T) {
+	s, _, _ := newChangesetServer(t)
+	if page := do(s, http.MethodGet, "/changes", nil).Body.String(); strings.Contains(page, "Commit automatique activé") {
+		t.Error("sans --changeset-auto-commit, la page ne doit pas annoncer de commit automatique")
+	}
+}
