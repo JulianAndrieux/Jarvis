@@ -76,6 +76,13 @@ templ Sidebar(v SidebarView) {
 			</a>
 		</section>
 	}
+	if len(v.Markets) > 0 {
+		<section class="side-block">
+			<div class="side-title">📈 Marchés qui bougent <span class="count">{ fmt.Sprint(len(v.Markets)) }</span></div>
+			@sideItems(v.Markets, false)
+			<a class="side-more" href="/markets">Tous les marchés suivis →</a>
+		</section>
+	}
 	<section class="side-block">
 		<div class="side-title">⏳ En cours <span class="count">{ fmt.Sprint(len(v.Running)) }</span></div>
 		if len(v.Running) == 0 {

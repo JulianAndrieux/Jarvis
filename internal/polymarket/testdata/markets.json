@@ -1,0 +1,46 @@
+[
+ {
+  "id": "559651",
+  "question": "Xi Jinping out before 2027?",
+  "conditionId": "0xa467b14d51f01b957109d9cbb1d6c124fab2a089d52ed8f471d23c2812e743b7",
+  "slug": "xi-jinping-out-before-2027",
+  "description": "This market will resolve to \"Yes\" if China's General Secretary of the Communist Party, Xi Jinping, is removed from power for any length of time between July 3, 2025, and December 31, 2026, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nCCP General Secretary Xi Jinping will be considered removed from power if he announces his resignation from his role as General Secretary, or is otherwise dismissed, detained, disqualified, or otherwise loses his position or is prevented from fulfilling his duties as General Secretary within this market's timeframe.\n\nThe primary resolution source for this market will be a consensus of credible reporting.",
+  "endDate": "2027-01-01T04:59:00Z",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "outcomePrices": "[\"0.0235\", \"0.9765\"]",
+  "clobTokenIds": "[\"32338220190071351435772801779725302244575775216413325951443816017994629993401\", \"25659310674993675562345759665114759892400026242514633218387667107987341231962\"]",
+  "volume": "16786286.518956",
+  "volumeNum": 16786286.518956,
+  "liquidityNum": 329577.30357,
+  "volume24hr": 121305.07999700001,
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "enableOrderBook": true,
+  "orderPriceMinTickSize": 0.001,
+  "orderMinSize": 5,
+  "bestBid": 0.023,
+  "bestAsk": 0.024,
+  "lastTradePrice": 0.024,
+  "spread": 0.001,
+  "oneDayPriceChange": -0.0045,
+  "negRisk": false,
+  "feesEnabled": true,
+  "feeSchedule": {
+   "exponent": 1,
+   "rate": 0.04,
+   "takerOnly": true,
+   "rebateRate": 0.25
+  },
+  "resolutionSource": "",
+  "restricted": true,
+  "groupItemTitle": "",
+  "events": [
+   {
+    "id": "30828",
+    "slug": "xi-jinping-out-before-2027",
+    "title": "Xi Jinping out before 2027?"
+   }
+  ]
+ }
+]

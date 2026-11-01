@@ -9,6 +9,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/JulianAndrieux/Jarvis/internal/polymarket"
+	"github.com/JulianAndrieux/Jarvis/internal/trading"
 	"log"
 	"net/http"
 	"os"
@@ -59,6 +61,10 @@ type Server struct {
 	// Mail : la boîte de réception relevée et triée (jalon 39) ; nil
 	// désactive l'onglet.
 	Mail *mail.Service
+	// Market et Trading : marchés Polymarket en lecture seule et liste de
+	// suivi (jalon 53) ; l'un ou l'autre nil désactive l'onglet Marchés.
+	Market  polymarket.Client
+	Trading trading.Store
 	// Accounts : comptes, environnements et sessions (jalon 45). nil
 	// désactive l'authentification : l'application se comporte alors comme
 	// avant, un seul environnement et aucun écran de connexion — c'est ce
@@ -200,6 +206,7 @@ func (s *Server) Routes() chi.Router {
 	s.agentRoutes(r)
 	s.notesRoutes(r)
 	s.emailRoutes(r)
+	s.marketRoutes(r)
 	r.Get("/sidebar", s.handleSidebar)
 	r.Post("/sidebar/tasks/{id}/toggle", s.handleSidebarToggle)
 	r.Get("/admin/tests", s.handleTests)

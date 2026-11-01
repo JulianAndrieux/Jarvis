@@ -72,6 +72,18 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
      injoignable, d'où le lien de secours du propriétaire écrit dans le
      journal de démarrage. Tant que `~/.jarvis/oauth.json` n'existe pas,
      l'authentification est désactivée et rien ne sort.
+  7. **Marchés Polymarket (`internal/polymarket`, jalon 53) : Jarvis
+     interroge l'API publique de Polymarket** (Gamma : marchés et
+     recherche ; CLOB : carnets d'ordres et historique des prix). Décision
+     explicite de l'utilisateur (trading depuis le Luxembourg, pays non
+     bloqué par Polymarket — liste officielle vérifiée le 01/11/2026).
+     Au jalon 53 : lecture seule, sans compte ni clé ; une requête ne porte
+     que le slug ou le jeton demandé, ou le texte d'une recherche. Rien
+     d'autre de Jarvis (documents, emails, notes) n'y part. `--polymarket=
+     false` coupe toute requête. La liste de suivi est stockée dans Atlas,
+     par environnement (décision de l'utilisateur). Les jalons suivants
+     (analyse par Claude avec recherche web, ordres réels) élargiront cette
+     exception ; plan et décisions : `docs/plan-polymarket.md`.
 - **L'inférence locale est une ressource de machine, partagée et
   sérialisée entre environnements** (jalon 50). Les modèles ne servent
   qu'un travail à la fois sur ce matériel et un document de cinq pages
@@ -2899,6 +2911,59 @@ décisions : `docs/plan-multi-environnement.md`.
     `cmd/jarvisapp` (filtre, ordre, fiche échappée, lien sans `href`,
     tâche, payé/non payé, barre latérale). Contrat Mongo à passer sur Atlas
     (`-tags=integration`).
+
+- **Jalon 53 — marchés Polymarket en lecture seule : fait, testé contre
+  la vraie API, en attente de validation utilisateur.** Demandé : « utiliser
+  Jarvis pour faire du trading sur Polymarket » avec des analyses de Claude
+  et un modèle de trading et d'analyse de risque. Décisions de
+  l'utilisateur (questions posées) : basé au Luxembourg ; ordres
+  automatiques sous un seuil (jalon 55+, après simulation) ; Claude avec
+  recherche web ; stockage Atlas par environnement ; portefeuille plafonné
+  à 100 USDC au départ. Découpage : 53 observer, 54 analyser + modèle de
+  risque + simulation, 55 ordres réels (`docs/plan-polymarket.md`).
+  - **`internal/polymarket`** (nouveau, bibliothèque standard) : port
+    `Client` (`Search`, `Market`, `Book`, `History`), `HTTPClient` (API
+    Gamma + CLOB), `FakeClient`, `CachedClient` (60 s, erreurs jamais
+    gardées, entrées expirées purgées). Formats **constatés sur l'API
+    réelle avant d'écrire le décodeur** et gardés en `testdata/` : issues,
+    prix et jetons arrivent comme des **chaînes contenant un tableau JSON**
+    (refus si leurs longueurs diffèrent — un prix ne doit jamais aller à la
+    mauvaise issue) ; nombres tantôt chaînes tantôt nombres ; le CLOB
+    renvoie le carnet **meilleur prix en dernier** (achats croissants,
+    ventes décroissantes) — Jarvis trie, meilleur prix en tête. Slug et
+    jeton validés avant tout appel réseau (`ErrInvalidID`). Réponse bornée
+    à 16 Mo. Test réel séparé : `go test -tags=polymarket
+    ./internal/polymarket/` (réseau requis), passé.
+  - **`internal/trading`** (nouveau) : liste de suivi (`Watch` : slug,
+    question et événement recopiés pour rester lisibles hors ligne, note,
+    seuil d'alerte — 5 points par défaut). `FakeStore` et `MongoStore`
+    (collection `market_watches`, `_id` = environnement/slug : l'unicité
+    est garantie par la base) passent **le même contrat** et le contrat
+    d'isolation ; norme « aucune méthode sans portée ». **Hors changeset**,
+    comme l'archivage d'un email : préférence d'affichage, effective tout
+    de suite. Les prix ne sont jamais stockés, toujours relus.
+  - **UI** : onglet **Marchés** — recherche (événements actifs, branches
+    closes retirées, 6 plus actives par événement, le reste compté), liste
+    de suivi avec prix, variation 24 h, volume, liquidité, échéance
+    (marchés relus en parallèle, délai de 8 s ; Polymarket injoignable :
+    « prix indisponibles », la liste reste) ; fiche d'un marché — prix des
+    issues, courbe SVG rendue côté serveur (24 h / 7 j / 30 j / tout,
+    échelle suivant les données), carnets des deux issues (8 niveaux),
+    note, **règles de résolution affichées comme du texte** (texte d'un
+    tiers, testé avec du HTML), pas, ordre minimum et frais. Barre
+    latérale : **« Marchés qui bougent »** (suivis au-delà de leur seuil
+    sur 24 h ; délai de 3 s, jamais d'alerte inventée sur un prix
+    illisible). Retour après une action : chemin local seulement.
+  - Flags : `--polymarket` (défaut vrai), `--polymarket-gamma-url`,
+    `--polymarket-clob-url`, `--markets-collection`. L'essai à blanc du
+    déploiement et la relecture visuelle gardent la lecture de Polymarket
+    (publique) mais écrivent dans `market_watches_check` (test de garde).
+  - Validé : tests unitaires et HTTP (`-race`), test réel de l'API,
+    captures de la recherche et d'une fiche sur une instance de
+    prévisualisation (vraie API, stockage en mémoire) — un défaut vu ainsi
+    et corrigé (suivis sous une longue liste de résultats, branches closes
+    à 0/100 % proposées). **Non validé ici** : le contrat `MongoStore`
+    contre Atlas (`MONGO_URI` absent de l'environnement de développement).
 
 **Reste à valider en conditions réelles** (impossible depuis
 l'environnement de développement de ce chantier) : les contrats Mongo

@@ -52,6 +52,9 @@ func withCheckIsolation(overrides map[string]string) map[string]string {
 	overrides["mail-files-collection"] = "email_files_check"
 	overrides["notes-collection"] = "notes_check"
 	overrides["tasks-collection"] = "tasks_check"
+	// Marchés (jalon 53) : la lecture de Polymarket reste active (publique,
+	// sans compte, utile pour juger la page), la liste de suivi non.
+	overrides["markets-collection"] = "market_watches_check"
 	overrides["auth-config"] = ""
 	overrides["accounts-prefix"] = "accounts_check_"
 	overrides["changes-collection"] = "changes_check"
