@@ -76,7 +76,7 @@ func EmailsPage(v MailListView) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(v.Status.Account)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 32, Col: 23}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 32, Col: 23}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
@@ -89,7 +89,7 @@ func EmailsPage(v MailListView) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(mailStatusLine(v.Status))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 32, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 32, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -108,7 +108,7 @@ func EmailsPage(v MailListView) templ.Component {
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(v.Status.LastError)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 36, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 36, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -127,7 +127,7 @@ func EmailsPage(v MailListView) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.Search)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 40, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 40, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 				if templ_7745c5c3_Err != nil {
@@ -145,7 +145,7 @@ func EmailsPage(v MailListView) templ.Component {
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.Category)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 42, Col: 56}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 42, Col: 56}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 					if templ_7745c5c3_Err != nil {
@@ -173,7 +173,7 @@ func EmailsPage(v MailListView) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var8).String())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 1, Col: 0}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 1, Col: 0}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 					if templ_7745c5c3_Err != nil {
@@ -186,7 +186,7 @@ func EmailsPage(v MailListView) templ.Component {
 					var templ_7745c5c3_Var10 templ.SafeURL
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(f.Href))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 48, Col: 99}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 48, Col: 99}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {
@@ -199,7 +199,7 @@ func EmailsPage(v MailListView) templ.Component {
 					var templ_7745c5c3_Var11 string
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(f.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 48, Col: 111}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 48, Col: 111}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
@@ -227,7 +227,7 @@ func EmailsPage(v MailListView) templ.Component {
 						var templ_7745c5c3_Var12 string
 						templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(hiddenLine(v))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 54, Col: 28}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 54, Col: 28}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 						if templ_7745c5c3_Err != nil {
@@ -246,7 +246,7 @@ func EmailsPage(v MailListView) templ.Component {
 						var templ_7745c5c3_Var13 string
 						templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(archiveNoReplyLabel(v.NoReplyCount))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 58, Col: 262}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 58, Col: 262}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 						if templ_7745c5c3_Err != nil {
@@ -305,7 +305,7 @@ func EmailsPage(v MailListView) templ.Component {
 						var templ_7745c5c3_Var15 string
 						templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var14).String())
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 1, Col: 0}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 1, Col: 0}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 						if templ_7745c5c3_Err != nil {
@@ -318,7 +318,7 @@ func EmailsPage(v MailListView) templ.Component {
 						var templ_7745c5c3_Var16 templ.SafeURL
 						templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + m.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 75, Col: 106}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 75, Col: 106}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 						if templ_7745c5c3_Err != nil {
@@ -331,7 +331,7 @@ func EmailsPage(v MailListView) templ.Component {
 						var templ_7745c5c3_Var17 string
 						templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(m.From)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 76, Col: 41}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 76, Col: 41}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 						if templ_7745c5c3_Err != nil {
@@ -344,7 +344,7 @@ func EmailsPage(v MailListView) templ.Component {
 						var templ_7745c5c3_Var18 string
 						templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(m.Subject)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 78, Col: 48}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 78, Col: 48}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 						if templ_7745c5c3_Err != nil {
@@ -362,7 +362,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var19 string
 							templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(m.Question)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 80, Col: 55}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 80, Col: 55}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 							if templ_7745c5c3_Err != nil {
@@ -381,7 +381,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var20 string
 							templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(m.Summary)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 83, Col: 49}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 83, Col: 49}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 							if templ_7745c5c3_Err != nil {
@@ -409,7 +409,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var22 string
 							templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var21).String())
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 1, Col: 0}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 1, Col: 0}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 							if templ_7745c5c3_Err != nil {
@@ -422,7 +422,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var23 string
 							templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(m.Amount)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 89, Col: 27}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 89, Col: 27}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 							if templ_7745c5c3_Err != nil {
@@ -440,7 +440,7 @@ func EmailsPage(v MailListView) templ.Component {
 								var templ_7745c5c3_Var24 string
 								templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(m.Due)
 								if templ_7745c5c3_Err != nil {
-									return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 91, Col: 23}
+									return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 91, Col: 23}
 								}
 								_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 								if templ_7745c5c3_Err != nil {
@@ -480,7 +480,7 @@ func EmailsPage(v MailListView) templ.Component {
 						var templ_7745c5c3_Var26 string
 						templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var25).String())
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 1, Col: 0}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 1, Col: 0}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 						if templ_7745c5c3_Err != nil {
@@ -493,7 +493,7 @@ func EmailsPage(v MailListView) templ.Component {
 						var templ_7745c5c3_Var27 string
 						templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(mail.CategoryLabel(m.Category))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 101, Col: 83}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 101, Col: 83}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 						if templ_7745c5c3_Err != nil {
@@ -517,7 +517,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var28 string
 							templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(m.Attachments))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 106, Col: 87}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 106, Col: 87}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 							if templ_7745c5c3_Err != nil {
@@ -535,7 +535,7 @@ func EmailsPage(v MailListView) templ.Component {
 						var templ_7745c5c3_Var29 string
 						templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(m.Date)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 108, Col: 41}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 108, Col: 41}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 						if templ_7745c5c3_Err != nil {
@@ -553,7 +553,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var30 templ.SafeURL
 							templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + m.ID + "/paid"))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 112, Col: 101}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 112, Col: 101}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 							if templ_7745c5c3_Err != nil {
@@ -566,7 +566,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var31 string
 							templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue("/emails/" + m.ID + "/paid")
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 112, Col: 141}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 112, Col: 141}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 							if templ_7745c5c3_Err != nil {
@@ -579,7 +579,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var32 string
 							templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.Back)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 113, Col: 57}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 113, Col: 57}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 							if templ_7745c5c3_Err != nil {
@@ -598,7 +598,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var33 templ.SafeURL
 							templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + m.ID + "/archive"))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 118, Col: 104}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 118, Col: 104}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 							if templ_7745c5c3_Err != nil {
@@ -611,7 +611,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var34 string
 							templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue("/emails/" + m.ID + "/archive")
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 118, Col: 147}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 118, Col: 147}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 							if templ_7745c5c3_Err != nil {
@@ -624,7 +624,7 @@ func EmailsPage(v MailListView) templ.Component {
 							var templ_7745c5c3_Var35 string
 							templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.Back)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 119, Col: 57}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 119, Col: 57}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 							if templ_7745c5c3_Err != nil {
@@ -701,7 +701,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(v.Mail.Subject)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 138, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 138, Col: 24}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
@@ -714,7 +714,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(v.Mail.From.String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 142, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 142, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -732,7 +732,7 @@ func EmailPage(v MailView) templ.Component {
 				var templ_7745c5c3_Var40 string
 				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(v.To)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 145, Col: 15}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 145, Col: 15}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 				if templ_7745c5c3_Err != nil {
@@ -751,7 +751,7 @@ func EmailPage(v MailView) templ.Component {
 				var templ_7745c5c3_Var41 string
 				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(v.Cc)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 149, Col: 15}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 149, Col: 15}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 				if templ_7745c5c3_Err != nil {
@@ -769,7 +769,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(v.Date)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 152, Col: 16}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 152, Col: 16}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -791,7 +791,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var43).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 			if templ_7745c5c3_Err != nil {
@@ -804,7 +804,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(mail.CategoryLabel(v.Mail.Triage.Category))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 156, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 156, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -817,7 +817,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var46 templ.SafeURL
 			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + v.Mail.ID + "/retriage"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 157, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 157, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 			if templ_7745c5c3_Err != nil {
@@ -835,7 +835,7 @@ func EmailPage(v MailView) templ.Component {
 				var templ_7745c5c3_Var47 templ.SafeURL
 				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + v.Mail.ID + "/unarchive"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 162, Col: 107}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 162, Col: 107}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
@@ -853,7 +853,7 @@ func EmailPage(v MailView) templ.Component {
 				var templ_7745c5c3_Var48 templ.SafeURL
 				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + v.Mail.ID + "/archive"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 166, Col: 105}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 166, Col: 105}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 				if templ_7745c5c3_Err != nil {
@@ -876,7 +876,7 @@ func EmailPage(v MailView) templ.Component {
 				var templ_7745c5c3_Var49 string
 				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(v.Mail.Triage.Error)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 173, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 173, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 				if templ_7745c5c3_Err != nil {
@@ -905,7 +905,7 @@ func EmailPage(v MailView) templ.Component {
 						var templ_7745c5c3_Var50 string
 						templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(v.Mail.Triage.Question)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 180, Col: 34}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 180, Col: 34}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 						if templ_7745c5c3_Err != nil {
@@ -929,7 +929,7 @@ func EmailPage(v MailView) templ.Component {
 				var templ_7745c5c3_Var51 string
 				templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(v.Mail.Triage.Summary)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 186, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 186, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 				if templ_7745c5c3_Err != nil {
@@ -942,7 +942,7 @@ func EmailPage(v MailView) templ.Component {
 				var templ_7745c5c3_Var52 string
 				templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(v.Mail.Triage.Model)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 187, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 187, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 				if templ_7745c5c3_Err != nil {
@@ -955,7 +955,7 @@ func EmailPage(v MailView) templ.Component {
 				var templ_7745c5c3_Var53 string
 				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(v.Mail.Triage.At.Local().Format("02/01/2006 15:04"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 187, Col: 112}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 187, Col: 112}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 				if templ_7745c5c3_Err != nil {
@@ -983,7 +983,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var54 templ.SafeURL
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + v.Mail.ID + "/task"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 194, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 194, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -996,7 +996,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.TaskInput)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 195, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 195, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
 			if templ_7745c5c3_Err != nil {
@@ -1009,7 +1009,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var56 string
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(quickAddHelp)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 198, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 198, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
@@ -1040,7 +1040,7 @@ func EmailPage(v MailView) templ.Component {
 					var templ_7745c5c3_Var57 templ.SafeURL
 					templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/notes/" + n.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 204, Col: 51}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 204, Col: 51}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 					if templ_7745c5c3_Err != nil {
@@ -1053,7 +1053,7 @@ func EmailPage(v MailView) templ.Component {
 					var templ_7745c5c3_Var58 string
 					templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(n.Title)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 204, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 204, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 					if templ_7745c5c3_Err != nil {
@@ -1076,7 +1076,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var59 templ.SafeURL
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + v.Mail.ID + "/note"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 208, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 208, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
@@ -1099,7 +1099,7 @@ func EmailPage(v MailView) templ.Component {
 					var templ_7745c5c3_Var60 string
 					templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(a.Filename)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 216, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 216, Col: 49}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 					if templ_7745c5c3_Err != nil {
@@ -1112,7 +1112,7 @@ func EmailPage(v MailView) templ.Component {
 					var templ_7745c5c3_Var61 string
 					templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(a.Size)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 216, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 216, Col: 80}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 					if templ_7745c5c3_Err != nil {
@@ -1135,7 +1135,7 @@ func EmailPage(v MailView) templ.Component {
 						var templ_7745c5c3_Var62 templ.SafeURL
 						templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/emails/%s/attachments/%d", v.Mail.ID, a.Index)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 220, Col: 121}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 220, Col: 121}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 						if templ_7745c5c3_Err != nil {
@@ -1153,7 +1153,7 @@ func EmailPage(v MailView) templ.Component {
 							var templ_7745c5c3_Var63 templ.SafeURL
 							templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/documents/" + a.DocID))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 222, Col: 70}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 222, Col: 70}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 							if templ_7745c5c3_Err != nil {
@@ -1166,7 +1166,7 @@ func EmailPage(v MailView) templ.Component {
 							var templ_7745c5c3_Var64 string
 							templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(a.DocName)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 222, Col: 89}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 222, Col: 89}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 							if templ_7745c5c3_Err != nil {
@@ -1184,7 +1184,7 @@ func EmailPage(v MailView) templ.Component {
 							var templ_7745c5c3_Var65 templ.SafeURL
 							templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/emails/%s/attachments/%d/import", v.Mail.ID, a.Index)))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 224, Col: 140}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 224, Col: 140}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 							if templ_7745c5c3_Err != nil {
@@ -1213,7 +1213,7 @@ func EmailPage(v MailView) templ.Component {
 			var templ_7745c5c3_Var66 string
 			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(v.Mail.Text)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 234, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 234, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 			if templ_7745c5c3_Err != nil {
@@ -1269,7 +1269,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 			var templ_7745c5c3_Var68 string
 			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(p.PaidAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 247, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 247, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 			if templ_7745c5c3_Err != nil {
@@ -1282,7 +1282,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 			var templ_7745c5c3_Var69 templ.SafeURL
 			templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + id + "/unpaid"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 248, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 248, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 			if templ_7745c5c3_Err != nil {
@@ -1306,7 +1306,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 			var templ_7745c5c3_Var70 templ.SafeURL
 			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/emails/" + id + "/paid"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 255, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 255, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 			if templ_7745c5c3_Err != nil {
@@ -1329,7 +1329,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 			var templ_7745c5c3_Var71 string
 			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(p.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 261, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 261, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 			if templ_7745c5c3_Err != nil {
@@ -1363,7 +1363,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var72 string
 				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(p.Payee)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 271, Col: 24}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 271, Col: 24}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 				if templ_7745c5c3_Err != nil {
@@ -1382,7 +1382,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var73 string
 				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(p.Amount)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 275, Col: 25}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 275, Col: 25}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 				if templ_7745c5c3_Err != nil {
@@ -1401,7 +1401,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var74 string
 				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(p.DueDate)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 279, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 279, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 				if templ_7745c5c3_Err != nil {
@@ -1420,7 +1420,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var75 string
 				templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(p.Reference)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 283, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 283, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 				if templ_7745c5c3_Err != nil {
@@ -1439,7 +1439,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var76 string
 				templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(p.IBAN)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 288, Col: 20}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 288, Col: 20}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 				if templ_7745c5c3_Err != nil {
@@ -1468,7 +1468,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var77 string
 				templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(p.BIC)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 296, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 296, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 				if templ_7745c5c3_Err != nil {
@@ -1487,7 +1487,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var78 string
 				templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(paymentMethodLabel(p.Method))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 300, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 300, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 				if templ_7745c5c3_Err != nil {
@@ -1506,7 +1506,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var79 string
 				templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(p.Link)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 305, Col: 20}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 305, Col: 20}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 				if templ_7745c5c3_Err != nil {
@@ -1529,7 +1529,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var80 string
 				templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(p.Evidence)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 311, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 311, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 				if templ_7745c5c3_Err != nil {
@@ -1554,7 +1554,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 				var templ_7745c5c3_Var81 string
 				templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(c)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 317, Col: 12}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 317, Col: 12}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 				if templ_7745c5c3_Err != nil {
@@ -1577,7 +1577,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 		var templ_7745c5c3_Var82 string
 		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(p.Model)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 322, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 322, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 		if templ_7745c5c3_Err != nil {
@@ -1595,7 +1595,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 			var templ_7745c5c3_Var83 string
 			templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(strings.Join(p.Sources, ", "))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 324, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 324, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 			if templ_7745c5c3_Err != nil {
@@ -1614,7 +1614,7 @@ func paymentBlock(id string, p PaymentView) templ.Component {
 			var templ_7745c5c3_Var84 string
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", p.Confidence))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 327, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 327, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 			if templ_7745c5c3_Err != nil {
@@ -1679,7 +1679,7 @@ func EmailSettingsPage(v MailSettingsView) templ.Component {
 				var templ_7745c5c3_Var87 string
 				templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(v.Error)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 344, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 344, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 				if templ_7745c5c3_Err != nil {
@@ -1697,7 +1697,7 @@ func EmailSettingsPage(v MailSettingsView) templ.Component {
 			var templ_7745c5c3_Var88 string
 			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.User)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 347, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 347, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var88)
 			if templ_7745c5c3_Err != nil {
@@ -1710,7 +1710,7 @@ func EmailSettingsPage(v MailSettingsView) templ.Component {
 			var templ_7745c5c3_Var89 string
 			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue(passwordPlaceholder(v.Configured))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 349, Col: 132}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 349, Col: 132}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var89)
 			if templ_7745c5c3_Err != nil {
@@ -1723,7 +1723,7 @@ func EmailSettingsPage(v MailSettingsView) templ.Component {
 			var templ_7745c5c3_Var90 string
 			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.ResolveAttributeValue(v.Host)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `emails.templ`, Line: 351, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/emails.templ`, Line: 351, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var90)
 			if templ_7745c5c3_Err != nil {

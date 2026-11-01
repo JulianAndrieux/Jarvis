@@ -100,7 +100,7 @@ func ChangesPage(v ChangesView) templ.Component {
 					var templ_7745c5c3_Var3 string
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(plural(v.Committed, "modification appliquée", "modifications appliquées"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 52, Col: 90}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 52, Col: 90}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -120,7 +120,7 @@ func ChangesPage(v ChangesView) templ.Component {
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(" ")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 57, Col: 10}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 57, Col: 10}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -133,7 +133,7 @@ func ChangesPage(v ChangesView) templ.Component {
 					var templ_7745c5c3_Var5 string
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(plural(v.Conflicted, "conflit à trancher", "conflits à trancher"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 58, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 58, Col: 80}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -171,7 +171,7 @@ func ChangesPage(v ChangesView) templ.Component {
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(e.When)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 72, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 72, Col: 40}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -184,7 +184,7 @@ func ChangesPage(v ChangesView) templ.Component {
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(e.Kind)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 73, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 73, Col: 40}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
@@ -202,7 +202,7 @@ func ChangesPage(v ChangesView) templ.Component {
 						var templ_7745c5c3_Var8 templ.SafeURL
 						templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(e.Href))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 76, Col: 40}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 76, Col: 40}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 						if templ_7745c5c3_Err != nil {
@@ -215,7 +215,7 @@ func ChangesPage(v ChangesView) templ.Component {
 						var templ_7745c5c3_Var9 string
 						templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(e.Label)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 76, Col: 52}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 76, Col: 52}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 						if templ_7745c5c3_Err != nil {
@@ -229,7 +229,7 @@ func ChangesPage(v ChangesView) templ.Component {
 						var templ_7745c5c3_Var10 string
 						templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(e.Label)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 78, Col: 18}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 78, Col: 18}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 						if templ_7745c5c3_Err != nil {
@@ -243,7 +243,7 @@ func ChangesPage(v ChangesView) templ.Component {
 					var templ_7745c5c3_Var11 string
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(e.What)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 82, Col: 16}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 82, Col: 16}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
@@ -261,7 +261,7 @@ func ChangesPage(v ChangesView) templ.Component {
 						var templ_7745c5c3_Var12 string
 						templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(e.Conflict)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 85, Col: 30}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 85, Col: 30}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 						if templ_7745c5c3_Err != nil {
@@ -274,7 +274,7 @@ func ChangesPage(v ChangesView) templ.Component {
 						var templ_7745c5c3_Var13 string
 						templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(e.Current)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 86, Col: 54}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 86, Col: 54}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 						if templ_7745c5c3_Err != nil {
@@ -292,7 +292,7 @@ func ChangesPage(v ChangesView) templ.Component {
 					var templ_7745c5c3_Var14 templ.SafeURL
 					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/changes/" + e.ID + "/discard"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `changes.templ`, Line: 91, Col: 83}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/changes.templ`, Line: 91, Col: 83}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 					if templ_7745c5c3_Err != nil {

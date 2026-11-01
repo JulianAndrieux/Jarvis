@@ -45,7 +45,7 @@ func Layout(title string, active string) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var2).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -58,7 +58,7 @@ func Layout(title string, active string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 9, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 9, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -85,7 +85,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var5).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 			if templ_7745c5c3_Err != nil {
@@ -107,7 +107,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var7).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 			if templ_7745c5c3_Err != nil {
@@ -129,7 +129,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var9).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 			if templ_7745c5c3_Err != nil {
@@ -151,7 +151,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var11).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
 			if templ_7745c5c3_Err != nil {
@@ -173,7 +173,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var13).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 			if templ_7745c5c3_Err != nil {
@@ -210,7 +210,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var15).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 			if templ_7745c5c3_Err != nil {
@@ -232,7 +232,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var17).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 			if templ_7745c5c3_Err != nil {
@@ -254,7 +254,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var19).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 			if templ_7745c5c3_Err != nil {
@@ -276,7 +276,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var21).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 			if templ_7745c5c3_Err != nil {
@@ -298,7 +298,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var23).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 			if templ_7745c5c3_Err != nil {
@@ -320,7 +320,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var25).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 			if templ_7745c5c3_Err != nil {
@@ -342,7 +342,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var27).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 			if templ_7745c5c3_Err != nil {
@@ -364,7 +364,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var29).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 			if templ_7745c5c3_Err != nil {
@@ -386,7 +386,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var31).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 			if templ_7745c5c3_Err != nil {
@@ -408,7 +408,7 @@ func Layout(title string, active string) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var33).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `layout.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/layout.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 			if templ_7745c5c3_Err != nil {

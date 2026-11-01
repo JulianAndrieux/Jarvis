@@ -162,7 +162,7 @@ func ModelPage(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(g.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 120, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 120, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 				if templ_7745c5c3_Err != nil {
@@ -180,7 +180,7 @@ func ModelPage(v ModelPageView) templ.Component {
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(o.Value)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 122, Col: 32}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 122, Col: 32}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 					if templ_7745c5c3_Err != nil {
@@ -203,7 +203,7 @@ func ModelPage(v ModelPageView) templ.Component {
 					var templ_7745c5c3_Var5 string
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(o.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 122, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 122, Col: 69}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -231,7 +231,7 @@ func ModelPage(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprint(d))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 132, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 132, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 				if templ_7745c5c3_Err != nil {
@@ -254,7 +254,7 @@ func ModelPage(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(d))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 132, Col: 81}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 132, Col: 81}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -298,7 +298,7 @@ func ModelPage(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var8 templ.SafeURL
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(classURL(v.Focus.Package, v.Focus.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 157, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 157, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -346,7 +346,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(viewBox(v.Diagram))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 204, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 204, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 		if templ_7745c5c3_Err != nil {
@@ -364,7 +364,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(edgeTitle(e))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 215, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 215, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -386,7 +386,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(e.Path)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 216, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 216, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 			if templ_7745c5c3_Err != nil {
@@ -399,7 +399,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var12).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 			if templ_7745c5c3_Err != nil {
@@ -412,7 +412,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(edgeMarker(e))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 216, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 216, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 			if templ_7745c5c3_Err != nil {
@@ -430,7 +430,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(cardX(e))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 218, Col: 23}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 218, Col: 23}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 				if templ_7745c5c3_Err != nil {
@@ -443,7 +443,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(e.TY - 6))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 218, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 218, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 				if templ_7745c5c3_Err != nil {
@@ -456,7 +456,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(cardAnchor(e))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 218, Col: 72}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 218, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 				if templ_7745c5c3_Err != nil {
@@ -469,7 +469,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(e.Card)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 218, Col: 97}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 218, Col: 97}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -493,7 +493,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var20 templ.SafeURL
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(nodeURL(v, n)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 223, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 223, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -515,7 +515,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var21).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 			if templ_7745c5c3_Err != nil {
@@ -528,7 +528,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(n.Package)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 225, Col: 23}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 225, Col: 23}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -541,7 +541,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(n.Ref.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 225, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 225, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -554,7 +554,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.X))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 226, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 226, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 			if templ_7745c5c3_Err != nil {
@@ -567,7 +567,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.Y))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 226, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 226, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 			if templ_7745c5c3_Err != nil {
@@ -580,7 +580,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.W))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 226, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 226, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 			if templ_7745c5c3_Err != nil {
@@ -593,7 +593,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.H))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 226, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 226, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 			if templ_7745c5c3_Err != nil {
@@ -606,7 +606,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("M%.1f %.1f h%.1f v%.1f h%.1f z", n.X, n.Y+diagram.HeaderHeight, n.W, -diagram.HeaderHeight+7, -n.W))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 227, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 227, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 			if templ_7745c5c3_Err != nil {
@@ -619,7 +619,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.X))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 228, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 228, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 			if templ_7745c5c3_Err != nil {
@@ -632,7 +632,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.Y))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 228, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 228, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 			if templ_7745c5c3_Err != nil {
@@ -645,7 +645,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.W))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 228, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 228, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 			if templ_7745c5c3_Err != nil {
@@ -658,7 +658,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.X + 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 229, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 229, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 			if templ_7745c5c3_Err != nil {
@@ -671,7 +671,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.Y + 20))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 229, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 229, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 			if templ_7745c5c3_Err != nil {
@@ -684,7 +684,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(n.Ref.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 229, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 229, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -697,7 +697,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.X + n.W - 9))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 230, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 230, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 			if templ_7745c5c3_Err != nil {
@@ -710,7 +710,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 			var templ_7745c5c3_Var37 string
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.Y + 20))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 230, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 230, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 			if templ_7745c5c3_Err != nil {
@@ -728,7 +728,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(n.Package)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 232, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 232, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -738,7 +738,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var39 string
 				templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(n.Package)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 234, Col: 18}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 234, Col: 18}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 				if templ_7745c5c3_Err != nil {
@@ -757,7 +757,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var40 string
 				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.X + 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 238, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 238, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 				if templ_7745c5c3_Err != nil {
@@ -770,7 +770,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var41 string
 				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(rowY(n, i))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 238, Col: 58}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 238, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
 				if templ_7745c5c3_Err != nil {
@@ -783,7 +783,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var42 string
 				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(r.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 238, Col: 91}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 238, Col: 91}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 				if templ_7745c5c3_Err != nil {
@@ -796,7 +796,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var43 string
 				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(fitType(n, r))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 238, Col: 144}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 238, Col: 144}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 				if templ_7745c5c3_Err != nil {
@@ -815,7 +815,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(f1(n.X + 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 241, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 241, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 				if templ_7745c5c3_Err != nil {
@@ -828,7 +828,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var45 string
 				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(rowY(n, len(n.Rows)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 241, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 241, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 				if templ_7745c5c3_Err != nil {
@@ -841,7 +841,7 @@ func diagramSVG(v ModelPageView) templ.Component {
 				var templ_7745c5c3_Var46 string
 				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(n.More))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `model.templ`, Line: 241, Col: 93}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/model.templ`, Line: 241, Col: 93}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 				if templ_7745c5c3_Err != nil {

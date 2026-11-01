@@ -145,7 +145,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(f.Search)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 108, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 108, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 			if templ_7745c5c3_Err != nil {
@@ -158,7 +158,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(f.From)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 109, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 109, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
@@ -171,7 +171,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(f.To)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 110, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 110, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
@@ -190,7 +190,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf.Value)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 113, Col: 55}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 113, Col: 55}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 					if templ_7745c5c3_Err != nil {
@@ -214,7 +214,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 				var templ_7745c5c3_Var7 templ.SafeURL
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(filterURL(activeType(filters), DocumentFilters{})))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 118, Col: 107}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 118, Col: 107}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -237,7 +237,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(f.Error)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 122, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 122, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -265,7 +265,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var9).String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 1, Col: 0}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 1, Col: 0}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 				if templ_7745c5c3_Err != nil {
@@ -278,7 +278,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 				var templ_7745c5c3_Var11 templ.SafeURL
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(filterURL(tf.Value, f)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 126, Col: 115}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 126, Col: 115}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -291,7 +291,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(tf.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 126, Col: 128}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 126, Col: 128}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -319,7 +319,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 					var templ_7745c5c3_Var13 string
 					templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(f.Search)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 132, Col: 54}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 132, Col: 54}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 					if templ_7745c5c3_Err != nil {
@@ -352,7 +352,7 @@ func DocumentsPage(docs []DocumentRow, f DocumentFilters, filters []TypeFilter) 
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(len(docs)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 141, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 141, Col: 44}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -419,7 +419,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 		var templ_7745c5c3_Var16 templ.SafeURL
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/documents/" + d.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 157, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 157, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -437,7 +437,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + d.ID + "/thumbnail")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 160, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 160, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
@@ -450,7 +450,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue("Aperçu de " + d.Filename)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 160, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 160, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 			if templ_7745c5c3_Err != nil {
@@ -478,7 +478,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(familyIcon(d.Family))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 162, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 162, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -496,7 +496,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(d.Ext)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 164, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 164, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -514,7 +514,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(d.Filename)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 168, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 168, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 		if templ_7745c5c3_Err != nil {
@@ -527,7 +527,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(d.Filename)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 168, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 168, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -545,7 +545,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(d.DocType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 171, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 171, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -570,7 +570,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(tag)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 177, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 177, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -588,7 +588,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(d.CreatedAt)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 180, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 180, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
@@ -606,7 +606,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + d.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 186, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 186, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 			if templ_7745c5c3_Err != nil {
@@ -619,7 +619,7 @@ func documentCard(d DocumentRow, deletable bool) templ.Component {
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue("Supprimer définitivement " + d.Filename + " ?")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 187, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 187, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 			if templ_7745c5c3_Err != nil {
@@ -798,7 +798,7 @@ func previewPane(job webapp.Job) templ.Component {
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(familyIcon(fileFamily(job)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 276, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 276, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -811,7 +811,7 @@ func previewPane(job webapp.Job) templ.Component {
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(job.Filename)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 277, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 277, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -824,7 +824,7 @@ func previewPane(job webapp.Job) templ.Component {
 			var templ_7745c5c3_Var33 templ.SafeURL
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/documents/" + job.ID + "/original"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 279, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 279, Col: 94}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 			if templ_7745c5c3_Err != nil {
@@ -842,7 +842,7 @@ func previewPane(job webapp.Job) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(familyIcon(fileFamily(job)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 283, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 283, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -862,7 +862,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var35 string
 				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + job.ID + "/image")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 290, Col: 71}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 290, Col: 71}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 				if templ_7745c5c3_Err != nil {
@@ -875,7 +875,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var36 string
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(job.Filename)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 290, Col: 92}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 290, Col: 92}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 				if templ_7745c5c3_Err != nil {
@@ -893,7 +893,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var37 string
 				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + job.ID + "/view")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 294, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 294, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 				if templ_7745c5c3_Err != nil {
@@ -906,7 +906,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue("Aperçu de " + job.Filename)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 294, Col: 101}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 294, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 				if templ_7745c5c3_Err != nil {
@@ -919,7 +919,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var39 templ.SafeURL
 				templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/documents/" + job.ID + "/pdf"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 295, Col: 81}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 295, Col: 81}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 				if templ_7745c5c3_Err != nil {
@@ -937,7 +937,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var40 string
 				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(familyIcon(formats.Other))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 299, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 299, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 				if templ_7745c5c3_Err != nil {
@@ -950,7 +950,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var41 string
 				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(job.Filename)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 300, Col: 30}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 300, Col: 30}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 				if templ_7745c5c3_Err != nil {
@@ -963,7 +963,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var42 string
 				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(HumanSize(job.Size))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 301, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 301, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 				if templ_7745c5c3_Err != nil {
@@ -976,7 +976,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var43 templ.SafeURL
 				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/documents/" + job.ID + "/original"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 302, Col: 96}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 302, Col: 96}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 				if templ_7745c5c3_Err != nil {
@@ -994,7 +994,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + job.ID + "/pdf#view=FitH")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 305, Col: 59}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 305, Col: 59}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 				if templ_7745c5c3_Err != nil {
@@ -1007,7 +1007,7 @@ func previewPane(job webapp.Job) templ.Component {
 				var templ_7745c5c3_Var45 string
 				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue("Aperçu de " + job.Filename)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 305, Col: 98}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 305, Col: 98}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 				if templ_7745c5c3_Err != nil {
@@ -1052,7 +1052,7 @@ func DocumentPanel(job webapp.Job, view ResultView, docTypes []string) templ.Com
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + job.ID + "/panel")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 312, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 312, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 			if templ_7745c5c3_Err != nil {
@@ -1082,7 +1082,7 @@ func DocumentPanel(job webapp.Job, view ResultView, docTypes []string) templ.Com
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var48).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 			if templ_7745c5c3_Err != nil {
@@ -1095,7 +1095,7 @@ func DocumentPanel(job webapp.Job, view ResultView, docTypes []string) templ.Com
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(statusLabel(job.Status))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 315, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 315, Col: 103}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -1118,7 +1118,7 @@ func DocumentPanel(job webapp.Job, view ResultView, docTypes []string) templ.Com
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(formatStarted(job))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 319, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 319, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -1166,7 +1166,7 @@ func DocumentPanel(job webapp.Job, view ResultView, docTypes []string) templ.Com
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(len(view.OCRPages)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 335, Col: 134}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 335, Col: 134}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -1179,7 +1179,7 @@ func DocumentPanel(job webapp.Job, view ResultView, docTypes []string) templ.Com
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(len(view.Pages)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 336, Col: 133}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 336, Col: 133}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 			if templ_7745c5c3_Err != nil {
@@ -1224,7 +1224,7 @@ func DocumentPanel(job webapp.Job, view ResultView, docTypes []string) templ.Com
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + job.ID + "/links")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 353, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 353, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 			if templ_7745c5c3_Err != nil {
@@ -1267,7 +1267,7 @@ func panelHeader(job webapp.Job, view ResultView) templ.Component {
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(job.Filename)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 360, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 360, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {
@@ -1280,7 +1280,7 @@ func panelHeader(job webapp.Job, view ResultView) templ.Component {
 		var templ_7745c5c3_Var57 string
 		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(fileFamily(job).Label())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 362, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 362, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 		if templ_7745c5c3_Err != nil {
@@ -1298,7 +1298,7 @@ func panelHeader(job webapp.Job, view ResultView) templ.Component {
 			var templ_7745c5c3_Var58 string
 			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(job.DocType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 364, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 364, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 			if templ_7745c5c3_Err != nil {
@@ -1327,7 +1327,7 @@ func panelHeader(job webapp.Job, view ResultView) templ.Component {
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(confidencePct(view.ClassificationConfidence))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 371, Col: 83}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 371, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
@@ -1363,7 +1363,7 @@ func panelHeader(job webapp.Job, view ResultView) templ.Component {
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(m)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 383, Col: 12}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 383, Col: 12}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
@@ -1381,7 +1381,7 @@ func panelHeader(job webapp.Job, view ResultView) templ.Component {
 		var templ_7745c5c3_Var61 templ.SafeURL
 		templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/documents/" + job.ID + "/original"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 387, Col: 78}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 387, Col: 78}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 		if templ_7745c5c3_Err != nil {
@@ -1429,7 +1429,7 @@ func dataTab(job webapp.Job, view ResultView) templ.Component {
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(job.Err)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 395, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 395, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
@@ -1447,7 +1447,7 @@ func dataTab(job webapp.Job, view ResultView) templ.Component {
 			var templ_7745c5c3_Var64 string
 			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", view.ClassificationConfidence))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 398, Col: 101}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 398, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 			if templ_7745c5c3_Err != nil {
@@ -1465,7 +1465,7 @@ func dataTab(job webapp.Job, view ResultView) templ.Component {
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(view.Merged.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 402, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 402, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1569,7 +1569,7 @@ func ocrPageList(pages []OCRPageView) templ.Component {
 			var templ_7745c5c3_Var68 string
 			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(p.Page))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 429, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 429, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 			if templ_7745c5c3_Err != nil {
@@ -1582,7 +1582,7 @@ func ocrPageList(pages []OCRPageView) templ.Component {
 			var templ_7745c5c3_Var69 string
 			templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(p.Source)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 430, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 430, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 			if templ_7745c5c3_Err != nil {
@@ -1600,7 +1600,7 @@ func ocrPageList(pages []OCRPageView) templ.Component {
 				var templ_7745c5c3_Var70 string
 				templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(p.Model)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 432, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 432, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 				if templ_7745c5c3_Err != nil {
@@ -1623,7 +1623,7 @@ func ocrPageList(pages []OCRPageView) templ.Component {
 				var templ_7745c5c3_Var71 string
 				templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(p.Error)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 436, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 436, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 				if templ_7745c5c3_Err != nil {
@@ -1641,7 +1641,7 @@ func ocrPageList(pages []OCRPageView) templ.Component {
 				var templ_7745c5c3_Var72 string
 				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(p.Text)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 438, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 438, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 				if templ_7745c5c3_Err != nil {
@@ -1696,7 +1696,7 @@ func llmTab(view ResultView) templ.Component {
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(p.Page))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 451, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 451, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 			if templ_7745c5c3_Err != nil {
@@ -1714,7 +1714,7 @@ func llmTab(view ResultView) templ.Component {
 				var templ_7745c5c3_Var75 string
 				templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(p.Model)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 453, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 453, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 				if templ_7745c5c3_Err != nil {
@@ -1748,7 +1748,7 @@ func llmTab(view ResultView) templ.Component {
 				var templ_7745c5c3_Var76 string
 				templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(p.Error)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 463, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 463, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 				if templ_7745c5c3_Err != nil {
@@ -1772,7 +1772,7 @@ func llmTab(view ResultView) templ.Component {
 				var templ_7745c5c3_Var77 string
 				templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(p.Prompt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 470, Col: 21}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 470, Col: 21}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 				if templ_7745c5c3_Err != nil {
@@ -1791,7 +1791,7 @@ func llmTab(view ResultView) templ.Component {
 				var templ_7745c5c3_Var78 string
 				templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(p.RawJSON)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 476, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 476, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 				if templ_7745c5c3_Err != nil {
@@ -1847,7 +1847,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 		var templ_7745c5c3_Var80 string
 		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + job.ID + "/reprocess")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 490, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 490, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 		if templ_7745c5c3_Err != nil {
@@ -1865,7 +1865,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 			var templ_7745c5c3_Var81 string
 			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue(dt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 495, Col: 23}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 495, Col: 23}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var81)
 			if templ_7745c5c3_Err != nil {
@@ -1888,7 +1888,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 			var templ_7745c5c3_Var82 string
 			templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(dt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 495, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 495, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 			if templ_7745c5c3_Err != nil {
@@ -1906,7 +1906,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 		var templ_7745c5c3_Var83 string
 		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(statusLabel(job.Status))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 504, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 504, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 		if templ_7745c5c3_Err != nil {
@@ -1924,7 +1924,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 			var templ_7745c5c3_Var84 string
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(d)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 507, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 507, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 			if templ_7745c5c3_Err != nil {
@@ -1943,7 +1943,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 			var templ_7745c5c3_Var85 string
 			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", view.TriageScore))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 511, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 511, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 			if templ_7745c5c3_Err != nil {
@@ -1956,7 +1956,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 			var templ_7745c5c3_Var86 string
 			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(yesNo(view.HasTextLayer))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 511, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 511, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 			if templ_7745c5c3_Err != nil {
@@ -1974,7 +1974,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 		var templ_7745c5c3_Var87 string
 		templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(job.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 514, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 514, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 		if templ_7745c5c3_Err != nil {
@@ -1987,7 +1987,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 		var templ_7745c5c3_Var88 string
 		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + job.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 522, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 522, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var88)
 		if templ_7745c5c3_Err != nil {
@@ -2000,7 +2000,7 @@ func infoTab(job webapp.Job, view ResultView, docTypes []string) templ.Component
 		var templ_7745c5c3_Var89 string
 		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.ResolveAttributeValue("Supprimer définitivement " + job.Filename + " ? Cette action est irréversible.")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 523, Col: 98}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 523, Col: 98}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var89)
 		if templ_7745c5c3_Err != nil {
@@ -2044,7 +2044,7 @@ func CommentForm(jobID, comment string, saved bool) templ.Component {
 		var templ_7745c5c3_Var91 string
 		templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + jobID + "/comment")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 533, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 533, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var91)
 		if templ_7745c5c3_Err != nil {
@@ -2057,7 +2057,7 @@ func CommentForm(jobID, comment string, saved bool) templ.Component {
 		var templ_7745c5c3_Var92 string
 		templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(comment)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 535, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 535, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 		if templ_7745c5c3_Err != nil {
@@ -2109,7 +2109,7 @@ func TagsForm(jobID string, tags []string) templ.Component {
 		var templ_7745c5c3_Var94 string
 		templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.ResolveAttributeValue("/documents/" + jobID + "/tags")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 546, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 546, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var94)
 		if templ_7745c5c3_Err != nil {
@@ -2122,7 +2122,7 @@ func TagsForm(jobID string, tags []string) templ.Component {
 		var templ_7745c5c3_Var95 string
 		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.ResolveAttributeValue(strings.Join(tags, ", "))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `documents.templ`, Line: 549, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `cmd/jarvisapp/templates/documents.templ`, Line: 549, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var95)
 		if templ_7745c5c3_Err != nil {
