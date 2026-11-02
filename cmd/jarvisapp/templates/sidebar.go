@@ -19,8 +19,11 @@ type SidebarView struct {
 	// sous 14 jours ; PaymentsMore : ceux non affichés.
 	Payments     []SideItem
 	PaymentsMore int
-	Running      []SideItem
-	Errors       []SideItem
+	// Markets : marchés suivis dont le prix a bougé au-delà du seuil en
+	// 24 h (jalon 53).
+	Markets []SideItem
+	Running []SideItem
+	Errors  []SideItem
 	// Pending : nombre de modifications en attente de commit (jalon 48). Un
 	// compteur permanent, parce qu'un changeset oublié est invisible de
 	// tous — y compris de son auteur.

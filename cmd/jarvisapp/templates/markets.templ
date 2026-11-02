@@ -1,0 +1,279 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/JulianAndrieux/Jarvis/internal/polymarket"
+)
+
+// Jalon 53 : marchés Polymarket en lecture seule. Tout texte venu de
+// Polymarket (questions, règles de résolution) est affiché comme du texte,
+// jamais interprété comme du HTML.
+
+templ MarketsPage(v MarketsView) {
+	@Layout("Marchés", "markets") {
+		<div class="page-title"><h2>Marchés</h2></div>
+		<p class="muted">
+			Marchés de prédiction Polymarket, en lecture seule. Les prix sont la
+			probabilité implicite donnée par le marché, relus à chaque affichage
+			(une minute de cache au plus).
+		</p>
+		<form class="search-bar" method="get" action="/markets">
+			<input type="text" name="q" value={ v.Query } placeholder="Chercher un marché : élection, bitcoin, Fed…" autocomplete="off"/>
+			<button type="submit" class="button-primary">Chercher</button>
+		</form>
+		if v.Error != "" {
+			<p class="error">{ v.Error }</p>
+		}
+		<section>
+			<h3>Suivis <span class="count">{ fmt.Sprint(len(v.Watches)) }</span></h3>
+			if len(v.Watches) == 0 {
+				<p class="muted">Aucun marché suivi. Cherche un marché puis « Suivre » : il apparaîtra ici avec ses prix, et dans la barre latérale s'il bouge de plus de 5 points en 24 h.</p>
+			} else {
+				<table class="markets-table card">
+					<thead>
+						<tr><th>Marché</th><th>Oui</th><th>24 h</th><th>Volume</th><th>Liquidité</th><th>Échéance</th><th></th></tr>
+					</thead>
+					<tbody>
+						for _, w := range v.Watches {
+							<tr class={ templ.KV("market-alert", w.Alert) }>
+								<td>
+									<a href={ templ.SafeURL(marketHref(w.Slug)) }>{ w.Question }</a>
+									if w.EventTitle != "" && w.EventTitle != w.Question {
+										<div class="muted">{ w.EventTitle }</div>
+									}
+									if w.Note != "" {
+										<div class="muted">📝 { w.Note }</div>
+									}
+								</td>
+								if w.Err != "" {
+									<td colspan="5" class="muted" title={ w.Err }>Prix indisponibles</td>
+								} else {
+									@watchPrices(w.Market)
+								}
+								<td>
+									<form method="post" action={ templ.SafeURL("/markets/" + w.Slug + "/unwatch") }>
+										<input type="hidden" name="back" value="/markets"/>
+										<button type="submit" class="button-ghost" title="Ne plus suivre">✕</button>
+									</form>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		</section>
+		if v.Searched {
+			<section class="markets-results">
+				<h3>Résultats pour « { v.Query } »</h3>
+				if v.SearchError != "" {
+					<p class="error">Polymarket n'a pas répondu : { v.SearchError }</p>
+				} else if len(v.Results) == 0 {
+					<p class="muted">Aucun marché actif ne correspond.</p>
+				}
+				for _, e := range v.Results {
+					<div class="card market-event">
+						<div class="market-event-title">{ e.Event.Title }</div>
+						<table class="markets-table">
+							<tbody>
+								for _, m := range e.Event.Markets {
+									@marketRow(m, v.Watched[m.Slug], v.Query)
+								}
+							</tbody>
+						</table>
+						if e.More > 0 {
+							<p class="muted">+ { fmt.Sprint(e.More) } autres branches — <a href={ templ.SafeURL("https://polymarket.com/event/" + e.Event.Slug) } target="_blank" rel="noopener noreferrer">tout voir sur Polymarket ↗</a></p>
+						}
+					</div>
+				}
+			</section>
+		}
+	}
+}
+
+templ watchPrices(m polymarket.Market) {
+	<td class="nowrap">
+		if len(m.Outcomes) > 0 {
+			<strong>{ Pct(m.Outcomes[0].Price) }</strong>
+		}
+	</td>
+	<td class={ "nowrap", changeClass(m.DayChange) }>{ Change(m.DayChange) }</td>
+	<td class="nowrap">{ USD(m.Volume) }</td>
+	<td class="nowrap">{ USD(m.Liquidity) }</td>
+	<td class="nowrap muted">
+		if !m.EndDate.IsZero() {
+			{ m.EndDate.Local().Format("02/01/2006") }
+		}
+		if m.Closed {
+			<span class="badge">clos</span>
+		}
+	</td>
+}
+
+templ marketRow(m polymarket.Market, watched bool, q string) {
+	<tr>
+		<td>
+			<a href={ templ.SafeURL(marketHref(m.Slug)) }>
+				if m.GroupItemTitle != "" {
+					{ m.GroupItemTitle }
+				} else {
+					{ m.Question }
+				}
+			</a>
+		</td>
+		<td class="nowrap">
+			for _, o := range m.Outcomes {
+				<span class="outcome-pill">{ o.Name } { Pct(o.Price) }</span>
+			}
+		</td>
+		<td class="nowrap muted">{ USD(m.Volume) }</td>
+		<td class="nowrap">
+			if watched {
+				<span class="muted">✓ Suivi</span>
+			} else {
+				<form method="post" action={ templ.SafeURL("/markets/" + m.Slug + "/watch") }>
+					<input type="hidden" name="back" value={ searchBack(q) }/>
+					<button type="submit">☆ Suivre</button>
+				</form>
+			}
+		</td>
+	</tr>
+}
+
+templ MarketDetailPage(v MarketDetailView) {
+	@Layout(v.Market.Question, "markets") {
+		<p><a href="/markets">← Marchés</a></p>
+		<div class="page-title">
+			<h2>{ v.Market.Question }</h2>
+		</div>
+		if v.Market.EventTitle != "" && v.Market.EventTitle != v.Market.Question {
+			<p class="muted">Événement : { v.Market.EventTitle }</p>
+		}
+		<div class="market-actions">
+			if v.Watched {
+				<form method="post" action={ templ.SafeURL("/markets/" + v.Market.Slug + "/unwatch") }>
+					<input type="hidden" name="back" value={ marketHref(v.Market.Slug) }/>
+					<button type="submit">★ Suivi — ne plus suivre</button>
+				</form>
+			} else {
+				<form method="post" action={ templ.SafeURL("/markets/" + v.Market.Slug + "/watch") }>
+					<input type="hidden" name="back" value={ marketHref(v.Market.Slug) }/>
+					<button type="submit" class="button-primary">☆ Suivre ce marché</button>
+				</form>
+			}
+			<a class="button-ghost" href={ templ.SafeURL(v.Market.URL()) } target="_blank" rel="noopener noreferrer">Voir sur Polymarket ↗</a>
+		</div>
+		if v.Market.Closed {
+			<p class="error">Marché clos : plus aucun ordre n'est accepté.</p>
+		} else if !v.Market.AcceptingOrders {
+			<p class="error">Le carnet n'accepte pas d'ordres pour l'instant.</p>
+		}
+		<div class="market-stats">
+			for _, o := range v.Market.Outcomes {
+				<div class="stat"><div class="stat-label">{ o.Name }</div><div class="stat-value">{ Pct(o.Price) }</div></div>
+			}
+			<div class="stat"><div class="stat-label">24 h</div><div class={ "stat-value", changeClass(v.Market.DayChange) }>{ Change(v.Market.DayChange) }</div></div>
+			<div class="stat"><div class="stat-label">Volume</div><div class="stat-value">{ USD(v.Market.Volume) }</div></div>
+			<div class="stat"><div class="stat-label">Volume 24 h</div><div class="stat-value">{ USD(v.Market.Volume24h) }</div></div>
+			<div class="stat"><div class="stat-label">Liquidité</div><div class="stat-value">{ USD(v.Market.Liquidity) }</div></div>
+			if !v.Market.EndDate.IsZero() {
+				<div class="stat"><div class="stat-label">Échéance</div><div class="stat-value">{ v.Market.EndDate.Local().Format("02/01/2006") }</div></div>
+			}
+		</div>
+		<section class="card">
+			<div class="chart-head">
+				<h3>Prix « { v.HistoryOf } »</h3>
+				<div class="filters">
+					for _, iv := range polymarket.Intervals {
+						if iv == v.Interval {
+							<span class="chip active">{ intervalLabel(iv) }</span>
+						} else {
+							<a class="chip" href={ templ.SafeURL(marketHref(v.Market.Slug) + "?iv=" + string(iv)) }>{ intervalLabel(iv) }</a>
+						}
+					}
+				</div>
+			</div>
+			if v.HistoryErr != "" {
+				<p class="muted">Historique indisponible : { v.HistoryErr }</p>
+			} else if v.Chart.Path == "" {
+				<p class="muted">Pas assez de points sur cette période.</p>
+			} else {
+				@priceChart(v.Chart)
+			}
+		</section>
+		<div class="books">
+			for _, b := range v.Books {
+				<section class="card book">
+					<h3>Carnet « { b.Outcome.Name } »</h3>
+					if b.Err != "" {
+						<p class="muted">Carnet indisponible : { b.Err }</p>
+					} else {
+						<div class="book-sides">
+							<table class="book-side">
+								<thead><tr><th>Achat</th><th>Parts</th></tr></thead>
+								<tbody>
+									for _, l := range topLevels(b.Book.Bids, 8) {
+										<tr><td class="up">{ Price(l.Price) }</td><td>{ Shares(l.Size) }</td></tr>
+									}
+								</tbody>
+							</table>
+							<table class="book-side">
+								<thead><tr><th>Vente</th><th>Parts</th></tr></thead>
+								<tbody>
+									for _, l := range topLevels(b.Book.Asks, 8) {
+										<tr><td class="down">{ Price(l.Price) }</td><td>{ Shares(l.Size) }</td></tr>
+									}
+								</tbody>
+							</table>
+						</div>
+						if s, ok := b.Book.Spread(); ok {
+							<p class="muted">Écart achat/vente : { Price(s) }</p>
+						}
+					}
+				</section>
+			}
+		</div>
+		<section class="card">
+			<h3>Ma note</h3>
+			if v.Watched {
+				<form method="post" action={ templ.SafeURL("/markets/" + v.Market.Slug + "/note") }>
+					<textarea name="note" rows="3" placeholder="Pourquoi je suis ce marché, ce que j'attends…">{ v.Note }</textarea>
+					<button type="submit">Enregistrer</button>
+				</form>
+			} else {
+				<p class="muted">Suis ce marché pour y attacher une note.</p>
+			}
+		</section>
+		<section class="card">
+			<h3>Règles de résolution</h3>
+			<div class="market-rules">{ v.Market.Description }</div>
+			if v.Market.ResolutionSource != "" {
+				<p class="muted">Source : { v.Market.ResolutionSource }</p>
+			}
+			<p class="muted">
+				Pas minimum { Price(v.Market.TickSize) } · ordre minimum { Shares(v.Market.MinOrderSize) } parts
+				if v.Market.Fees.Enabled {
+					· frais { frenchFloat(v.Market.Fees.Rate*100, 1) } %
+					if v.Market.Fees.TakerOnly {
+						(preneur seulement)
+					}
+				}
+				if v.Market.NegRisk {
+					· événement à issues exclusives
+				}
+			</p>
+		</section>
+	}
+}
+
+templ priceChart(c Chart) {
+	<svg class="price-chart" viewBox={ fmt.Sprintf("-48 -8 %.0f %.0f", c.Width+56, c.Height+28) } role="img" aria-label="Courbe des prix">
+		for _, t := range c.Ticks {
+			<line class="chart-grid" x1="0" x2={ fmt.Sprintf("%.0f", c.Width) } y1={ tickY(t) } y2={ tickY(t) }></line>
+			<text class="chart-label" x="-6" y={ tickY(t) } text-anchor="end" dominant-baseline="middle">{ t.Label }</text>
+		}
+		<path class="chart-line" d={ c.Path }></path>
+		<text class="chart-label" x="0" y={ fmt.Sprintf("%.0f", c.Height+16) }>{ c.First }</text>
+		<text class="chart-label" x={ fmt.Sprintf("%.0f", c.Width) } y={ fmt.Sprintf("%.0f", c.Height+16) } text-anchor="end">{ c.Last }</text>
+	</svg>
+}

@@ -16,6 +16,8 @@ import (
 	"embed"
 	"flag"
 	"fmt"
+	"github.com/JulianAndrieux/Jarvis/internal/polymarket"
+	"github.com/JulianAndrieux/Jarvis/internal/trading"
 	"io/fs"
 	"log"
 	"net"
@@ -96,6 +98,10 @@ func main() {
 	agentsCollection := flag.String("agents-collection", "agents", "Collection MongoDB des prompts des agents (onglet Agents)")
 	notesCollection := flag.String("notes-collection", "notes", "Collection MongoDB des notes (onglet Notes)")
 	tasksCollection := flag.String("tasks-collection", "tasks", "Collection MongoDB des tâches (onglet Tâches)")
+	marketsCollection := flag.String("markets-collection", "market_watches", "Collection MongoDB des marchés Polymarket suivis (onglet Marchés)")
+	polymarketOn := flag.Bool("polymarket", true, "Onglet Marchés : lecture de l'API publique de Polymarket (jalon 53, exception réseau n° 7) ; false = aucune requête vers Polymarket")
+	polymarketGamma := flag.String("polymarket-gamma-url", polymarket.DefaultGammaURL, "API Gamma de Polymarket (marchés, recherche)")
+	polymarketClob := flag.String("polymarket-clob-url", polymarket.DefaultClobURL, "API CLOB de Polymarket (carnets d'ordres, historique des prix)")
 	changesCollection := flag.String("changes-collection", "changes", "Collection MongoDB du journal des modifications (onglet Activité)")
 	changesetCollection := flag.String("changeset-collection", "changeset", "Collection MongoDB des modifications en attente de commit (onglet Changements) ; vide = écritures directes, sans changeset")
 	changesetAutoCommit := flag.Bool("changeset-auto-commit", true, "Applique les modifications en attente dès qu'elles sont enregistrées (les conflits restent sur l'onglet Changements) ; faux = commit manuel")
@@ -160,6 +166,14 @@ func main() {
 	cancelNotes()
 	if err != nil {
 		log.Fatalf("jarvisapp: notes : %v", err)
+	}
+	// Marchés suivis (jalon 53), dans Atlas par environnement (décision de
+	// l'utilisateur).
+	tradingCtx, cancelTrading := context.WithTimeout(context.Background(), 10*time.Second)
+	tradingStore, err := trading.NewMongoStore(tradingCtx, mongoConn, *mongoDB, *marketsCollection)
+	cancelTrading()
+	if err != nil {
+		log.Fatalf("jarvisapp: marchés : %v", err)
 	}
 	// Emails (jalon 39), copiés dans Atlas (décision de l'utilisateur).
 	mailCtx, cancelMail := context.WithTimeout(context.Background(), 10*time.Second)
@@ -535,6 +549,14 @@ func main() {
 	}
 
 	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore, Changes: recorder, Staged: changeset, Stager: stager}, Mail: mailService, Journal: journal}
+	if *polymarketOn {
+		srv.Market = &polymarket.CachedClient{Client: &polymarket.HTTPClient{
+			GammaURL: *polymarketGamma, ClobURL: *polymarketClob,
+			HTTP: &http.Client{Timeout: 20 * time.Second},
+		}}
+		srv.Trading = tradingStore
+		log.Printf("jarvisapp: onglet Marchés actif (lecture seule de %s et %s)", *polymarketGamma, *polymarketClob)
+	}
 	if changeset != nil {
 		// Un seul commit pour tous les genres d'entités : chaque paquet
 		// fournit l'Applier de ce qu'il possède.
