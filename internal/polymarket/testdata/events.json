@@ -1,0 +1,193 @@
+[
+ {
+  "id": "770450",
+  "slug": "fed-decision-in-december-20260729232808632",
+  "title": "Fed Decision in December?",
+  "endDate": "2026-12-10T04:59:00Z",
+  "volume": 11451926.207012,
+  "volume24hr": 589936.590075,
+  "tags": [
+   {
+    "slug": "fed"
+   },
+   {
+    "slug": "fomc"
+   },
+   {
+    "slug": "trump"
+   },
+   {
+    "slug": "economy"
+   },
+   {
+    "slug": "fed-rates"
+   },
+   {
+    "slug": "kevin-warsh"
+   },
+   {
+    "slug": "Global-Rates"
+   },
+   {
+    "slug": "economic-policy"
+   },
+   {
+    "slug": "macro-indicators"
+   },
+   {
+    "slug": "recurring"
+   }
+  ],
+  "markets": [
+   {
+    "id": "3215005",
+    "question": "Will the Fed decrease interest rates by 50+ bps after the December 2026 meeting?",
+    "conditionId": "0xb9aee520bf51ac5f00b5c43e54ef9245bc9fcdef866ce8a33025f9a441cc651d",
+    "slug": "will-the-fed-decrease-interest-rates-by-50-bps-after-the-december-2026-meeting-20260729232808633",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal funds range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's December 2026 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for December 8-9, 2026 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their December meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.",
+    "endDate": "2026-12-09T23:59:00Z",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.0035\", \"0.9965\"]",
+    "clobTokenIds": "[\"17640596861394454242836532536014033416733783473450136742726948856144855149507\", \"104236736263775307891497202874191911203963566711959725788584750440530976742193\"]",
+    "volumeNum": 2029872.1589739998,
+    "liquidityNum": 366774.44403,
+    "volume24hr": 109936.58,
+    "active": true,
+    "closed": false,
+    "acceptingOrders": true,
+    "bestBid": 0.003,
+    "bestAsk": 0.004,
+    "lastTradePrice": 0.003,
+    "groupItemTitle": "50+ bps decrease",
+    "orderPriceMinTickSize": 0.001,
+    "orderMinSize": 5
+   },
+   {
+    "id": "3215006",
+    "question": "Will the Fed decrease interest rates by 25 bps after the December 2026 meeting?",
+    "conditionId": "0xf17ad24eb4ad57926495b114149c765b9b95bc286eadc91cbbfa901ceb10d0b8",
+    "slug": "will-the-fed-decrease-interest-rates-by-25-bps-after-the-december-2026-meeting-20260729232808634",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal funds range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's December 2026 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for December 8-9, 2026 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their December meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.",
+    "endDate": "2026-12-09T23:59:00Z",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.0045\", \"0.9955\"]",
+    "clobTokenIds": "[\"77367448845023382525249480243608609306658725883285195065573683809293972009019\", \"23677896678650147625251750117853328843601853501710889530409633595389256242910\"]",
+    "volumeNum": 2315694.010613,
+    "liquidityNum": 270630.35627,
+    "volume24hr": 126968.72500099998,
+    "active": true,
+    "closed": false,
+    "acceptingOrders": true,
+    "bestBid": 0.004,
+    "bestAsk": 0.005,
+    "lastTradePrice": 0.005,
+    "oneDayPriceChange": -0.001,
+    "groupItemTitle": "25 bps decrease",
+    "orderPriceMinTickSize": 0.001,
+    "orderMinSize": 5
+   },
+   {
+    "id": "3215007",
+    "question": "Will there be no change in Fed interest rates after the December 2026 meeting?",
+    "conditionId": "0x723822eb2b143cee54c0bd7c1efba322b21f0051984c266df8879c394f1011c0",
+    "slug": "will-there-be-no-change-in-fed-interest-rates-after-the-december-2026-meeting-20260729232808635",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal funds range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's December 2026 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for December 8-9, 2026 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their December meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.",
+    "endDate": "2026-12-09T23:59:00Z",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.225\", \"0.775\"]",
+    "clobTokenIds": "[\"42865728742506860386768556888821101266630139112044622335353850919229585308601\", \"8077351031134730167836761678618167504307708651130165095377248922919635337796\"]",
+    "volumeNum": 2773580.2157380003,
+    "liquidityNum": 573052.6315,
+    "volume24hr": 151785.813534,
+    "active": true,
+    "closed": false,
+    "acceptingOrders": true,
+    "bestBid": 0.22,
+    "bestAsk": 0.23,
+    "lastTradePrice": 0.23,
+    "oneDayPriceChange": -0.01,
+    "groupItemTitle": "No change",
+    "orderPriceMinTickSize": 0.01,
+    "orderMinSize": 5
+   },
+   {
+    "id": "3215008",
+    "question": "Will the Fed increase interest rates by 25 bps after the December 2026 meeting?",
+    "conditionId": "0x8a4196617dcb703e49d9bb36d3847bf6a75fd364dbd19f8d408ac944bf1a03d8",
+    "slug": "will-the-fed-increase-interest-rates-by-25-bps-after-the-december-2026-meeting-20260729232808636",
+    "description": "The FED interest rates are defined in this market by the upper bound of the target federal funds range. The decisions on the target federal funds range are made by the Federal Open Market Committee (FOMC) meetings.\n\nThis market will resolve to the amount of basis points the upper bound of the target federal funds rate is changed by versus the level it was prior to the Federal Reserve's December 2026 meeting.\n\nIf the target federal funds rate is changed to a level not expressed in the displayed options, the change will be rounded up to the nearest 25 and will resolve to the relevant bracket. (e.g. if there's a cut/increase of 12.5 bps it will be considered to be 25 bps)\n\nThe resolution source for this market is the FOMC’s statement after its meeting scheduled for December 8-9, 2026 according to the official calendar: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm.\n\nThe level and change of the target federal funds rate is also published at the official website of the Federal Reserve at https://www.federalreserve.gov/monetarypolicy/openmarket.htm.\n\nThis market may resolve as soon as the FOMC’s statement for their December meeting with relevant data is issued. If no statement is released by the end date of the next scheduled meeting, this market will resolve to the \"No change\" bracket.",
+    "endDate": "2026-12-09T23:59:00Z",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.735\", \"0.265\"]",
+    "clobTokenIds": "[\"111662129652828266889360374468657435151479595863413519836161861837506140152890\", \"94483965432909797688470702512207472940215538148754820061518518664128018848687\"]",
+    "volumeNum": 2663012.1061959993,
+    "liquidityNum": 500586.2846,
+    "volume24hr": 67178.657935,
+    "active": true,
+    "closed": false,
+    "acceptingOrders": true,
+    "bestBid": 0.73,
+    "bestAsk": 0.74,
+    "lastTradePrice": 0.74,
+    "groupItemTitle": "25 bps increase",
+    "orderPriceMinTickSize": 0.01,
+    "orderMinSize": 5
+   }
+  ]
+ },
+ {
+  "id": "1034268",
+  "slug": "another-fed-rate-hike-in-2026",
+  "title": "Another Fed rate hike in 2026?",
+  "endDate": "2026-12-10T04:59:00Z",
+  "volume": 1358946.385682,
+  "volume24hr": 65163.34102100001,
+  "tags": [
+   {
+    "slug": "fed"
+   },
+   {
+    "slug": "economy"
+   },
+   {
+    "slug": "fed-rates"
+   },
+   {
+    "slug": "cpi-release"
+   },
+   {
+    "slug": "macro-single"
+   },
+   {
+    "slug": "economic-policy"
+   },
+   {
+    "slug": "kevin-warsh"
+   }
+  ],
+  "markets": [
+   {
+    "id": "4620900",
+    "question": "Another Fed rate hike in 2026?",
+    "conditionId": "0x9b1a03b41a1a68c209e9c3caf3d8af3f878420d6dbe8cb8afffd66049e73b114",
+    "slug": "another-fed-rate-hike-in-2026",
+    "description": "This market will resolve to “Yes” if the upper bound of the target federal funds rate is increased at any point between September 17, 2026 and the completion of the Fed's December 2026 meeting, currently scheduled for December 8 to 9, 2026, inclusive of any rate hike announced as a result of the December meeting. Otherwise, this market will resolve to “No”.\n\nAny change to the target federal funds rate announced at the conclusion of the September 15 to 16, 2026 FOMC meeting will not count toward this market. Emergency rate hikes announced on or after September 17, 2026 will qualify.\n\nThis market may not resolve to \"No\" until the Fed has released its rate change decision following its December meeting.\n\nThe primary resolution source for this market will be the official website of the Federal Reserve (https://www.federalreserve.gov/monetarypolicy/openmarket.htm), however a consensus of credible reporting may also be used.",
+    "endDate": "2026-12-10T04:59:00Z",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.745\", \"0.255\"]",
+    "clobTokenIds": "[\"834988939366537589681339435844742816680296103724655311351481456389958777625\", \"51699731593220798404378104978434018325263546766663573208722653674626387696963\"]",
+    "volumeNum": 1358946.385682,
+    "liquidityNum": 130959.7152,
+    "volume24hr": 65163.34102100001,
+    "active": true,
+    "closed": false,
+    "acceptingOrders": true,
+    "bestBid": 0.74,
+    "bestAsk": 0.75,
+    "lastTradePrice": 0.74,
+    "orderPriceMinTickSize": 0.01,
+    "orderMinSize": 5
+   }
+  ]
+ }
+]

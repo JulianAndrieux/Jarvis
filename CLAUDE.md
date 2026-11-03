@@ -84,6 +84,17 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
      par environnement (décision de l'utilisateur). Les jalons suivants
      (analyse par Claude avec recherche web, ordres réels) élargiront cette
      exception ; plan et décisions : `docs/plan-polymarket.md`.
+  8. **Actualités des marchés (`internal/news`, `internal/collect`,
+     jalon 54) : Jarvis interroge GDELT et télécharge des flux RSS**
+     (Fed, BCE, BBC, Guardian, NYT, Politico, Le Monde, CoinDesk,
+     Cointelegraph — liste dans `--news-feeds`). Décision explicite de
+     l'utilisateur (sources : GDELT + flux d'agences ; catégories :
+     politique/géopolitique, économie/banques centrales, crypto). Ce qui
+     part : des mots-clés tirés des questions publiques des marchés (GDELT),
+     rien du tout pour un flux (simple téléchargement). Prix, articles et
+     cibles sont stockés dans Atlas, **globaux à l'instance** (données
+     publiques, comme tickets et agents). `--collect=false` coupe la
+     collecte, `--gdelt-url ""` GDELT seul.
 - **L'inférence locale est une ressource de machine, partagée et
   sérialisée entre environnements** (jalon 50). Les modèles ne servent
   qu'un travail à la fois sur ce matériel et un document de cinq pages
@@ -2964,6 +2975,87 @@ décisions : `docs/plan-multi-environnement.md`.
     et corrigé (suivis sous une longue liste de résultats, branches closes
     à 0/100 % proposées). **Non validé ici** : le contrat `MongoStore`
     contre Atlas (`MONGO_URI` absent de l'environnement de développement).
+
+- **Jalon 54 — collecte des prix à la minute et des actualités : fait,
+  testé contre les vraies sources (sauf GDELT, cf. plus bas), en attente de
+  validation utilisateur.** Demandé : « collecter en parallèle des données
+  d'actualités sur le sujet pour mesurer l'impact d'une annonce sur le
+  cours » — préalable à un modèle qui réagit à chaque annonce. Décisions
+  de l'utilisateur (questions posées) : GDELT + flux RSS ; politique,
+  géopolitique, économie/banques centrales, crypto ; jugement des
+  annonces par le modèle local **et** Claude, comparés (jalon 56). Plan
+  revu : 54 collecte, 55 étude d'impact (le jalon qui décide), 56 modèle
+  de réaction simulé, puis risque et ordres (`docs/plan-polymarket.md`).
+  Suggestion Timestral (Mistral, séries temporelles) examinée : gardée
+  comme témoin du jalon 56 (courbe seule), pas comme modèle principal.
+  - **Constaté sur l'API réelle avant d'écrire le code** : le CLOB garde
+    l'historique **à la minute au moins 60 jours en arrière**, par plages
+    de 7 jours au plus (20 jours : refusé) — l'étude d'impact peut donc
+    porter sur le passé sans attendre des semaines de collecte. GDELT
+    répond 429 en texte brut au-delà d'une requête toutes les 5 s.
+  - **`internal/news`** (nouveau) : `ParseFeed` (RSS 2.0 et Atom, BOM,
+    CDATA, dates RFC 1123/3339 ; date absente, illisible ou dans le futur
+    → heure de collecte et `DateGuessed`), `RSS.FetchAll` (flux en
+    parallèle, un flux en panne nommé sans bloquer les autres), `GDELT`
+    (API DOC, requêtes espacées de 6 s, `ErrRateLimited`, `startdatetime`),
+    `CanonicalURL`/`ArticleID` (paramètres de suivi retirés : le même
+    article par un flux et par GDELT n'est gardé qu'une fois), `Matches`
+    (**décision assumée** : rattachement déterministe par mots-clés —
+    tous les mots d'une phrase, mots entiers, sans casse ni accents ; juger
+    la pertinence réelle est le travail du jalon 56), `ParseFeedList`
+    (https seulement). Fixtures : extraits réels des flux Fed, BBC,
+    Guardian.
+  - **`internal/polymarket`** : `EventsByTag` (événements ouverts d'une
+    catégorie, les plus actifs sur 24 h d'abord), `HistoryRange`
+    (historique à la minute, plage bornée à `MaxRangeSpan` avant l'appel).
+  - **`internal/collect`** (nouveau) : `Store` (cibles, prix rangés **un
+    document par jeton et par jour** — 1 440 points par jour et par marché,
+    un document par point serait démesuré —, articles à rattachements
+    réunis, la première vue faisant foi) ; `FakeStore` et `MongoStore`
+    (`market_targets`, `market_prices`, `market_news`, index) sous le même
+    contrat. `Collector` : cibles = marchés suivis + branche ouverte la plus
+    active des événements les plus actifs de chaque catégorie (échéance
+    passée écartée — vu en réel : un marché « jusqu'au 31 octobre »
+    acceptait encore des ordres le 3 novembre) ; **mots-clés par le modèle
+    local** (`LLMKeywords`, schéma contraint, `CleanKeywords` vérifie la
+    sortie avant qu'elle parte en requête, dans la file des modèles ;
+    agent « Mots-clés des marchés » de l'onglet Agents) et rattachement
+    rétroactif des articles déjà enregistrés ; prix depuis le dernier point
+    (ou `--collect-backfill`, 30 jours) en tranches de 7 jours ; flux
+    toutes les 2 min (tous les articles gardés : celui qui ne concerne
+    aucune cible aujourd'hui servira demain) ; GDELT tous les quarts
+    d'heure, les cibles les moins récemment interrogées d'abord, arrêt au
+    premier refus. Une cible absente des catégories depuis 48 h n'est plus
+    collectée (son historique reste). `Status` pour l'interface.
+  - **UI** : fiche d'un marché — **actualités liées** (heure, source, voie,
+    délai de collecte s'il fait moins de 6 h, date approximative signalée ;
+    titres de tiers échappés, lien seulement s'il est http(s)), mots-clés et
+    modèle qui les a proposés, **un trait vertical par annonce sur la
+    courbe** (survol : titre). Page Marchés : état de la collecte (cibles,
+    derniers passages, points et articles nouveaux, erreurs).
+  - Flags : `--collect` (défaut vrai), `--market-data-prefix`,
+    `--news-feeds`, `--gdelt-url`, `--collect-tags`, `--collect-per-tag`,
+    `--collect-backfill`. L'essai à blanc et la relecture visuelle ne
+    collectent jamais (`--collect=false`, collections `market_check_*`,
+    test de garde).
+  - Validé : tests unitaires (`-race`) ; **les 9 flux par défaut lus en
+    réel depuis Go** (248 articles, tous datés — NPR, qui répondait 200 à
+    curl, refuse le client HTTP de Go : remplacé par Politico) ; **collecte
+    réelle** en mémoire (`go test -tags=polymarket ./internal/collect/`,
+    mots-clés fixes à la place du modèle) : 13 cibles sur les 5
+    catégories, 35 449 points à la minute sur 48 h, 300 rattachements en
+    7 s ; captures d'une fiche (actualités, mots-clés) — deux défauts vus
+    ainsi et corrigés (carnet d'ordres étiré, « vu 4 j après » trompeur sur
+    un vieil article de flux).
+  - **Non validé ici** : GDELT (429 depuis l'adresse partagée de
+    l'environnement de développement — `go test -tags=news ./internal/news/`
+    à lancer chez soi), les mots-clés du vrai modèle local, le contrat
+    `MongoStore` contre Atlas (`MONGO_URI` absent).
+  - **Constat pour le jalon 56** : un rattachement par mots-clés large
+    (« Federal Reserve ») ramène aussi des communiqués sans effet sur le
+    marché (agréments bancaires) — attendu, c'est le juge des annonces qui
+    trie ; l'étude d'impact du jalon 55 mesurera combien d'annonces
+    rattachées font réellement bouger un cours.
 
 **Reste à valider en conditions réelles** (impossible depuis
 l'environnement de développement de ce chantier) : les contrats Mongo

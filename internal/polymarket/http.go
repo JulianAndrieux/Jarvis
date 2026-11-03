@@ -97,22 +97,7 @@ func (c *HTTPClient) Search(ctx context.Context, query string) ([]Event, error) 
 	if err := c.get(ctx, c.gamma(), "/public-search", q, &resp); err != nil {
 		return nil, err
 	}
-	out := make([]Event, 0, len(resp.Events))
-	for _, ge := range resp.Events {
-		e := Event{ID: ge.ID, Slug: ge.Slug, Title: ge.Title, EndDate: parseTime(ge.EndDate), Volume: num(ge.Volume)}
-		for _, gm := range ge.Markets {
-			m, err := gm.market()
-			if err != nil {
-				return nil, err
-			}
-			if m.EventSlug == "" {
-				m.EventSlug, m.EventTitle = e.Slug, e.Title
-			}
-			e.Markets = append(e.Markets, m)
-		}
-		out = append(out, e)
-	}
-	return out, nil
+	return events(resp.Events)
 }
 
 func (c *HTTPClient) Market(ctx context.Context, slug string) (Market, bool, error) {
@@ -177,6 +162,65 @@ func (c *HTTPClient) History(ctx context.Context, tokenID string, iv Interval) (
 	out := make([]PricePoint, 0, len(resp.History))
 	for _, h := range resp.History {
 		out = append(out, PricePoint{At: time.Unix(h.T, 0).UTC(), Price: h.P})
+	}
+	return out, nil
+}
+
+func (c *HTTPClient) EventsByTag(ctx context.Context, tag string, limit int) ([]Event, error) {
+	if !ValidTag(tag) {
+		return nil, fmt.Errorf("%w : tag %q", ErrInvalidID, tag)
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	q := url.Values{"tag_slug": {tag}, "active": {"true"}, "closed": {"false"}, "order": {"volume24hr"}, "ascending": {"false"}, "limit": {strconv.Itoa(limit)}}
+	var resp []gammaEvent
+	if err := c.get(ctx, c.gamma(), "/events", q, &resp); err != nil {
+		return nil, err
+	}
+	return events(resp)
+}
+
+func (c *HTTPClient) HistoryRange(ctx context.Context, tokenID string, from, to time.Time) ([]PricePoint, error) {
+	if !ValidTokenID(tokenID) {
+		return nil, fmt.Errorf("%w : jeton %q", ErrInvalidID, tokenID)
+	}
+	if !to.After(from) || to.Sub(from) > MaxRangeSpan {
+		return nil, fmt.Errorf("polymarket: plage d'historique invalide (%s → %s, %s au plus)", from.Format(time.RFC3339), to.Format(time.RFC3339), MaxRangeSpan)
+	}
+	var resp struct {
+		History []struct {
+			T int64   `json:"t"`
+			P float64 `json:"p"`
+		} `json:"history"`
+	}
+	q := url.Values{"market": {tokenID}, "startTs": {strconv.FormatInt(from.Unix(), 10)}, "endTs": {strconv.FormatInt(to.Unix(), 10)}, "fidelity": {"1"}}
+	if err := c.get(ctx, c.clob(), "/prices-history", q, &resp); err != nil {
+		return nil, err
+	}
+	out := make([]PricePoint, 0, len(resp.History))
+	for _, h := range resp.History {
+		out = append(out, PricePoint{At: time.Unix(h.T, 0).UTC(), Price: h.P})
+	}
+	return out, nil
+}
+
+// events : les événements Gamma, chaque marché rattaché à son événement.
+func events(in []gammaEvent) ([]Event, error) {
+	out := make([]Event, 0, len(in))
+	for _, ge := range in {
+		e := Event{ID: ge.ID, Slug: ge.Slug, Title: ge.Title, EndDate: parseTime(ge.EndDate), Volume: num(ge.Volume)}
+		for _, gm := range ge.Markets {
+			m, err := gm.market()
+			if err != nil {
+				return nil, err
+			}
+			if m.EventSlug == "" {
+				m.EventSlug, m.EventTitle = e.Slug, e.Title
+			}
+			e.Markets = append(e.Markets, m)
+		}
+		out = append(out, e)
 	}
 	return out, nil
 }

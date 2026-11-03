@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/JulianAndrieux/Jarvis/internal/polymarket"
 )
@@ -39,6 +40,8 @@ type MarketsView struct {
 	// dans les résultats.
 	Watched map[string]bool
 	Error   string
+	// Collection : nil si la collecte n'est pas configurée.
+	Collection *CollectionView
 }
 
 // ResultEvent : un événement trouvé, réduit à ses branches les plus
@@ -67,6 +70,41 @@ type MarketDetailView struct {
 	HistoryOf  string
 	HistoryErr string
 	Chart      Chart
+	// News : actualités rattachées au marché (jalon 54), la plus récente
+	// d'abord ; Collect : ce que la collecte sait du marché.
+	News    []NewsItem
+	Collect *CollectInfo
+}
+
+// NewsItem : une actualité, prête à afficher. URL vide : le lien de la
+// source n'était pas http(s), le titre s'affiche sans lien.
+type NewsItem struct {
+	Title, URL, Source, Via string
+	When                    string
+	// Lag : le délai entre publication et collecte (« vu 3 min après ») —
+	// avec quel retard Jarvis l'aurait appris.
+	Lag     string
+	Guessed bool
+	// X : position sur la courbe ; OnChart faux si l'annonce tombe hors de
+	// la période tracée.
+	X       float64
+	OnChart bool
+}
+
+// CollectInfo : la cible de collecte correspondant au marché.
+type CollectInfo struct {
+	Category      string
+	Keywords      []string
+	KeywordsModel string
+}
+
+// CollectionView : l'état de la collecte, sur la page Marchés.
+type CollectionView struct {
+	Targets                                       int
+	Running                                       bool
+	LastTargets, LastPrices, LastFeeds, LastGDELT string
+	NewPoints, NewFeedArticles, NewGDELTArticles  int
+	Errors                                        []string
 }
 
 // Chart : une courbe de prix déjà mise à l'échelle (voir PriceChart).
@@ -77,6 +115,47 @@ type Chart struct {
 	Ticks []ChartTick
 	First string
 	Last  string
+	// T0, T1 : la période tracée (secondes Unix), pour placer les annonces.
+	T0, T1 int64
+}
+
+// XAt : l'abscisse d'un instant sur la courbe ; ok=false hors de la
+// période tracée (ou sans courbe).
+func (c Chart) XAt(t time.Time) (float64, bool) {
+	if c.Path == "" || c.T1 <= c.T0 {
+		return 0, false
+	}
+	u := t.Unix()
+	if u < c.T0 || u > c.T1 {
+		return 0, false
+	}
+	return float64(u-c.T0) / float64(c.T1-c.T0) * c.Width, true
+}
+
+// SafeLink : l'adresse si elle est http(s), sinon vide — un lien venu d'un
+// flux tiers ne doit jamais exécuter quoi que ce soit.
+func SafeLink(raw string) string {
+	l := strings.ToLower(strings.TrimSpace(raw))
+	if strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "http://") {
+		return strings.TrimSpace(raw)
+	}
+	return ""
+}
+
+// Lag : « vu aussitôt », « vu 3 min après », « vu 2 h après ». Au-delà de
+// 6 h, rien : c'est un article déjà ancien trouvé à la première relève d'un
+// flux (ou par la recherche dans le passé de GDELT), pas un retard.
+func Lag(published, seen time.Time) string {
+	d := seen.Sub(published)
+	switch {
+	case d < time.Minute:
+		return "vu aussitôt"
+	case d < time.Hour:
+		return fmt.Sprintf("vu %d min après", int(d.Minutes()))
+	case d < 6*time.Hour:
+		return fmt.Sprintf("vu %d h après", int(d.Hours()))
+	}
+	return ""
 }
 
 type ChartTick struct {
@@ -121,6 +200,7 @@ func PriceChart(points []polymarket.PricePoint, w, h float64) Chart {
 	for _, v := range []float64{hi, (lo + hi) / 2, lo} {
 		c.Ticks = append(c.Ticks, ChartTick{Y: y(v), Label: Pct(v)})
 	}
+	c.T0, c.T1 = t0, t1
 	c.First = points[0].At.Local().Format("02/01 15:04")
 	c.Last = points[len(points)-1].At.Local().Format("02/01 15:04")
 	return c

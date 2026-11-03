@@ -66,3 +66,38 @@ func TestPriceChart(t *testing.T) {
 		t.Error("un seul point : pas de courbe")
 	}
 }
+
+// Les annonces se placent sur la courbe à leur heure ; hors de la période
+// tracée, pas de repère.
+func TestChartXAt(t *testing.T) {
+	at := func(h int) time.Time { return time.Date(2026, 11, 1, h, 0, 0, 0, time.UTC) }
+	c := PriceChart([]polymarket.PricePoint{{At: at(0), Price: 0.2}, {At: at(10), Price: 0.3}}, 600, 160)
+	if x, ok := c.XAt(at(5)); !ok || x != 300 {
+		t.Errorf("XAt(milieu) = %v %v", x, ok)
+	}
+	if _, ok := c.XAt(at(11)); ok {
+		t.Error("après la courbe : pas de repère")
+	}
+	if _, ok := (Chart{}).XAt(at(5)); ok {
+		t.Error("sans courbe : pas de repère")
+	}
+}
+
+func TestSafeLink(t *testing.T) {
+	for in, want := range map[string]string{"https://a.example/x": "https://a.example/x", "http://a.example/x": "http://a.example/x", "javascript:alert(1)": "", "/local": "", "": ""} {
+		if got := SafeLink(in); got != want {
+			t.Errorf("SafeLink(%q) = %q, veut %q", in, got, want)
+		}
+	}
+}
+
+// Le délai de collecte n'a de sens que pour un article vu en direct : un
+// vieil article trouvé à la première relève d'un flux n'en affiche pas.
+func TestLag(t *testing.T) {
+	p := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+	for d, want := range map[time.Duration]string{20 * time.Second: "vu aussitôt", 3 * time.Minute: "vu 3 min après", 2 * time.Hour: "vu 2 h après", 4 * 24 * time.Hour: ""} {
+		if got := Lag(p, p.Add(d)); got != want {
+			t.Errorf("Lag(%s) = %q, veut %q", d, got, want)
+		}
+	}
+}

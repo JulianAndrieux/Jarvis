@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JulianAndrieux/Jarvis/internal/collect"
+	"github.com/JulianAndrieux/Jarvis/internal/news"
 	"github.com/JulianAndrieux/Jarvis/internal/polymarket"
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
 	"github.com/JulianAndrieux/Jarvis/internal/trading"
@@ -274,5 +276,58 @@ func TestMarkets_WatchesBeforeResults(t *testing.T) {
 	page := do(s, http.MethodGet, "/markets?q=bitcoin", nil).Body.String()
 	if i, j := strings.Index(page, "Suivis"), strings.Index(page, "Résultats pour"); i < 0 || j < 0 || i > j {
 		t.Error("les suivis doivent apparaître avant les résultats")
+	}
+}
+
+// Jalon 54 : la fiche d'un marché montre les actualités collectées, leurs
+// repères sur la courbe et les mots-clés ; la page Marchés, l'état de la
+// collecte.
+func newCollectServer(t *testing.T) (*Server, *collect.FakeStore) {
+	t.Helper()
+	s, _, _ := newMarketsServer(t)
+	cs := collect.NewFakeStore()
+	ctx := context.Background()
+	cs.UpsertTarget(ctx, collect.Target{Slug: "xi-out", Question: "Xi?", TokenID: "111", Category: "suivi", UpdatedAt: time.Now()})
+	cs.SetKeywords(ctx, "xi-out", []string{"Xi Jinping", "Politburo"}, "qwen3-8b", time.Now())
+	cs.UpsertArticles(ctx, []news.Article{
+		{ID: "a1", URL: "https://news.example/xi", Title: "Xi <b>reshuffles</b> Politburo", Source: "BBC World", Via: news.ViaRSS,
+			Published: time.Date(2026, 10, 30, 6, 0, 0, 0, time.UTC), Seen: time.Date(2026, 10, 30, 6, 3, 0, 0, time.UTC), Markets: []string{"xi-out"}},
+		{ID: "a2", URL: "javascript:alert(1)", Title: "Lien piégé", Source: "x", Via: news.ViaGDELT,
+			Published: time.Date(2026, 10, 31, 6, 0, 0, 0, time.UTC), Seen: time.Date(2026, 10, 31, 6, 0, 0, 0, time.UTC), Markets: []string{"xi-out"}},
+		{ID: "a3", URL: "https://news.example/other", Title: "Autre marché", Via: news.ViaRSS, Published: time.Date(2026, 10, 30, 7, 0, 0, 0, time.UTC), Markets: []string{"btc"}},
+	})
+	s.Collect = cs
+	return s, cs
+}
+
+func TestMarketDetail_ShowsCollectedNews(t *testing.T) {
+	s, _ := newCollectServer(t)
+	page := do(s, http.MethodGet, "/markets/xi-out", nil).Body.String()
+	for _, want := range []string{"Actualités liées", "Xi &lt;b&gt;reshuffles&lt;/b&gt; Politburo", "BBC World", `href="https://news.example/xi"`, "Xi Jinping", "Politburo", "qwen3-8b", `class="chart-news"`, "vu 3 min après"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("fiche : manque %q", want)
+		}
+	}
+	if strings.Contains(page, "Autre marché") {
+		t.Error("un article d'un autre marché ne doit pas apparaître")
+	}
+	// Un lien qui n'est pas http(s) n'est jamais cliquable.
+	if strings.Contains(page, "javascript:") || !strings.Contains(page, "Lien piégé") {
+		t.Error("lien piégé : titre affiché, jamais en lien")
+	}
+	// Repère sur la courbe : l'annonce du 30/10 06:00 est dans la courbe
+	// de la fixture (30/10 00:00 → 12:00), celle du 31/10 non.
+	if strings.Count(page, `class="chart-news"`) != 1 {
+		t.Errorf("repères = %d, veut 1", strings.Count(page, `class="chart-news"`))
+	}
+}
+
+func TestMarkets_ShowsCollectionStatus(t *testing.T) {
+	s, _ := newCollectServer(t)
+	s.Collector = &collect.Collector{Store: s.Collect}
+	s.Collector.RefreshTargets(context.Background()) // sans client : rien, mais un passage daté
+	page := do(s, http.MethodGet, "/markets", nil).Body.String()
+	if !strings.Contains(page, "Collecte") || !strings.Contains(page, "marchés collectés") {
+		t.Error("la page Marchés doit montrer l'état de la collecte")
 	}
 }
