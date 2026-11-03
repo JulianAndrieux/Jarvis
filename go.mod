@@ -6,6 +6,8 @@ require (
 	github.com/a-h/templ v0.3.1020
 	github.com/go-chi/chi/v5 v5.3.2
 	go.mongodb.org/mongo-driver/v2 v2.9.1
+	golang.org/x/text v0.39.0
+	golang.org/x/tools v0.50.0
 )
 
 require (
@@ -17,6 +19,4 @@ require (
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/text v0.39.0 // indirect
-	golang.org/x/tools v0.50.0 // indirect
 )

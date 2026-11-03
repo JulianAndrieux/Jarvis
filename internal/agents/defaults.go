@@ -5,6 +5,7 @@ import (
 
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
+	"github.com/JulianAndrieux/Jarvis/internal/collect"
 	"github.com/JulianAndrieux/Jarvis/internal/extraction"
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
 )
@@ -15,6 +16,7 @@ const (
 	Extraction     = "extraction"
 	MailTriage     = "mail_triage"
 	MailPayment    = "mail_payment"
+	MarketKeywords = "market_keywords"
 	Analysis       = "analysis"
 	Development    = "development"
 	Review         = "review"
@@ -59,6 +61,13 @@ func Defaults(m Models) []Definition {
 			Model:         m.Documents,
 			DefaultPrompt: mail.DefaultPaymentPrompt,
 			Appended:      "L'en-tête et le début du corps de l'email (5000 caractères), le texte des PDF joints (couche texte seulement, 3000 caractères au plus), puis le schéma JSON de la réponse. Le prompt utilisé est conservé avec le résultat.",
+		},
+		{
+			ID: MarketKeywords, Name: "Mots-clés des marchés", Group: "Marchés",
+			Role:          "Propose, pour chaque marché Polymarket étudié, 2 à 5 phrases de recherche qui serviront à collecter les actualités capables de le faire bouger (flux RSS et GDELT). Après le modèle, le code nettoie et borne les phrases ; un article est rattaché à un marché s'il contient tous les mots de l'une d'elles. Les mots-clés sont gardés avec le modèle et la date.",
+			Model:         m.Documents,
+			DefaultPrompt: collect.DefaultKeywordsPrompt,
+			Appended:      "La question du marché, le titre de l'événement et le début de ses règles de résolution (2000 caractères au plus), puis le schéma JSON de la réponse.",
 		},
 		{
 			ID: Analysis, Name: "Analyse de ticket", Group: "Tickets",

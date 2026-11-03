@@ -2,6 +2,7 @@ package polymarket
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -127,4 +128,23 @@ func (c *CachedClient) History(ctx context.Context, tokenID string, iv Interval)
 	}
 	c.store(key, v, true)
 	return v, nil
+}
+
+func (c *CachedClient) EventsByTag(ctx context.Context, tag string, limit int) ([]Event, error) {
+	key := fmt.Sprintf("t\x00%s\x00%d", tag, limit)
+	if e, ok := c.lookup(key); ok {
+		return e.value.([]Event), nil
+	}
+	v, err := c.Client.EventsByTag(ctx, tag, limit)
+	if err != nil {
+		return nil, err
+	}
+	c.store(key, v, true)
+	return v, nil
+}
+
+// HistoryRange n'est jamais mis en cache : c'est la collecte qui l'utilise,
+// une plage à la fois.
+func (c *CachedClient) HistoryRange(ctx context.Context, tokenID string, from, to time.Time) ([]PricePoint, error) {
+	return c.Client.HistoryRange(ctx, tokenID, from, to)
 }

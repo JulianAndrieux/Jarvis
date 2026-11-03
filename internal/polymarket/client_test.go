@@ -3,6 +3,7 @@ package polymarket
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -234,5 +235,45 @@ func TestBook_MidAndSpread(t *testing.T) {
 	}
 	if _, ok := (Book{Bids: b.Bids}).Mid(); ok {
 		t.Error("sans vente, pas de milieu")
+	}
+}
+
+func TestHTTPClient_EventsByTag(t *testing.T) {
+	c, seen := fakeAPI(t, map[string][]byte{"/gamma/events": fixture(t, "events.json")})
+	events, err := c.EventsByTag(context.Background(), "fed", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := (*seen)[0].URL.Query()
+	if q.Get("tag_slug") != "fed" || q.Get("active") != "true" || q.Get("closed") != "false" || q.Get("order") != "volume24hr" || q.Get("ascending") != "false" || q.Get("limit") != "5" {
+		t.Errorf("requête = %v", q)
+	}
+	if len(events) != 2 || len(events[0].Markets) != 4 || events[0].Markets[0].EventSlug != events[0].Slug || events[0].Markets[0].Volume24h == 0 {
+		t.Fatalf("events = %+v", events)
+	}
+	if _, err := c.EventsByTag(context.Background(), "Pas Valide", 5); !errors.Is(err, ErrInvalidID) {
+		t.Errorf("tag invalide = %v", err)
+	}
+}
+
+// L'historique à la minute d'une plage (constaté sur l'API réelle : une
+// minute de résolution jusqu'à 60 jours en arrière, plage de 7 jours au
+// plus, refus au-delà).
+func TestHTTPClient_HistoryRange(t *testing.T) {
+	c, seen := fakeAPI(t, map[string][]byte{"/clob/prices-history": fixture(t, "history.json")})
+	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	pts, err := c.HistoryRange(context.Background(), "123", from, from.Add(24*time.Hour))
+	if err != nil || len(pts) != 8 {
+		t.Fatalf("%d %v", len(pts), err)
+	}
+	q := (*seen)[0].URL.Query()
+	if q.Get("market") != "123" || q.Get("fidelity") != "1" || q.Get("startTs") != fmt.Sprint(from.Unix()) || q.Get("endTs") != fmt.Sprint(from.Add(24*time.Hour).Unix()) {
+		t.Errorf("requête = %v", q)
+	}
+	if _, err := c.HistoryRange(context.Background(), "123", from, from.Add(8*24*time.Hour)); err == nil {
+		t.Error("une plage de plus de 7 jours doit être refusée avant l'appel")
+	}
+	if _, err := c.HistoryRange(context.Background(), "123", from, from); err == nil {
+		t.Error("une plage vide doit être refusée")
 	}
 }

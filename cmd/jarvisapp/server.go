@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/JulianAndrieux/Jarvis/internal/collect"
 	"github.com/JulianAndrieux/Jarvis/internal/polymarket"
 	"github.com/JulianAndrieux/Jarvis/internal/trading"
 	"log"
@@ -65,6 +66,10 @@ type Server struct {
 	// suivi (jalon 53) ; l'un ou l'autre nil désactive l'onglet Marchés.
 	Market  polymarket.Client
 	Trading trading.Store
+	// Collect et Collector : prix à la minute et actualités des marchés
+	// (jalon 54) ; nil, la fiche d'un marché n'affiche pas d'actualités.
+	Collect   collect.Store
+	Collector *collect.Collector
 	// Accounts : comptes, environnements et sessions (jalon 45). nil
 	// désactive l'authentification : l'application se comporte alors comme
 	// avant, un seul environnement et aucun écran de connexion — c'est ce

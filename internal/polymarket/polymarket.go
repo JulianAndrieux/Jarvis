@@ -165,7 +165,18 @@ type Client interface {
 	Market(ctx context.Context, slug string) (Market, bool, error)
 	Book(ctx context.Context, tokenID string) (Book, error)
 	History(ctx context.Context, tokenID string, iv Interval) ([]PricePoint, error)
+	// EventsByTag : les événements ouverts d'une catégorie (« politics »,
+	// « fed », « crypto »…), les plus actifs sur 24 h d'abord.
+	EventsByTag(ctx context.Context, tag string, limit int) ([]Event, error)
+	// HistoryRange : l'historique à la minute de [from, to], plage de
+	// MaxRangeSpan au plus (limite du CLOB).
+	HistoryRange(ctx context.Context, tokenID string, from, to time.Time) ([]PricePoint, error)
 }
+
+// MaxRangeSpan : la plus longue plage d'historique à la minute que le CLOB
+// accepte en une requête (constaté : 7 jours passent, 20 jours sont
+// refusés — « interval is too long »).
+const MaxRangeSpan = 7 * 24 * time.Hour
 
 // ErrInvalidID : identifiant (slug, jeton, intervalle) refusé avant tout
 // appel réseau.
@@ -182,6 +193,9 @@ func ValidSlug(s string) bool { return len(s) <= 300 && slugRe.MatchString(s) }
 
 // ValidTokenID : un identifiant de jeton (un entier décimal).
 func ValidTokenID(s string) bool { return tokenRe.MatchString(s) }
+
+// ValidTag : un tag de catégorie Gamma (même forme qu'un slug).
+func ValidTag(s string) bool { return len(s) <= 100 && slugRe.MatchString(s) }
 
 // ValidInterval : un intervalle connu.
 func ValidInterval(iv Interval) bool { _, ok := fidelity[iv]; return ok }

@@ -16,6 +16,8 @@ import (
 	"embed"
 	"flag"
 	"fmt"
+	"github.com/JulianAndrieux/Jarvis/internal/collect"
+	"github.com/JulianAndrieux/Jarvis/internal/news"
 	"github.com/JulianAndrieux/Jarvis/internal/polymarket"
 	"github.com/JulianAndrieux/Jarvis/internal/trading"
 	"io/fs"
@@ -101,6 +103,13 @@ func main() {
 	marketsCollection := flag.String("markets-collection", "market_watches", "Collection MongoDB des marchés Polymarket suivis (onglet Marchés)")
 	polymarketOn := flag.Bool("polymarket", true, "Onglet Marchés : lecture de l'API publique de Polymarket (jalon 53, exception réseau n° 7) ; false = aucune requête vers Polymarket")
 	polymarketGamma := flag.String("polymarket-gamma-url", polymarket.DefaultGammaURL, "API Gamma de Polymarket (marchés, recherche)")
+	collectOn := flag.Bool("collect", true, "Collecte des prix à la minute et des actualités des marchés (jalon 54, exception réseau n° 8 : GDELT et flux RSS) ; sans effet si --polymarket=false")
+	marketDataPrefix := flag.String("market-data-prefix", "market_", "Préfixe des collections MongoDB de la collecte (cibles, prix, actualités)")
+	newsFeeds := flag.String("news-feeds", news.FormatFeedList(news.DefaultFeeds), "Flux RSS/Atom relevés (Nom=https://…, séparés par des virgules) ; vide : aucun")
+	gdeltURL := flag.String("gdelt-url", news.DefaultGDELTURL, "API DOC de GDELT ; vide : GDELT non interrogé")
+	collectTags := flag.String("collect-tags", strings.Join(collect.DefaultTags, ","), "Catégories Polymarket collectées (tags Gamma, séparés par des virgules)")
+	collectPerTag := flag.Int("collect-per-tag", 10, "Événements les plus actifs collectés par catégorie")
+	collectBackfill := flag.Duration("collect-backfill", collect.DefaultBackfill, "Profondeur de la première collecte d'un marché (prix à la minute, GDELT)")
 	polymarketClob := flag.String("polymarket-clob-url", polymarket.DefaultClobURL, "API CLOB de Polymarket (carnets d'ordres, historique des prix)")
 	changesCollection := flag.String("changes-collection", "changes", "Collection MongoDB du journal des modifications (onglet Activité)")
 	changesetCollection := flag.String("changeset-collection", "changeset", "Collection MongoDB des modifications en attente de commit (onglet Changements) ; vide = écritures directes, sans changeset")
@@ -556,6 +565,42 @@ func main() {
 		}}
 		srv.Trading = tradingStore
 		log.Printf("jarvisapp: onglet Marchés actif (lecture seule de %s et %s)", *polymarketGamma, *polymarketClob)
+		if *collectOn {
+			feeds, err := news.ParseFeedList(*newsFeeds)
+			if err != nil {
+				log.Fatalf("jarvisapp: --news-feeds : %v", err)
+			}
+			collectCtx, cancelCollect := context.WithTimeout(context.Background(), 30*time.Second)
+			collectStore, err := collect.NewMongoStore(collectCtx, mongoConn, *mongoDB, *marketDataPrefix)
+			cancelCollect()
+			if err != nil {
+				log.Fatalf("jarvisapp: collecte : %v", err)
+			}
+			collector := &collect.Collector{
+				Store: collectStore,
+				// Sans cache : la collecte lit des plages, l'affichage des instantanés.
+				Market:   &polymarket.HTTPClient{GammaURL: *polymarketGamma, ClobURL: *polymarketClob, HTTP: &http.Client{Timeout: 60 * time.Second}},
+				Feeds:    &news.RSS{Feeds: feeds, HTTP: &http.Client{Timeout: 30 * time.Second}},
+				Keywords: collect.LLMKeywords{LLM: llmClient, Model: *llmModel, Prompt: agentRegistry.PromptFunc(agents.MarketKeywords)},
+				Acquire: func(ctx context.Context) (func(), error) {
+					return modelGate.AcquireFair(ctx, gate.Documents, tenancy.EnvID(*watchEnv))
+				},
+				Tags: splitList(*collectTags), PerTag: *collectPerTag, Backfill: *collectBackfill,
+				// Les marchés suivis de l'environnement de l'instance (celui du
+				// dossier surveillé) deviennent des cibles : seul leur slug,
+				// public, sert à la collecte.
+				Watched: func(ctx context.Context) ([]trading.Watch, error) {
+					return tradingStore.For(tenancy.System(tenancy.EnvID(*watchEnv))).ListWatches(ctx)
+				},
+				Log: log.Printf,
+			}
+			if *gdeltURL != "" {
+				collector.GDELT = &news.GDELT{BaseURL: *gdeltURL, HTTP: &http.Client{Timeout: 60 * time.Second}}
+			}
+			srv.Collect, srv.Collector = collectStore, collector
+			go collector.Run(context.Background())
+			log.Printf("jarvisapp: collecte des marchés active (%d flux, GDELT %s, catégories %s)", len(feeds), *gdeltURL, *collectTags)
+		}
 	}
 	if changeset != nil {
 		// Un seul commit pour tous les genres d'entités : chaque paquet
@@ -825,4 +870,15 @@ func defaultSecretKey() string {
 		return "secret.key"
 	}
 	return filepath.Join(home, ".jarvis", "secret.key")
+}
+
+// splitList : une liste séparée par des virgules, sans éléments vides.
+func splitList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

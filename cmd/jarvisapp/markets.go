@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
+	"github.com/JulianAndrieux/Jarvis/internal/collect"
 	"github.com/JulianAndrieux/Jarvis/internal/polymarket"
 	"github.com/JulianAndrieux/Jarvis/internal/trading"
 )
@@ -89,6 +90,7 @@ func (s *Server) handleMarkets(w http.ResponseWriter, r *http.Request) {
 		}
 		v.Results = searchResults(events, maxBranches)
 	}
+	v.Collection = s.collectionView()
 	renderPage(w, r, http.StatusOK, templates.MarketsPage(v), "markets")
 }
 
@@ -273,6 +275,7 @@ func (s *Server) handleMarketDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 	v.Chart = templates.PriceChart(v.History, 600, 160)
+	v.News, v.Collect = s.marketNews(ctx, slug, v.Chart)
 	renderPage(w, r, http.StatusOK, templates.MarketDetailPage(v), "market")
 }
 
@@ -346,4 +349,57 @@ func (s *Server) handleMarketNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/markets/"+slug, http.StatusSeeOther)
+}
+
+// marketNews : les actualités rattachées à un marché et sa cible de
+// collecte (jalon 54).
+func (s *Server) marketNews(ctx context.Context, slug string, chart templates.Chart) ([]templates.NewsItem, *templates.CollectInfo) {
+	if s.Collect == nil {
+		return nil, nil
+	}
+	var info *templates.CollectInfo
+	if ts, err := s.Collect.Targets(ctx); err == nil {
+		for _, t := range ts {
+			if t.Slug == slug {
+				info = &templates.CollectInfo{Category: t.Category, Keywords: t.Keywords, KeywordsModel: t.KeywordsModel}
+			}
+		}
+	}
+	arts, err := s.Collect.Articles(ctx, collect.ArticleQuery{Market: slug, Limit: 60})
+	if err != nil {
+		return nil, info
+	}
+	out := make([]templates.NewsItem, 0, len(arts))
+	for _, a := range arts {
+		n := templates.NewsItem{
+			Title: a.Title, URL: templates.SafeLink(a.URL), Source: a.Source, Via: string(a.Via),
+			When: a.Published.Local().Format("02/01 15:04"), Lag: templates.Lag(a.Published, a.Seen), Guessed: a.DateGuessed,
+		}
+		n.X, n.OnChart = chart.XAt(a.Published)
+		out = append(out, n)
+	}
+	return out, info
+}
+
+// collectionView : l'état de la collecte pour la page Marchés.
+func (s *Server) collectionView() *templates.CollectionView {
+	if s.Collector == nil {
+		return nil
+	}
+	st := s.Collector.Status()
+	when := func(t time.Time) string {
+		if t.IsZero() {
+			return "jamais"
+		}
+		return t.Local().Format("02/01 15:04")
+	}
+	v := &templates.CollectionView{
+		Targets: st.Targets, Running: st.Running,
+		LastTargets: when(st.LastTargets), LastPrices: when(st.LastPrices), LastFeeds: when(st.LastFeeds), LastGDELT: when(st.LastGDELT),
+		NewPoints: st.NewPoints, NewFeedArticles: st.NewFeedArticles, NewGDELTArticles: st.NewGDELTArticles,
+	}
+	for _, e := range st.Errors {
+		v.Errors = append(v.Errors, e.At.Local().Format("02/01 15:04")+" — "+e.Message)
+	}
+	return v
 }

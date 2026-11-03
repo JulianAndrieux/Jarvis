@@ -126,3 +126,16 @@ func TestCachedClient_PrunesExpiredEntries(t *testing.T) {
 		t.Errorf("entrées = %d, veut 1", n)
 	}
 }
+
+func TestFakeClient_EventsAndRange(t *testing.T) {
+	f := NewFakeClient()
+	f.TagEvents["fed"] = []Event{{Slug: "e"}}
+	f.Histories["1"] = []PricePoint{{At: time.Unix(100, 0)}, {At: time.Unix(200, 0)}, {At: time.Unix(300, 0)}}
+	ctx := context.Background()
+	if ev, _ := f.EventsByTag(ctx, "fed", 10); len(ev) != 1 {
+		t.Errorf("EventsByTag = %v", ev)
+	}
+	if pts, _ := f.HistoryRange(ctx, "1", time.Unix(150, 0), time.Unix(300, 0)); len(pts) != 2 {
+		t.Errorf("HistoryRange = %v, veut les points de la plage seulement", pts)
+	}
+}
