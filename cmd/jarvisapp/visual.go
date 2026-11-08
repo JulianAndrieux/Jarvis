@@ -55,6 +55,10 @@ func withCheckIsolation(overrides map[string]string) map[string]string {
 	// Marchés (jalon 53) : la lecture de Polymarket reste active (publique,
 	// sans compte, utile pour juger la page), la liste de suivi non.
 	overrides["markets-collection"] = "market_watches_check"
+	// Collecte (jalon 54) : jamais depuis une instance de contrôle — elle
+	// interrogerait GDELT et les flux, et écrirait dans les vraies données.
+	overrides["collect"] = "false"
+	overrides["market-data-prefix"] = "market_check_"
 	overrides["auth-config"] = ""
 	overrides["accounts-prefix"] = "accounts_check_"
 	overrides["changes-collection"] = "changes_check"

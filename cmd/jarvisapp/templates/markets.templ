@@ -25,6 +25,9 @@ templ MarketsPage(v MarketsView) {
 		if v.Error != "" {
 			<p class="error">{ v.Error }</p>
 		}
+		if v.Collection != nil {
+			@collectionStatus(*v.Collection)
+		}
 		<section>
 			<h3>Suivis <span class="count">{ fmt.Sprint(len(v.Watches)) }</span></h3>
 			if len(v.Watches) == 0 {
@@ -198,7 +201,7 @@ templ MarketDetailPage(v MarketDetailView) {
 			} else if v.Chart.Path == "" {
 				<p class="muted">Pas assez de points sur cette période.</p>
 			} else {
-				@priceChart(v.Chart)
+				@priceChart(v.Chart, v.News)
 			}
 		</section>
 		<div class="books">
@@ -233,6 +236,7 @@ templ MarketDetailPage(v MarketDetailView) {
 				</section>
 			}
 		</div>
+		@marketNews(v)
 		<section class="card">
 			<h3>Ma note</h3>
 			if v.Watched {
@@ -266,14 +270,96 @@ templ MarketDetailPage(v MarketDetailView) {
 	}
 }
 
-templ priceChart(c Chart) {
+templ priceChart(c Chart, items []NewsItem) {
 	<svg class="price-chart" viewBox={ fmt.Sprintf("-48 -8 %.0f %.0f", c.Width+56, c.Height+28) } role="img" aria-label="Courbe des prix">
 		for _, t := range c.Ticks {
 			<line class="chart-grid" x1="0" x2={ fmt.Sprintf("%.0f", c.Width) } y1={ tickY(t) } y2={ tickY(t) }></line>
 			<text class="chart-label" x="-6" y={ tickY(t) } text-anchor="end" dominant-baseline="middle">{ t.Label }</text>
 		}
+		for _, n := range items {
+			if n.OnChart {
+				<line class="chart-news" x1={ fmt.Sprintf("%.1f", n.X) } x2={ fmt.Sprintf("%.1f", n.X) } y1="0" y2={ fmt.Sprintf("%.0f", c.Height) }><title>{ n.When } — { n.Title }</title></line>
+			}
+		}
 		<path class="chart-line" d={ c.Path }></path>
 		<text class="chart-label" x="0" y={ fmt.Sprintf("%.0f", c.Height+16) }>{ c.First }</text>
 		<text class="chart-label" x={ fmt.Sprintf("%.0f", c.Width) } y={ fmt.Sprintf("%.0f", c.Height+16) } text-anchor="end">{ c.Last }</text>
 	</svg>
+}
+
+templ marketNews(v MarketDetailView) {
+	<section class="card">
+		<h3>Actualités liées <span class="count">{ fmt.Sprint(len(v.News)) }</span></h3>
+		if v.Collect == nil {
+			<p class="muted">Ce marché n'est pas (encore) collecté : il le sera s'il est suivi, ou s'il fait partie des plus actifs de ses catégories.</p>
+		} else {
+			<p class="muted">
+				if len(v.Collect.Keywords) > 0 {
+					Recherche : 
+					for i, k := range v.Collect.Keywords {
+						if i > 0 {
+							· 
+						}
+						<code>{ k }</code>
+					}
+					if v.Collect.KeywordsModel != "" {
+						(proposés par { v.Collect.KeywordsModel })
+					}
+				} else {
+					Mots-clés pas encore proposés par le modèle local : seuls les prix sont collectés pour l'instant.
+				}
+			</p>
+		}
+		if len(v.News) == 0 {
+			<p class="muted">Aucune actualité rattachée pour l'instant.</p>
+		} else {
+			<p class="muted">Chaque annonce est un trait vertical sur la courbe (survol : titre). Les titres viennent de sites tiers.</p>
+			<ul class="news-list">
+				for _, n := range v.News {
+					<li>
+						<span class="muted nowrap">{ n.When }</span>
+						if n.URL != "" {
+							<a href={ templ.SafeURL(n.URL) } target="_blank" rel="noopener noreferrer nofollow">{ n.Title }</a>
+						} else {
+							<span>{ n.Title }</span>
+						}
+						<span class="muted">
+							· { n.Source } · { n.Via }
+							if n.Lag != "" {
+								· { n.Lag }
+							}
+						</span>
+						if n.Guessed {
+							<span class="badge" title="La source ne donnait pas de date fiable : heure de collecte">date approx.</span>
+						}
+					</li>
+				}
+			</ul>
+		}
+	</section>
+}
+
+templ collectionStatus(c CollectionView) {
+	<section class="card">
+		<h3>Collecte</h3>
+		<p class="muted">
+			{ fmt.Sprint(c.Targets) } marchés collectés (suivis + plus actifs des catégories) : prix à la minute et actualités (flux RSS, GDELT).
+			if !c.Running {
+				Collecte à l'arrêt.
+			}
+		</p>
+		<p class="muted">
+			Prix : { c.LastPrices } (+{ fmt.Sprint(c.NewPoints) } points) · Flux : { c.LastFeeds } (+{ fmt.Sprint(c.NewFeedArticles) } articles) · GDELT : { c.LastGDELT } (+{ fmt.Sprint(c.NewGDELTArticles) } articles)
+		</p>
+		if len(c.Errors) > 0 {
+			<details>
+				<summary class="error">{ fmt.Sprint(len(c.Errors)) } erreur(s) récente(s)</summary>
+				<ul>
+					for _, e := range c.Errors {
+						<li class="muted">{ e }</li>
+					}
+				</ul>
+			</details>
+		}
+	</section>
 }

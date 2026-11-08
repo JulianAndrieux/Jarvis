@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Exemple Atom</title>
+  <entry>
+    <title type="html">ECB keeps rates &amp; signals patience</title>
+    <link rel="alternate" href="https://example.org/ecb-rates"/>
+    <id>urn:uuid:1</id>
+    <updated>2026-11-03T13:15:00+01:00</updated>
+    <published>2026-11-03T13:00:00+01:00</published>
+    <summary>The Governing Council decided to keep the three key interest rates unchanged.</summary>
+  </entry>
+  <entry>
+    <title>Sans date</title>
+    <link href="https://example.org/no-date"/>
+    <id>urn:uuid:2</id>
+  </entry>
+</feed>

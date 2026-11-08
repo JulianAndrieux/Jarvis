@@ -32,7 +32,37 @@ analyses de Claude et « un modèle de trading et d'analyse de risque ».
 3. **Exécution** : ordre proposé avec son calcul ; automatique sous le
    seuil, confirmation au-delà.
 
-## Jalons
+## Révision du 03/11/2026 : l'impact des annonces d'abord
+
+Demandé par l'utilisateur : collecter les actualités en parallèle des cours
+pour mesurer l'impact d'une annonce, puis un modèle qui réagit à chaque
+annonce. Décisions : sources GDELT + flux RSS ; catégories politique,
+géopolitique, économie/banques centrales, crypto ; juge des annonces = le
+modèle local (tri rapide) **et** Claude (annonces jugées pertinentes),
+comparés en simulation.
+
+Limite dite à l'utilisateur : sur les grands marchés, des robots réagissent
+aux dépêches en secondes — Jarvis arrivera après le mouvement. L'avantage,
+s'il existe, est à chercher sur les marchés peu suivis, dans la
+sur-réaction (le cours revient), ou dans les annonces qui demandent de
+comprendre. L'étude d'impact (55) dira lequel existe.
+
+Timestral (Mistral, séries temporelles, licence « MIT modifié », CPU) :
+témoin du jalon 56 sur la courbe seule, avec Chronos-2 et la référence
+naïve (« le prix ne bouge pas ») — une cote d'événement bouge sur
+l'actualité, pas sur son passé.
+
+- **54 — Collecte** (fait) : prix à la minute (l'historique du CLOB remonte
+  au moins à 60 jours), actualités GDELT + RSS rattachées par mots-clés.
+- **55 — Étude d'impact** : mouvement à +1 min, +5 min, +1 h, +24 h après
+  chaque annonce ; délai d'intégration ; sur/sous-réaction ; par catégorie
+  et par liquidité. Décide s'il y a une fenêtre.
+- **56 — Modèle de réaction** : juge des annonces (local puis Claude) →
+  signal ; simulation en temps réel ; témoins Timestral/Chronos-2/naïf.
+- **57+** : modèle de risque (Kelly fractionné, plafonds), puis ordres
+  réels plafonnés (100 USDC, auto sous un seuil).
+
+## Jalons (plan initial, remplacé par la révision ci-dessus)
 
 - **53 — Observer** (fait) : marchés, recherche, liste de suivi, carnets,
   historique, alertes. Lecture seule.

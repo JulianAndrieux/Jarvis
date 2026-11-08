@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"github.com/JulianAndrieux/Jarvis/internal/collect"
 	"testing"
 
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
@@ -10,7 +11,7 @@ import (
 // serait refusé à la première modification) et ses outils.
 func TestDefaults_ValidAgents(t *testing.T) {
 	defs := Defaults(Models{Documents: "qwen3-8b Q5_K_M", Tickets: "qwen3-8b"})
-	ids := []string{Classification, Extraction, MailTriage, MailPayment, Analysis, Development, Review}
+	ids := []string{Classification, Extraction, MailTriage, MailPayment, MarketKeywords, Analysis, Development, Review}
 	if len(defs) != len(ids) {
 		t.Fatalf("defs = %d, want %d", len(defs), len(ids))
 	}
@@ -22,8 +23,8 @@ func TestDefaults_ValidAgents(t *testing.T) {
 			t.Errorf("%s: default prompt invalid: %v", d.ID, err)
 		}
 	}
-	if len(defs[4].Tools) == 0 || len(defs[5].Tools) <= len(defs[4].Tools) {
-		t.Errorf("tools: analysis %v, development %v (development adds write tools)", defs[4].Tools, defs[5].Tools)
+	if len(defs[5].Tools) == 0 || len(defs[6].Tools) <= len(defs[5].Tools) {
+		t.Errorf("tools: analysis %v, development %v (development adds write tools)", defs[5].Tools, defs[6].Tools)
 	}
 	if defs[2].Group != "Emails" || defs[2].Model != "qwen3-8b Q5_K_M" {
 		t.Errorf("mail triage = %+v, want the documents model", defs[2])
@@ -46,4 +47,16 @@ func TestDefaults_IncludesMailPayment(t *testing.T) {
 		return
 	}
 	t.Fatal("no mail payment agent")
+}
+
+func TestDefaults_IncludesMarketKeywords(t *testing.T) {
+	for _, d := range Defaults(Models{Documents: "qwen3-8b Q5_K_M"}) {
+		if d.ID == MarketKeywords {
+			if d.DefaultPrompt != collect.DefaultKeywordsPrompt || d.Group != "Marchés" || d.Model != "qwen3-8b Q5_K_M" {
+				t.Errorf("market keywords = %+v", d)
+			}
+			return
+		}
+	}
+	t.Fatal("no market keywords agent")
 }

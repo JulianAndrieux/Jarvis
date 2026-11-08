@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
 
 // FakeClient : Client en mémoire pour les tests. Err, si non nil, est
@@ -15,12 +16,13 @@ type FakeClient struct {
 	Books     map[string]Book
 	Histories map[string][]PricePoint
 	Events    []Event
+	TagEvents map[string][]Event
 	Err       error
 	calls     int
 }
 
 func NewFakeClient() *FakeClient {
-	return &FakeClient{Markets: map[string]Market{}, Books: map[string]Book{}, Histories: map[string][]PricePoint{}}
+	return &FakeClient{Markets: map[string]Market{}, Books: map[string]Book{}, Histories: map[string][]PricePoint{}, TagEvents: map[string][]Event{}}
 }
 
 // Calls : nombre d'appels reçus.
@@ -83,4 +85,33 @@ func (f *FakeClient) History(ctx context.Context, tokenID string, iv Interval) (
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]PricePoint(nil), f.Histories[tokenID]...), nil
+}
+
+func (f *FakeClient) EventsByTag(ctx context.Context, tag string, limit int) ([]Event, error) {
+	if err := f.enter(); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ev := f.TagEvents[tag]
+	if limit > 0 && len(ev) > limit {
+		ev = ev[:limit]
+	}
+	return append([]Event(nil), ev...), nil
+}
+
+// HistoryRange : les points de Histories compris dans [from, to].
+func (f *FakeClient) HistoryRange(ctx context.Context, tokenID string, from, to time.Time) ([]PricePoint, error) {
+	if err := f.enter(); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []PricePoint
+	for _, p := range f.Histories[tokenID] {
+		if !p.At.Before(from) && !p.At.After(to) {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
