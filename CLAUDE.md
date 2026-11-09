@@ -3057,6 +3057,19 @@ décisions : `docs/plan-multi-environnement.md`.
     trie ; l'étude d'impact du jalon 55 mesurera combien d'annonces
     rattachées font réellement bouger un cours.
 
+- **Plan Polymarket révisé le 09/11/2026 (évaluation demandée par
+  l'utilisateur, réécriture acceptée) : la réaction aux annonces n'est
+  plus l'hypothèse centrale.** Latence (minutes face à des robots en
+  secondes), heure de publication ≠ heure où le marché a su, historique
+  sans achat/vente, peu de données. Trois pistes comparées avant de
+  choisir : annonces en étude inversée (sauts de cours d'abord),
+  cohérence entre marchés, règles de résolution contre titre — plus un
+  témoin, la calibration des marchés résolus. Nouveaux jalons : 55a
+  carnets enregistrés (urgent, ne se rattrape pas), 55b les trois études,
+  56 modèle de la piste qui survit, 57 risque, 58 ordres réels. Règles de
+  mesure et critères d'abandon (proposés, à valider) :
+  `docs/plan-polymarket.md`. Aucun code modifié.
+
 **Reste à valider en conditions réelles** (impossible depuis
 l'environnement de développement de ce chantier) : les contrats Mongo
 contre Atlas (`-tags=integration`, `MONGO_URI`), le flux Google avec un
