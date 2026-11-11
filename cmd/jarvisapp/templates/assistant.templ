@@ -57,6 +57,9 @@ templ AssistantPage(v AssistantView) {
 										if c.Running {
 											· en cours…
 										}
+										if c.Waiting {
+											· à confirmer
+										}
 										if c.Failed {
 											· ⚠
 										}
@@ -166,6 +169,25 @@ templ AssistantThread(t ThreadView) {
 		}
 		if t.Running {
 			<div class="bubble bubble-assistant thinking"><span class="dots"><i></i><i></i><i></i></span> Jarvis réfléchit…</div>
+		} else if len(t.Pending) > 0 {
+			for _, p := range t.Pending {
+				<div class="confirm-card">
+					<div class="confirm-title">Jarvis demande ta confirmation</div>
+					<div class="confirm-summary">{ p.Summary }</div>
+					<details class="tool-step">
+						<summary>Détail ({ p.Tool })</summary>
+						<pre class="tool-io">{ p.Input }</pre>
+					</details>
+					<div class="confirm-actions">
+						<form hx-post={ "/assistant/" + t.ID + "/actions/" + p.CallID + "/confirm" } hx-target="#thread" hx-swap="outerHTML">
+							<button type="submit" class="button-primary">Confirmer</button>
+						</form>
+						<form hx-post={ "/assistant/" + t.ID + "/actions/" + p.CallID + "/refuse" } hx-target="#thread" hx-swap="outerHTML">
+							<button type="submit">Refuser</button>
+						</form>
+					</div>
+				</div>
+			}
 		} else {
 			<form class="chat-form" hx-post={ "/assistant/" + t.ID + "/messages" } hx-target="#thread" hx-swap="outerHTML">
 				<textarea name="text" rows="2" required placeholder="Écris à Jarvis…">{ t.Draft }</textarea>

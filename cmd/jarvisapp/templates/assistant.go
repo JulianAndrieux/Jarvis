@@ -26,6 +26,8 @@ type ConversationRow struct {
 	When    string
 	Running bool
 	Failed  bool
+	// Waiting : une action attend la réponse de l'utilisateur.
+	Waiting bool
 	Active  bool
 }
 
@@ -44,6 +46,17 @@ type ThreadView struct {
 	// Notice : message d'une action refusée (envoi pendant un tour).
 	Notice string
 	Draft  string
+	// Pending : les actions qui attendent une confirmation ; non vide, la
+	// saisie libre est remplacée par la question.
+	Pending []PendingView
+}
+
+// PendingView : une action à confirmer ou refuser.
+type PendingView struct {
+	CallID  string
+	Summary string
+	Tool    string
+	Input   string
 }
 
 // MessageView : une bulle du fil.

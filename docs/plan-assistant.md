@@ -75,14 +75,16 @@ Mac (navigateur)    ─┼─ réseau privé ─▶ jarvisapp, sur une machine t
 Les numéros 55 et 56 restent réservés à Polymarket
 (`docs/plan-polymarket.md`).
 
-- **57 — Cœur de l'assistant** *(ce jalon)* : `internal/claudeapi` (port,
+- **57 — Cœur de l'assistant** *(fait)* : `internal/claudeapi` (port,
   client SDK, faux), `internal/assistant` (conversations dans Atlas,
   boucle d'outils, outils de lecture sur notes/tâches/documents/emails,
   `add_task`, mémoire, plafond quotidien), onglet **Assistant** (fil de
   discussion, étapes visibles, utilisable sur téléphone).
-- **58 — Confirmations et identité propre** : outils d'action en attente
-  d'un oui/non, écritures de l'assistant attribuées à l'assistant dans
-  l'onglet Activité, plus d'outils d'écriture (notes, tags, archivage).
+- **58 — Confirmations et identité** *(fait)* : une action met le tour en
+  pause jusqu'au oui/non de l'utilisateur (l'attente survit à un
+  redémarrage) ; les écritures de l'assistant sont signalées « via
+  l'assistant » dans l'onglet Activité ; neuf outils de plus, dont deux
+  actions à confirmer (`delete_task`, `create_ticket`).
 - **59 — Délégation au modèle local** : outils `summarize_locally`,
   `extract`, `classify` ; politique par source (brut / résumé / jamais).
 - **60 — Toujours allumé, à distance** : services `launchd`/`systemd` à la

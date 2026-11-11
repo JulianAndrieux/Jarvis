@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
 	"github.com/JulianAndrieux/Jarvis/internal/assistant"
 	"github.com/JulianAndrieux/Jarvis/internal/claudeapi"
-	"github.com/JulianAndrieux/Jarvis/internal/mail"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/projectinfo"
 )
@@ -41,6 +39,8 @@ func (s *Server) assistantRoutes(r chi.Router) {
 	r.Get("/assistant/{id}", s.handleAssistantConversation)
 	r.Get("/assistant/{id}/thread", s.handleAssistantThread)
 	r.Post("/assistant/{id}/messages", s.handleAssistantMessage)
+	r.Post("/assistant/{id}/actions/{call}/confirm", s.handleAssistantDecide(true))
+	r.Post("/assistant/{id}/actions/{call}/refuse", s.handleAssistantDecide(false))
 	r.Post("/assistant/{id}/delete", s.handleAssistantDelete)
 	r.Post("/assistant/memory/{id}/forget", s.handleAssistantForget)
 }
@@ -84,7 +84,8 @@ func (s *Server) assistantView(r *http.Request, activeID string) templates.Assis
 	for _, c := range convs {
 		v.Conversations = append(v.Conversations, templates.ConversationRow{
 			ID: c.ID, Title: c.Title, When: conversationWhen(c.UpdatedAt, time.Now()),
-			Running: c.Status == assistant.StatusRunning, Failed: c.Status == assistant.StatusFailed, Active: c.ID == activeID,
+			Running: c.Status == assistant.StatusRunning, Failed: c.Status == assistant.StatusFailed,
+			Waiting: c.Status == assistant.StatusWaiting, Active: c.ID == activeID,
 		})
 	}
 	if facts, err := s.Assistant.Facts(ctx); err == nil {
@@ -116,8 +117,13 @@ func conversationWhen(t, now time.Time) string {
 
 // threadView met le fil en bulles : un message de l'utilisateur, ou une
 // réponse de l'assistant avec les outils qu'il a appelés.
-func threadView(c assistant.Conversation) templates.ThreadView {
+func (s *Server) threadView(r *http.Request, c assistant.Conversation) templates.ThreadView {
 	t := templates.ThreadView{ID: c.ID, Title: c.Title, Running: c.Status == assistant.StatusRunning}
+	// Les actions qui attendent une réponse : ce qu'elles vont faire, dit
+	// par l'outil lui-même.
+	for _, p := range s.Assistant.Pending(r.Context(), c) {
+		t.Pending = append(t.Pending, templates.PendingView{CallID: p.CallID, Summary: p.Summary, Tool: p.Tool, Input: prettyJSON(p.Input)})
+	}
 	if c.Status == assistant.StatusFailed {
 		t.Error = c.Error
 	}
@@ -219,7 +225,7 @@ func (s *Server) handleAssistantConversation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	v := s.assistantView(r, c.ID)
-	t := threadView(c)
+	t := s.threadView(r, c)
 	v.Thread = &t
 	renderPage(w, r, http.StatusOK, templates.AssistantPage(v), "assistant conversation")
 }
@@ -229,7 +235,7 @@ func (s *Server) handleAssistantThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	renderPage(w, r, http.StatusOK, templates.AssistantThread(threadView(c)), "assistant thread")
+	renderPage(w, r, http.StatusOK, templates.AssistantThread(s.threadView(r, c)), "assistant thread")
 }
 
 func (s *Server) handleAssistantMessage(w http.ResponseWriter, r *http.Request) {
@@ -243,6 +249,8 @@ func (s *Server) handleAssistantMessage(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case errors.Is(err, assistant.ErrBusy):
 		status, notice = http.StatusConflict, "Jarvis répond déjà : attends la fin de sa réponse."
+	case errors.Is(err, assistant.ErrWaiting):
+		status, notice = http.StatusConflict, "Réponds d'abord à la demande de confirmation."
 	case errors.Is(err, assistant.ErrNotFound):
 		http.NotFound(w, r)
 		return
@@ -258,11 +266,41 @@ func (s *Server) handleAssistantMessage(w http.ResponseWriter, r *http.Request) 
 		}
 		c = current
 	}
-	t := threadView(c)
+	t := s.threadView(r, c)
 	if err != nil {
 		t.Notice, t.Draft = notice, text
 	}
 	renderPage(w, r, status, templates.AssistantThread(t), "assistant thread")
+}
+
+// handleAssistantDecide : la réponse de l'utilisateur à une demande de
+// confirmation. Le tour reprend en arrière-plan ; le fil rendu se sonde.
+func (s *Server) handleAssistantDecide(approve bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.assistantEnabled(w, r) {
+			return
+		}
+		id := chi.URLParam(r, "id")
+		c, err := s.Assistant.Decide(r.Context(), id, chi.URLParam(r, "call"), approve)
+		switch {
+		case errors.Is(err, assistant.ErrNotFound):
+			http.NotFound(w, r)
+			return
+		case errors.Is(err, assistant.ErrNotPending):
+			// Déjà répondu (double clic, autre onglet) : le fil tel qu'il est.
+			current, ok, getErr := s.Assistant.Get(r.Context(), id)
+			if getErr != nil || !ok {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			renderPage(w, r, http.StatusConflict, templates.AssistantThread(s.threadView(r, current)), "assistant thread")
+			return
+		case err != nil:
+			serverError(w, err)
+			return
+		}
+		renderPage(w, r, http.StatusOK, templates.AssistantThread(s.threadView(r, c)), "assistant thread")
+	}
 }
 
 func (s *Server) handleAssistantDelete(w http.ResponseWriter, r *http.Request) {
@@ -351,13 +389,14 @@ func defaultAssistantConfig() string {
 // assistantTools : les outils des sources ouvertes (--assistant-sources).
 // Les services ne sont touchés qu'à l'appel d'un outil : la liste se
 // construit aussi sans eux, pour décrire l'agent.
-func assistantTools(sources string, notesSvc *notes.Service, docs assistant.Documents, mailDB func(context.Context) mail.Store, a *assistant.Assistant) ([]assistant.Tool, error) {
+func assistantTools(sources string, notesSvc *notes.Service, docs assistant.Documents, box assistant.Mailbox, tix assistant.Tickets, a *assistant.Assistant) ([]assistant.Tool, error) {
 	var all []assistant.Tool
 	all = append(all, assistant.NotesTools(notesSvc)...)
 	all = append(all, assistant.TaskTools(notesSvc)...)
 	all = append(all, assistant.DocumentTools(docs)...)
-	all = append(all, assistant.MailTools(mailDB)...)
+	all = append(all, assistant.MailTools(box)...)
 	all = append(all, assistant.MemoryTools(a)...)
+	all = append(all, assistant.TicketTools(tix)...)
 	return assistant.SelectSources(all, sources)
 }
 
@@ -378,7 +417,7 @@ func sourceLabels(sources string) []string {
 // fiche de l'agent (une liste de sources invalide est signalée plus tard,
 // au câblage).
 func assistantToolNames(sources string) []string {
-	tools, err := assistantTools(sources, nil, nil, nil, nil)
+	tools, err := assistantTools(sources, nil, nil, nil, nil, nil)
 	if err != nil {
 		return nil
 	}

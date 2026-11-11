@@ -138,30 +138,46 @@ func (s *MongoStore) Append(ctx context.Context, id string, at time.Time, entrie
 	return s.one(ctx, id, update, "ajouter au fil")
 }
 
-func (s *MongoStore) Start(ctx context.Context, id string, at time.Time) (bool, error) {
+// transition : from → to par une seule écriture conditionnelle — c'est la
+// base qui départage deux demandes simultanées.
+func (s *MongoStore) transition(ctx context.Context, id string, at time.Time, to Status, from ...Status) (bool, error) {
 	if err := s.ensure(); err != nil {
 		return false, err
 	}
-	// Une seule écriture conditionnelle : c'est la base qui départage deux
-	// départs simultanés.
+	states := make([]string, 0, len(from))
+	for _, f := range from {
+		states = append(states, string(f))
+	}
 	filter := s.key(id)
-	filter["status"] = bson.M{"$ne": string(StatusRunning)}
+	filter["status"] = bson.M{"$in": states}
 	res, err := s.Conversations.UpdateOne(ctx, filter,
-		bson.M{"$set": bson.M{"status": string(StatusRunning), "error": "", "updated_at": at}})
+		bson.M{"$set": bson.M{"status": string(to), "error": "", "updated_at": at}})
 	if err != nil {
-		return false, fmt.Errorf("assistant: démarrer un tour (%s) : %w", id, err)
+		return false, fmt.Errorf("assistant: passer à %s (%s) : %w", to, id, err)
 	}
 	if res.MatchedCount == 1 {
 		return true, nil
 	}
 	n, err := s.Conversations.CountDocuments(ctx, s.key(id))
 	if err != nil {
-		return false, fmt.Errorf("assistant: démarrer un tour (%s) : %w", id, err)
+		return false, fmt.Errorf("assistant: passer à %s (%s) : %w", to, id, err)
 	}
 	if n == 0 {
 		return false, fmt.Errorf("%w : conversation %s", ErrNotFound, id)
 	}
 	return false, nil
+}
+
+func (s *MongoStore) Start(ctx context.Context, id string, at time.Time) (bool, error) {
+	return s.transition(ctx, id, at, StatusRunning, StatusIdle, StatusFailed)
+}
+
+func (s *MongoStore) Resume(ctx context.Context, id string, at time.Time) (bool, error) {
+	return s.transition(ctx, id, at, StatusRunning, StatusWaiting)
+}
+
+func (s *MongoStore) Pause(ctx context.Context, id string, at time.Time) error {
+	return s.one(ctx, id, bson.M{"$set": bson.M{"status": string(StatusWaiting), "error": "", "updated_at": at}}, "mettre en attente")
 }
 
 func (s *MongoStore) Finish(ctx context.Context, id string, errMsg string, at time.Time) error {

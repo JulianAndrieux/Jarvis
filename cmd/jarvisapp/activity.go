@@ -48,13 +48,14 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 	who := s.userNames(r.Context(), ops)
 	for _, o := range ops {
 		view.Entries = append(view.Entries, templates.ActivityEntry{
-			When:  o.At.Local().Format("02/01 15:04"),
-			Who:   who[o.User],
-			Kind:  string(o.Kind),
-			Label: o.Label,
-			What:  describeOp(o),
-			Href:  entityHref(o),
-			Mine:  o.User == scope.User && o.User != "",
+			When:         o.At.Local().Format("02/01 15:04"),
+			Who:          who[o.User],
+			Kind:         string(o.Kind),
+			Label:        o.Label,
+			What:         describeOp(o),
+			Href:         entityHref(o),
+			Mine:         o.User == scope.User && o.User != "",
+			ViaAssistant: o.Via == tenancy.ViaAssistant,
 		})
 	}
 	renderPage(w, r, http.StatusOK, templates.ActivityPage(view), "activity")

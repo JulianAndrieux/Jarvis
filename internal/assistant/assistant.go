@@ -25,6 +25,10 @@ const (
 	StatusIdle Status = "idle"
 	// StatusRunning : l'assistant travaille (un seul tour à la fois).
 	StatusRunning Status = "running"
+	// StatusWaiting : l'assistant attend que l'utilisateur confirme ou
+	// refuse une action (jalon 58). Aucun processus ne tourne : l'attente
+	// survit à un redémarrage.
+	StatusWaiting Status = "waiting"
 	// StatusFailed : le dernier tour a échoué (Error dit pourquoi) ; on
 	// peut réécrire.
 	StatusFailed Status = "failed"
@@ -88,6 +92,11 @@ var (
 	ErrNotFound = errors.New("assistant: introuvable")
 	// ErrBusy : l'assistant travaille déjà sur cette conversation.
 	ErrBusy = errors.New("assistant: une réponse est déjà en cours")
+	// ErrWaiting : une action attend une confirmation ; il faut y répondre
+	// avant d'écrire autre chose.
+	ErrWaiting = errors.New("assistant: une action attend ta confirmation")
+	// ErrNotPending : cette action n'attend pas (ou plus) de confirmation.
+	ErrNotPending = errors.New("assistant: aucune confirmation attendue pour cette action")
 )
 
 // DefaultListLimit : taille de la liste des conversations.
@@ -108,10 +117,17 @@ type Store interface {
 	List(ctx context.Context, limit int) ([]Conversation, error)
 	// Append ajoute des entrées à la fin du fil (jamais de réécriture).
 	Append(ctx context.Context, id string, at time.Time, entries ...Entry) error
-	// Start fait passer la conversation à « running » si elle n'y est pas
-	// déjà, de façon atomique : deux tours simultanés ne démarrent jamais
-	// tous les deux. started=false : un tour est déjà en cours.
+	// Start fait passer la conversation de « idle » ou « failed » à
+	// « running », de façon atomique : deux tours simultanés ne démarrent
+	// jamais tous les deux. started=false : un tour est en cours, ou une
+	// confirmation est attendue.
 	Start(ctx context.Context, id string, at time.Time) (started bool, err error)
+	// Pause met le tour en attente d'une confirmation (« waiting »).
+	Pause(ctx context.Context, id string, at time.Time) error
+	// Resume fait repartir un tour en attente (« waiting » → « running »),
+	// de façon atomique : deux réponses simultanées à la même demande
+	// n'exécutent jamais l'action deux fois. resumed=false : rien n'attend.
+	Resume(ctx context.Context, id string, at time.Time) (resumed bool, err error)
 	// Finish clôt le tour : idle (errMsg vide) ou failed.
 	Finish(ctx context.Context, id string, errMsg string, at time.Time) error
 	Delete(ctx context.Context, id string) error

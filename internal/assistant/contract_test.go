@@ -145,7 +145,51 @@ func storeContract(t *testing.T, base recoverStore, stamp string) {
 		t.Errorf("Finish(absent) = %v", err)
 	}
 
-	// Reprise au démarrage : tout ce qui est resté « running » échoue.
+	// En attente d'une confirmation (jalon 58) : Pause depuis « running »,
+	// Resume atomique depuis « waiting » — et rien d'autre ne repart.
+	if started, _ := s.Start(ctx, id("a"), at(7)); !started {
+		t.Fatal("Start depuis idle")
+	}
+	if err := s.Pause(ctx, id("a"), at(7)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := s.Get(ctx, id("a")); got.Status != StatusWaiting {
+		t.Errorf("après Pause = %q", got.Status)
+	}
+	if started, err := s.Start(ctx, id("a"), at(7)); started || err != nil {
+		t.Errorf("Start pendant une attente = %v, %v : un nouveau message ne doit pas passer devant la confirmation", started, err)
+	}
+	wins = 0
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if ok, err := s.Resume(ctx, id("a"), at(7)); err != nil {
+				t.Error(err)
+			} else if ok {
+				mu.Lock()
+				wins++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if wins != 1 {
+		t.Errorf("Resume simultanés gagnés = %d, veut 1 (un double clic ne doit pas exécuter deux fois)", wins)
+	}
+	if ok, _ := s.Resume(ctx, id("a"), at(7)); ok {
+		t.Error("Resume d'une conversation qui n'attend pas")
+	}
+	if _, err := s.Resume(ctx, id("absent"), at(7)); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Resume(absent) = %v", err)
+	}
+	if err := s.Pause(ctx, id("absent"), at(7)); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Pause(absent) = %v", err)
+	}
+	_ = s.Pause(ctx, id("a"), at(7))
+
+	// Reprise au démarrage : tout ce qui est resté « running » échoue ; une
+	// attente de confirmation, elle, n'a pas besoin du processus disparu.
 	if _, err := s.Start(ctx, id("b"), at(8)); err != nil {
 		t.Fatal(err)
 	}
@@ -156,8 +200,8 @@ func storeContract(t *testing.T, base recoverStore, stamp string) {
 	if got, _, _ := s.Get(ctx, id("b")); got.Status != StatusFailed || got.Error != "redémarrage" {
 		t.Errorf("après FailRunning = %+v", got)
 	}
-	if got, _, _ := s.Get(ctx, id("a")); got.Status != StatusIdle {
-		t.Errorf("FailRunning a touché une conversation au repos : %+v", got)
+	if got, _, _ := s.Get(ctx, id("a")); got.Status != StatusWaiting {
+		t.Errorf("FailRunning a touché une conversation en attente de confirmation : %+v", got)
 	}
 
 	// Mémoire.
@@ -233,6 +277,12 @@ func storeIsolationContract(t *testing.T, base Store, stamp string) {
 		if _, err := other.Start(ctx, id, now); !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s : Start = %v", name, err)
 		}
+		if _, err := other.Resume(ctx, id, now); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s : Resume = %v", name, err)
+		}
+		if err := other.Pause(ctx, id, now); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s : Pause = %v", name, err)
+		}
 		if err := other.Finish(ctx, id, "x", now); !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s : Finish = %v", name, err)
 		}
@@ -268,6 +318,8 @@ func TestStore_RefusesEveryMethodWithoutScope(t *testing.T) {
 		"Append":     func() error { return s.Append(ctx, "x", now) },
 		"Start":      func() error { _, err := s.Start(ctx, "x", now); return err },
 		"Finish":     func() error { return s.Finish(ctx, "x", "", now) },
+		"Pause":      func() error { return s.Pause(ctx, "x", now) },
+		"Resume":     func() error { _, err := s.Resume(ctx, "x", now); return err },
 		"Delete":     func() error { return s.Delete(ctx, "x") },
 		"AddFact":    func() error { return s.AddFact(ctx, Fact{ID: "f"}) },
 		"Facts":      func() error { _, err := s.Facts(ctx); return err },

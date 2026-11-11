@@ -270,12 +270,12 @@ func TestLoadAssistantKey(t *testing.T) {
 }
 
 func TestAssistantTools_SourcesOpenAndClose(t *testing.T) {
-	all, err := assistantTools(strings.Join(assistant.AllSources, ","), nil, nil, nil, nil)
-	if err != nil || len(all) != 10 {
+	all, err := assistantTools(strings.Join(assistant.AllSources, ","), nil, nil, nil, nil, nil)
+	if err != nil || len(all) != 19 {
 		t.Fatalf("toutes les sources = %d outils, %v", len(all), err)
 	}
-	some, err := assistantTools("notes,memory", nil, nil, nil, nil)
-	if err != nil || len(some) != 4 {
+	some, err := assistantTools("notes,memory", nil, nil, nil, nil, nil)
+	if err != nil || len(some) != 6 {
 		t.Fatalf("notes+mémoire = %d outils, %v", len(some), err)
 	}
 	for _, tool := range some {
@@ -283,10 +283,83 @@ func TestAssistantTools_SourcesOpenAndClose(t *testing.T) {
 			t.Errorf("outil %s d'une source fermée (%s)", tool.Name, tool.Source)
 		}
 	}
-	if _, err := assistantTools("notes,agenda", nil, nil, nil, nil); err == nil {
+	if _, err := assistantTools("notes,agenda", nil, nil, nil, nil, nil); err == nil {
 		t.Error("source inconnue acceptée")
 	}
 	if got := sourceLabels("notes,tasks,emails,memory"); strings.Join(got, ", ") != "notes, tâches, emails" {
 		t.Errorf("sourceLabels = %v", got)
+	}
+}
+
+// Jalon 58 : une action attend la réponse de l'utilisateur, dans le fil.
+func newConfirmServer(t *testing.T, ran *int, responses ...claudeapi.Response) (*Server, *assistant.Assistant, string) {
+	t.Helper()
+	model := &claudeapi.FakeClient{Responses: responses}
+	s, a, _ := newAssistantServer(t, model, assistant.Tool{
+		Name: "delete_task", Level: assistant.LevelAction,
+		Confirm: func(context.Context, json.RawMessage) string { return "Supprimer la tâche « Payer <le> loyer »" },
+		Run: func(context.Context, json.RawMessage) (string, error) {
+			*ran++
+			return "Tâche supprimée.", nil
+		},
+	})
+	loc := do(s, http.MethodPost, "/assistant", url.Values{"text": {"supprime la tâche du loyer"}}).Header().Get("Location")
+	a.Wait()
+	return s, a, loc
+}
+
+func actionTurn() claudeapi.Response {
+	return claudeapi.Response{Text: "Je la supprime.", Raw: json.RawMessage(`{"role":"assistant"}`), Stop: claudeapi.StopToolUse,
+		Calls: []claudeapi.Call{{ID: "t9", Name: "delete_task", Input: json.RawMessage(`{"id":"a1"}`)}}}
+}
+
+func TestAssistant_ConfirmationCard(t *testing.T) {
+	ran := 0
+	s, a, loc := newConfirmServer(t, &ran, actionTurn(), answer("C'est supprimé."))
+	page := do(s, http.MethodGet, loc, nil).Body.String()
+	for _, want := range []string{"Supprimer la tâche « Payer &lt;le&gt; loyer »", `hx-post="` + loc + `/actions/t9/confirm"`,
+		`hx-post="` + loc + `/actions/t9/refuse"`, "Je la supprime.", "à confirmer"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page en attente sans %q", want)
+		}
+	}
+	// Ni saisie libre ni sonde : on répond d'abord à la question.
+	if strings.Contains(page, `hx-post="`+loc+`/messages"`) || strings.Contains(page, `hx-trigger="every`) || ran != 0 {
+		t.Errorf("page en attente : saisie ou sonde présente, ou action déjà faite (%d)", ran)
+	}
+	if rec := do(s, http.MethodPost, loc+"/messages", url.Values{"text": {"autre chose"}}); rec.Code != http.StatusConflict {
+		t.Errorf("message pendant une attente = %d, veut 409", rec.Code)
+	}
+
+	rec := do(s, http.MethodPost, loc+"/actions/t9/confirm", nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `id="thread"`) {
+		t.Fatalf("confirmation = %d\n%s", rec.Code, rec.Body.String())
+	}
+	a.Wait()
+	done := do(s, http.MethodGet, loc+"/thread", nil).Body.String()
+	if ran != 1 || !strings.Contains(done, "C&#39;est supprimé.") && !strings.Contains(done, "C'est supprimé.") || !strings.Contains(done, "Tâche supprimée.") {
+		t.Errorf("après confirmation : exécutions %d\n%s", ran, done)
+	}
+	// Un second clic ne refait rien.
+	if rec := do(s, http.MethodPost, loc+"/actions/t9/confirm", nil); rec.Code != http.StatusConflict || ran != 1 {
+		t.Errorf("second clic = %d, exécutions %d", rec.Code, ran)
+	}
+}
+
+func TestAssistant_RefuseAction(t *testing.T) {
+	ran := 0
+	s, a, loc := newConfirmServer(t, &ran, actionTurn(), answer("Entendu, je la garde."))
+	if rec := do(s, http.MethodPost, loc+"/actions/t9/refuse", nil); rec.Code != http.StatusOK {
+		t.Fatalf("refus = %d", rec.Code)
+	}
+	a.Wait()
+	done := do(s, http.MethodGet, loc+"/thread", nil).Body.String()
+	if ran != 0 || !strings.Contains(done, "Entendu, je la garde.") || !strings.Contains(done, "refusée") {
+		t.Errorf("après refus : exécutions %d\n%s", ran, done)
+	}
+	for _, target := range []string{"/assistant/absente/actions/t9/confirm", "/assistant/absente/actions/t9/refuse"} {
+		if rec := do(s, http.MethodPost, target, nil); rec.Code != http.StatusNotFound {
+			t.Errorf("POST %s = %d, veut 404", target, rec.Code)
+		}
 	}
 }

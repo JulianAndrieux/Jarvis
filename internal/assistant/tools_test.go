@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/pipeline"
 	"github.com/JulianAndrieux/Jarvis/internal/tenancy"
+	"github.com/JulianAndrieux/Jarvis/internal/tickets"
 	"github.com/JulianAndrieux/Jarvis/internal/webapp"
 )
 
@@ -99,7 +101,11 @@ func TestNotesTools(t *testing.T) {
 		t.Error("read_note sans id accepté")
 	}
 	for _, tool := range tools {
-		if tool.Level != LevelRead || tool.Source != SourceNotes || tool.Description == "" || tool.Schema["type"] != "object" {
+		wantLevel := LevelRead
+		if tool.Name == "create_note" || tool.Name == "append_to_note" {
+			wantLevel = LevelWrite
+		}
+		if tool.Level != wantLevel || tool.Source != SourceNotes || tool.Description == "" || tool.Schema["type"] != "object" {
 			t.Errorf("outil %s mal déclaré : %+v", tool.Name, tool)
 		}
 	}
@@ -216,7 +222,8 @@ func TestMailTools(t *testing.T) {
 		Payment: mail.Payment{ToPay: true, Payee: "Energie SA", Amount: "120,00", Currency: "EUR", DueDate: "2026-11-30", IBAN: "LU280019400644750000", Version: mail.PaymentVersion}})
 	save(mail.Mail{ID: "m3", From: mail.Address{Email: "news@shop.example"}, Subject: "Promotions", Date: testNow.Add(-2 * time.Hour), Text: "Soldes",
 		Triage: mail.Triage{Category: mail.Newsletter, Version: mail.TriageVersion}})
-	tools := MailTools(func(context.Context) mail.Store { return store })
+	svc := &mail.Service{Store: store, DefaultScope: tenancy.LocalScope()}
+	tools := MailTools(svc)
 
 	all := runTool(t, tools, "search_emails", `{}`)
 	wantAll(t, all, "3 emails", "m1", "Paul Weber", "Devis toiture", "Paul attend une confirmation", "réponse attendue", "Promotions")
@@ -285,7 +292,8 @@ func TestTools_NamesAreUniqueAndWellFormed(t *testing.T) {
 	all = append(all, NotesTools(svc)...)
 	all = append(all, TaskTools(svc)...)
 	all = append(all, DocumentTools(webapp.NewJobManager(webapp.NewFakeStore(), nil))...)
-	all = append(all, MailTools(func(context.Context) mail.Store { return mail.NewFakeStore() })...)
+	all = append(all, MailTools(&mail.Service{Store: mail.NewFakeStore()})...)
+	all = append(all, TicketTools(&fakeTickets{})...)
 	all = append(all, MemoryTools(a)...)
 	seen := map[string]bool{}
 	for _, tool := range all {
@@ -296,14 +304,171 @@ func TestTools_NamesAreUniqueAndWellFormed(t *testing.T) {
 		if tool.Run == nil || tool.Description == "" || tool.Level == "" || tool.Source == "" || tool.Schema["type"] != "object" {
 			t.Errorf("outil %s incomplet", tool.Name)
 		}
-		if tool.Level == LevelAction {
-			t.Errorf("outil %s : aucune action extérieure avant les confirmations (jalon 58)", tool.Name)
+		// Une action dit toujours ce qu'elle va faire avant d'être confirmée.
+		if (tool.Level == LevelAction) != (tool.Confirm != nil) {
+			t.Errorf("outil %s : Confirm est attendu pour une action, et seulement pour elle", tool.Name)
 		}
 		if _, err := json.Marshal(tool.Schema); err != nil {
 			t.Errorf("schéma de %s : %v", tool.Name, err)
 		}
 	}
-	if len(all) != 10 {
-		t.Errorf("%d outils, 10 attendus", len(all))
+	if len(all) != 19 {
+		t.Errorf("%d outils, 19 attendus", len(all))
+	}
+}
+
+func TestNotesTools_Write(t *testing.T) {
+	svc, n := notesFixture(t)
+	tools := NotesTools(svc)
+	ctx := context.Background()
+
+	out := runTool(t, tools, "create_note", `{"title":"Compte rendu notaire","text":"Signature le 3 décembre.\n\nApporter la pièce d'identité.","tags":["immobilier","notaire"]}`)
+	wantAll(t, out, "Note créée", "Compte rendu notaire")
+	list, _ := svc.DB(ctx).ListNotes(ctx, notes.NoteQuery{Search: "notaire"})
+	if len(list) != 1 || list[0].Title != "Compte rendu notaire" || !strings.Contains(list[0].Body, "Signature le 3 décembre.") ||
+		len(list[0].Tags) != 2 || !strings.Contains(out, list[0].ID) {
+		t.Fatalf("note créée = %+v", list)
+	}
+	// Une seule boîte, pas une boîte vide suivie du texte.
+	if blocks := notes.BlocksOf(list[0]); len(blocks) != 1 {
+		t.Errorf("boîtes = %d, veut 1", len(blocks))
+	}
+	if _, err := tryTool(tools, "create_note", `{"title":" ","text":"x"}`); err == nil {
+		t.Error("note sans titre acceptée")
+	}
+
+	before, _, _ := svc.DB(ctx).GetNote(ctx, n.ID)
+	runTool(t, tools, "append_to_note", `{"id":"`+n.ID+`","text":"Reçu le certificat le 12/11."}`)
+	after, _, _ := svc.DB(ctx).GetNote(ctx, n.ID)
+	if len(notes.BlocksOf(after)) != len(notes.BlocksOf(before))+1 || !strings.HasSuffix(strings.TrimSpace(after.Body), "Reçu le certificat le 12/11.") ||
+		!strings.Contains(after.Body, "Formulaire 100") {
+		t.Errorf("append_to_note : %q", after.Body)
+	}
+	if _, err := tryTool(tools, "append_to_note", `{"id":"absente","text":"x"}`); err == nil {
+		t.Error("ajout à une note absente accepté")
+	}
+	if _, err := tryTool(tools, "append_to_note", `{"id":"`+n.ID+`","text":"  "}`); err == nil {
+		t.Error("ajout vide accepté")
+	}
+}
+
+func TestTaskTools_Write(t *testing.T) {
+	svc := &notes.Service{Store: notes.NewFakeStore(), Now: func() time.Time { return testNow }, DefaultScope: tenancy.LocalScope()}
+	ctx := context.Background()
+	task, _ := svc.CreateTask(ctx, "Payer le loyer", "2026-11-09", "haute")
+	tools := TaskTools(svc)
+	get := func() notes.Task { got, _, _ := svc.DB(ctx).GetTask(ctx, task.ID); return got }
+
+	// Ne changer que ce qui est donné.
+	runTool(t, tools, "update_task", `{"id":"`+task.ID+`","due":"2026-11-20"}`)
+	if got := get(); got.Due != "2026-11-20" || got.Title != "Payer le loyer" || got.Priority != notes.High {
+		t.Errorf("update_task(due) = %+v", got)
+	}
+	runTool(t, tools, "update_task", `{"id":"`+task.ID+`","title":"Payer le loyer de novembre","due":"","priority":""}`)
+	if got := get(); got.Title != "Payer le loyer de novembre" || got.Due != "" || got.Priority != notes.Normal {
+		t.Errorf("update_task(tout) = %+v", got)
+	}
+	if _, err := tryTool(tools, "update_task", `{"id":"`+task.ID+`","due":"demain"}`); err == nil {
+		t.Error("échéance invalide acceptée")
+	}
+
+	wantAll(t, runTool(t, tools, "complete_task", `{"id":"`+task.ID+`"}`), "terminée")
+	if !get().Done {
+		t.Fatal("tâche non terminée")
+	}
+	// Terminer deux fois ne la rouvre pas.
+	runTool(t, tools, "complete_task", `{"id":"`+task.ID+`"}`)
+	if !get().Done {
+		t.Error("complete_task a rouvert une tâche déjà faite")
+	}
+
+	var del Tool
+	for _, tool := range tools {
+		if tool.Name == "delete_task" {
+			del = tool
+		}
+	}
+	if del.Level != LevelAction {
+		t.Fatalf("delete_task = %q, veut une action à confirmer", del.Level)
+	}
+	if s := del.Confirm(ctx, json.RawMessage(`{"id":"`+task.ID+`"}`)); !strings.Contains(s, "Payer le loyer de novembre") {
+		t.Errorf("confirmation = %q : elle doit nommer la tâche", s)
+	}
+	runTool(t, tools, "delete_task", `{"id":"`+task.ID+`"}`)
+	if _, ok, _ := svc.DB(ctx).GetTask(ctx, task.ID); ok {
+		t.Error("tâche non supprimée")
+	}
+	if _, err := tryTool(tools, "complete_task", `{"id":"absente"}`); err == nil {
+		t.Error("tâche absente acceptée")
+	}
+}
+
+func TestDocumentTools_SetTags(t *testing.T) {
+	store := webapp.NewFakeStore()
+	ctx := context.Background()
+	job, _ := store.Create(ctx, webapp.Job{ID: "d1", Filename: "f.pdf", Status: webapp.StatusDone, CreatedAt: testNow, Tags: []string{"ancien"}})
+	tools := DocumentTools(webapp.NewJobManager(store, nil))
+	wantAll(t, runTool(t, tools, "set_document_tags", `{"id":"`+job.ID+`","tags":[" travaux ","2026","travaux",""]}`), "travaux", "2026")
+	got, _, _ := store.Get(ctx, job.ID)
+	if strings.Join(got.Tags, ",") != "travaux,2026" {
+		t.Errorf("tags = %v", got.Tags)
+	}
+	if _, err := tryTool(tools, "set_document_tags", `{"id":"absent","tags":["x"]}`); err == nil {
+		t.Error("document absent accepté")
+	}
+}
+
+func TestMailTools_Write(t *testing.T) {
+	store := mail.NewFakeStore()
+	ctx := context.Background()
+	_, _ = store.Save(ctx, mail.Mail{ID: "m1", Subject: "Facture", Date: testNow, Payment: mail.Payment{ToPay: true, Payee: "Energie SA"}}, nil)
+	tools := MailTools(&mail.Service{Store: store, DefaultScope: tenancy.LocalScope()})
+	runTool(t, tools, "mark_email_paid", `{"id":"m1"}`)
+	runTool(t, tools, "archive_email", `{"id":"m1"}`)
+	m, _, _ := store.Get(ctx, "m1")
+	if !m.Paid || !m.Archived {
+		t.Errorf("email = payé %v, archivé %v", m.Paid, m.Archived)
+	}
+	for _, name := range []string{"mark_email_paid", "archive_email"} {
+		if _, err := tryTool(tools, name, `{"id":"absent"}`); err == nil {
+			t.Errorf("%s sur un email absent accepté", name)
+		}
+	}
+}
+
+type fakeTickets struct{ created []string }
+
+func (f *fakeTickets) Create(ctx context.Context, title, need, acceptance string) (tickets.Ticket, error) {
+	if strings.TrimSpace(title) == "" {
+		return tickets.Ticket{}, errors.New("titre vide")
+	}
+	f.created = append(f.created, title+"|"+need+"|"+acceptance)
+	return tickets.Ticket{ID: "tk1", Title: title}, nil
+}
+
+// Un ticket fait écrire du code et le déploie : c'est une action, à
+// confirmer, et réservée au propriétaire de l'instance.
+func TestTicketTools(t *testing.T) {
+	f := &fakeTickets{}
+	tools := TicketTools(f)
+	if len(tools) != 1 || tools[0].Level != LevelAction || tools[0].Source != SourceTickets {
+		t.Fatalf("outils = %+v", tools)
+	}
+	in := json.RawMessage(`{"title":"Export CSV des tâches","need":"Pouvoir exporter la todo.","acceptance":"Un bouton Exporter sur la page Tâches"}`)
+	if s := tools[0].Confirm(context.Background(), in); !strings.Contains(s, "Export CSV des tâches") || !strings.Contains(s, "déplo") {
+		t.Errorf("confirmation = %q : elle doit nommer le ticket et dire qu'il peut être déployé", s)
+	}
+	owner := tenancy.WithScope(context.Background(), tenancy.LocalScope())
+	out, err := tools[0].Run(owner, in)
+	if err != nil || !strings.Contains(out, "tk1") || len(f.created) != 1 ||
+		f.created[0] != "Export CSV des tâches|Pouvoir exporter la todo.|Un bouton Exporter sur la page Tâches" {
+		t.Fatalf("create_ticket = %q, %v, %v", out, err, f.created)
+	}
+	member := tenancy.WithScope(context.Background(), userScope("famille", "marie"))
+	if _, err := tools[0].Run(member, in); err == nil || len(f.created) != 1 {
+		t.Errorf("un membre a créé un ticket : %v", err)
+	}
+	if _, err := tools[0].Run(context.Background(), in); err == nil {
+		t.Error("ticket créé sans portée")
 	}
 }

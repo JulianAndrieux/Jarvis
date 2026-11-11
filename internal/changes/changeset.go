@@ -144,6 +144,7 @@ func (s *Stager) Stage(ctx context.Context, ops ...Op) error {
 		}
 		o.ID = id
 		o.Env, o.User, o.Session = scope.Env, scope.User, scope.Session
+		o.Via = scope.Via
 		if o.At.IsZero() {
 			// Un rang distinct par opération du même appel : l'ordre dans
 			// lequel elles ont été produites doit survivre.

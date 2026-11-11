@@ -167,20 +167,165 @@ func TestAsk_ToolFailuresAreReportedToTheModel(t *testing.T) {
 	}
 }
 
-// Une action vers l'extérieur n'est jamais exécutée sans confirmation —
-// et la confirmation n'existe pas encore (jalon 58).
-func TestAsk_ActionToolIsNeverRunWithoutConfirmation(t *testing.T) {
-	model := &claudeapi.FakeClient{Responses: []claudeapi.Response{
-		toolTurn("", call("a", "send_email", `{"to":"x"}`)), endTurn("Je ne peux pas."),
-	}}
-	var seen []string
-	a, _ := newAssistant(model, echoTool("send_email", LevelAction, "envoyé", &seen))
-	c := ask(t, a, "", "envoie")
-	if len(seen) != 0 {
-		t.Fatalf("l'action a été exécutée : %v", seen)
+// Jalon 58 : une action attend la confirmation de l'utilisateur. Le tour
+// se met en pause ; les lectures demandées avec elle sont faites.
+func actionFixture(t *testing.T, responses ...claudeapi.Response) (*Assistant, *FakeStore, *claudeapi.FakeClient, *[]string) {
+	t.Helper()
+	model := &claudeapi.FakeClient{Responses: responses}
+	seen := &[]string{}
+	send := echoTool("send_email", LevelAction, "envoyé", seen)
+	send.Confirm = func(_ context.Context, in json.RawMessage) string { return "Envoyer un email : " + string(in) }
+	a, store := newAssistant(model, send, echoTool("delete_task", LevelAction, "supprimée", seen), echoTool("search_notes", LevelRead, "1 note", seen))
+	return a, store, model, seen
+}
+
+func TestAction_PausesUntilConfirmed(t *testing.T) {
+	a, _, model, seen := actionFixture(t,
+		toolTurn("Je prépare l'envoi.", call("t1", "search_notes", `{"query":"x"}`), call("t2", "send_email", `{"to":"paul"}`)),
+		endTurn("C'est envoyé."))
+	c := ask(t, a, "", "envoie le devis à Paul")
+
+	if c.Status != StatusWaiting || c.Error != "" {
+		t.Fatalf("status = %q (%q), veut waiting", c.Status, c.Error)
 	}
-	if r := c.Entries[2].Results[0]; !r.IsError || !strings.Contains(r.Content, "confirmation") {
-		t.Errorf("résultat = %+v", r)
+	if !reflect.DeepEqual(*seen, []string{`local/local:{"query":"x"}`}) {
+		t.Fatalf("outils exécutés avant la confirmation = %v", *seen)
+	}
+	if len(model.Requests()) != 1 {
+		t.Fatalf("le modèle a été rappelé pendant l'attente (%d requêtes)", len(model.Requests()))
+	}
+	pending := a.Pending(context.Background(), c)
+	if len(pending) != 1 || pending[0].CallID != "t2" || pending[0].Tool != "send_email" || pending[0].Summary != `Envoyer un email : {"to":"paul"}` {
+		t.Fatalf("pending = %+v", pending)
+	}
+	// Écrire autre chose ne passe pas devant la confirmation.
+	if _, err := a.Ask(context.Background(), c.ID, "au fait…"); !errors.Is(err, ErrWaiting) {
+		t.Errorf("Ask pendant une attente = %v, veut ErrWaiting", err)
+	}
+
+	if _, err := a.Decide(context.Background(), c.ID, "t2", true); err != nil {
+		t.Fatal(err)
+	}
+	a.Wait()
+	c, _, _ = a.Get(context.Background(), c.ID)
+	if c.Status != StatusIdle || len(a.Pending(context.Background(), c)) != 0 {
+		t.Fatalf("après confirmation = %q, pending %v", c.Status, a.Pending(context.Background(), c))
+	}
+	if !reflect.DeepEqual(*seen, []string{`local/local:{"query":"x"}`, `local/local:{"to":"paul"}`}) {
+		t.Errorf("outils exécutés = %v", *seen)
+	}
+	// Le modèle reçoit les deux résultats dans un seul tour.
+	msgs := model.Requests()[1].Messages
+	if len(msgs) != 3 || len(msgs[2].Results) != 2 || msgs[2].Results[0].CallID != "t1" ||
+		msgs[2].Results[1] != (claudeapi.Result{CallID: "t2", Content: "envoyé"}) {
+		t.Errorf("messages après confirmation = %+v", msgs)
+	}
+	if last := c.Entries[len(c.Entries)-1]; last.Text != "C'est envoyé." {
+		t.Errorf("dernière entrée = %+v", last)
+	}
+	// Une seconde réponse à la même demande ne refait rien.
+	if _, err := a.Decide(context.Background(), c.ID, "t2", true); !errors.Is(err, ErrNotPending) {
+		t.Errorf("seconde confirmation = %v, veut ErrNotPending", err)
+	}
+}
+
+func TestAction_Refused(t *testing.T) {
+	a, _, model, seen := actionFixture(t, toolTurn("", call("t2", "send_email", `{}`)), endTurn("Entendu, je n'envoie rien."))
+	c := ask(t, a, "", "envoie")
+	if _, err := a.Decide(context.Background(), c.ID, "t2", false); err != nil {
+		t.Fatal(err)
+	}
+	a.Wait()
+	c, _, _ = a.Get(context.Background(), c.ID)
+	if len(*seen) != 0 {
+		t.Fatalf("l'action refusée a été exécutée : %v", *seen)
+	}
+	r := model.Requests()[1].Messages[2].Results[0]
+	if !r.IsError || !strings.Contains(r.Content, "refusé") || c.Status != StatusIdle {
+		t.Errorf("résultat = %+v, status %q", r, c.Status)
+	}
+}
+
+// Deux actions demandées ensemble : chacune a sa réponse, et le modèle
+// n'est rappelé qu'une fois toutes décidées.
+func TestAction_SeveralPending(t *testing.T) {
+	a, _, model, seen := actionFixture(t,
+		toolTurn("", call("t1", "send_email", `{"n":1}`), call("t2", "delete_task", `{"n":2}`)), endTurn("Fait."))
+	c := ask(t, a, "", "x")
+	if got := a.Pending(context.Background(), c); len(got) != 2 || got[1].Summary == "" {
+		t.Fatalf("pending = %+v", got)
+	}
+	if _, err := a.Decide(context.Background(), c.ID, "t2", true); err != nil {
+		t.Fatal(err)
+	}
+	a.Wait()
+	c, _, _ = a.Get(context.Background(), c.ID)
+	if c.Status != StatusWaiting || len(a.Pending(context.Background(), c)) != 1 || a.Pending(context.Background(), c)[0].CallID != "t1" || len(model.Requests()) != 1 {
+		t.Fatalf("après la première décision : %q, pending %+v, %d requêtes", c.Status, a.Pending(context.Background(), c), len(model.Requests()))
+	}
+	if _, err := a.Decide(context.Background(), c.ID, "t1", false); err != nil {
+		t.Fatal(err)
+	}
+	a.Wait()
+	c, _, _ = a.Get(context.Background(), c.ID)
+	if c.Status != StatusIdle || !reflect.DeepEqual(*seen, []string{`local/local:{"n":2}`}) {
+		t.Errorf("fin : %q, exécutés %v", c.Status, *seen)
+	}
+	res := model.Requests()[1].Messages[2].Results
+	if len(res) != 2 || res[0].CallID != "t1" || !res[0].IsError || res[1].Content != "supprimée" {
+		t.Errorf("résultats dans l'ordre des appels = %+v", res)
+	}
+}
+
+// L'attente survit à un redémarrage : aucun processus ne la porte.
+func TestAction_SurvivesRestart(t *testing.T) {
+	a, store, _, seen := actionFixture(t, toolTurn("", call("t2", "send_email", `{}`)))
+	c := ask(t, a, "", "envoie")
+	if n, _ := a.RecoverOrphaned(context.Background()); n != 0 {
+		t.Fatalf("la reprise a touché %d conversation(s) en attente", n)
+	}
+	model2 := &claudeapi.FakeClient{Responses: []claudeapi.Response{endTurn("Envoyé après redémarrage.")}}
+	b := &Assistant{Model: model2, Store: store, Tools: a.Tools, Now: a.Now, DefaultScope: a.DefaultScope}
+	if _, err := b.Decide(context.Background(), c.ID, "t2", true); err != nil {
+		t.Fatal(err)
+	}
+	b.Wait()
+	got, _, _ := b.Get(context.Background(), c.ID)
+	if got.Status != StatusIdle || len(*seen) != 1 {
+		t.Errorf("après redémarrage : %q, exécutés %v", got.Status, *seen)
+	}
+}
+
+func TestDecide_Errors(t *testing.T) {
+	a, _, _, _ := actionFixture(t, toolTurn("", call("t2", "send_email", `{}`)))
+	ctx := context.Background()
+	if _, err := a.Decide(ctx, "absente", "t2", true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("conversation inconnue = %v", err)
+	}
+	c := ask(t, a, "", "envoie")
+	if _, err := a.Decide(ctx, c.ID, "autre", true); !errors.Is(err, ErrNotPending) {
+		t.Errorf("appel inconnu = %v", err)
+	}
+	marie := tenancy.WithScope(ctx, userScope("famille", "marie"))
+	if _, err := a.Decide(marie, c.ID, "t2", true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("la confirmation d'un autre user = %v, veut ErrNotFound", err)
+	}
+}
+
+// Ce que l'assistant écrit est écrit au nom du user, et le dit.
+func TestTools_RunOnBehalfOfTheUserViaAssistant(t *testing.T) {
+	var got tenancy.Scope
+	tool := Tool{Name: "t", Level: LevelWrite, Run: func(ctx context.Context, _ json.RawMessage) (string, error) {
+		got, _ = tenancy.FromContext(ctx)
+		return "ok", nil
+	}}
+	model := &claudeapi.FakeClient{Responses: []claudeapi.Response{toolTurn("", call("a", "t", `{}`)), endTurn("ok")}}
+	a, _ := newAssistant(model, tool)
+	ask(t, a, "", "x")
+	want := tenancy.LocalScope()
+	want.Via = tenancy.ViaAssistant
+	if got != want {
+		t.Errorf("portée de l'outil = %+v, veut %+v", got, want)
 	}
 }
 

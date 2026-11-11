@@ -77,7 +77,16 @@ type Scope struct {
 	User    UserID
 	Session SessionID
 	Role    Role
+	// Via : par quoi l'opération est passée, quand ce n'est pas le user
+	// lui-même ("" : lui ; ViaAssistant : l'assistant, en son nom). Ne
+	// change ni les droits ni le cloisonnement — seulement ce que le
+	// journal dira de la modification.
+	Via string
 }
+
+// ViaAssistant : l'opération est faite par l'assistant personnel, au nom
+// du user de la portée (jalon 58).
+const ViaAssistant = "assistant"
 
 // System est la portée du travail de fond dans un environnement.
 func System(env EnvID) Scope { return Scope{Env: env, Role: RoleOwner} }

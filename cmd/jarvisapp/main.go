@@ -599,7 +599,7 @@ func main() {
 			DefaultScope: tenancy.LocalScope(),
 			Logf:         log.Printf,
 		}
-		tools, err := assistantTools(*assistantSources, srv.Notes, jobs, mailService.DB, a)
+		tools, err := assistantTools(*assistantSources, srv.Notes, jobs, mailService, ticketManager, a)
 		if err != nil {
 			log.Fatalf("jarvisapp: --assistant-sources : %v", err)
 		}

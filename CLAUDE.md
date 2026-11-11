@@ -3153,6 +3153,49 @@ décisions : `docs/plan-multi-environnement.md`.
     même temps que leur test, pas vus rouges d'abord : `FakeStore`,
     `loadAssistantKey`, `assistantTools`.
 
+- **Jalon 58 — confirmations, identité de l'assistant, outils d'écriture :
+  fait, testé sans clé ni base, à valider avec le jalon 57.** Suite du plan
+  (`docs/plan-assistant.md`), lancée sur « tu peux coder ».
+  - **Confirmation d'une action** : un outil `LevelAction` (agit hors de
+    Jarvis, ou ne se défait pas) n'est plus refusé, il **met le tour en
+    pause**. Les lectures demandées avec lui sont faites ; la conversation
+    passe à `waiting` et le fil affiche la question — ce que l'action va
+    faire, dit par l'outil (`Tool.Confirm`), Confirmer / Refuser.
+    `Assistant.Decide` : confirmée, l'action s'exécute ; refusée,
+    l'assistant l'apprend et ne la retente pas ; puis le tour reprend.
+    Plusieurs actions demandées ensemble ont chacune leur réponse, et le
+    modèle n'est rappelé qu'une fois toutes décidées (leurs résultats
+    partent en un seul tour, comme l'API l'exige). **Aucun processus ne
+    porte l'attente** : elle survit à un redémarrage (la reprise au
+    démarrage n'y touche pas). `Store.Resume` est une écriture
+    conditionnelle : un double clic n'exécute jamais deux fois (dix
+    réponses simultanées, une gagnante). Écrire autre chose pendant une
+    attente est refusé — on répond d'abord à la question.
+  - **Identité** : `tenancy.Scope.Via` (`ViaAssistant`) — ce que
+    l'assistant écrit reste écrit **au nom du user** (mêmes droits, même
+    cloisonnement, même changeset : « Jarvis propose, tu commites »), mais
+    le journal garde par quoi c'est passé (`changes.Op.Via`, Recorder et
+    Stager) et l'onglet Activité affiche « via l'assistant ».
+  - **Neuf outils de plus (19)** : `create_note`, `append_to_note`,
+    `update_task` (seuls les champs donnés changent), `complete_task` (ne
+    rouvre jamais une tâche faite), `set_document_tags`, `archive_email`,
+    `mark_email_paid` (rangements dans Jarvis : la vraie boîte n'est pas
+    touchée, rien n'est payé) ; et deux **actions à confirmer** :
+    `delete_task` (la confirmation nomme la tâche) et `create_ticket` —
+    un ticket fait écrire du code et, avec le pilote automatique, le
+    déploie : confirmation obligatoire, propriétaire de l'instance
+    seulement, source `tickets` (fermable par `--assistant-sources`).
+    Norme : une action déclare toujours sa phrase de confirmation, et elle
+    seule.
+  - **UI** : carte de confirmation dans le fil (échappée : la phrase vient
+    de données), « à confirmer » dans la liste des conversations ; pas de
+    saisie libre ni de sonde pendant l'attente.
+  - Validé : tests unitaires et HTTP (`-race`), capture de la carte en
+    largeur iPhone. **Non validé ici**, comme au jalon 57 : la vraie API
+    et le contrat Mongo (`Pause`/`Resume` compris) sur Atlas. Pas encore de
+    notification quand Jarvis attend une réponse : il faut ouvrir la
+    conversation (jalon 61).
+
 **Reste à valider en conditions réelles** (impossible depuis
 l'environnement de développement de ce chantier) : les contrats Mongo
 contre Atlas (`-tags=integration`, `MONGO_URI`), le flux Google avec un

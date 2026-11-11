@@ -25,8 +25,9 @@ const (
 	// LevelWrite : écrit dans Jarvis (une tâche, un fait). Exécuté ; une
 	// écriture interne se défait.
 	LevelWrite Level = "write"
-	// LevelAction : agit hors de Jarvis (envoyer, payer, déployer). Jamais
-	// exécuté sans la confirmation de l'utilisateur.
+	// LevelAction : agit hors de Jarvis (envoyer, payer, déployer) ou ne se
+	// défait pas (supprimer). Jamais exécuté sans la confirmation de
+	// l'utilisateur : le tour se met en pause jusqu'à sa réponse.
 	LevelAction Level = "action"
 )
 
@@ -44,6 +45,18 @@ type Tool struct {
 	// sortie est du texte lu par le modèle ; une erreur lui est rapportée
 	// (il peut corriger son appel), elle ne fait pas échouer le tour.
 	Run func(ctx context.Context, input json.RawMessage) (string, error)
+	// Confirm (LevelAction) : ce que l'action va faire, en une phrase lue
+	// par l'utilisateur avant de confirmer. nil : le nom de l'outil.
+	Confirm func(ctx context.Context, input json.RawMessage) string
+}
+
+// PendingAction : une action que l'assistant veut faire et qui attend la
+// réponse de l'utilisateur.
+type PendingAction struct {
+	CallID  string
+	Tool    string
+	Summary string
+	Input   json.RawMessage
 }
 
 const (
@@ -136,13 +149,16 @@ func (a *Assistant) Ask(ctx context.Context, id, text string) (Conversation, err
 			return Conversation{}, err
 		}
 	}
-	// Le départ d'abord : un message refusé (tour déjà en cours) ne doit
-	// pas se retrouver dans le fil.
+	// Le départ d'abord : un message refusé (tour déjà en cours,
+	// confirmation attendue) ne doit pas se retrouver dans le fil.
 	started, err := db.Start(ctx, id, now)
 	if err != nil {
 		return Conversation{}, err
 	}
 	if !started {
+		if cur, ok, _ := db.Get(ctx, id); ok && cur.Status == StatusWaiting {
+			return Conversation{}, ErrWaiting
+		}
 		return Conversation{}, ErrBusy
 	}
 	if err := db.Append(ctx, id, now, Entry{Role: RoleUser, At: now, Text: text}); err != nil {
@@ -154,31 +170,162 @@ func (a *Assistant) Ask(ctx context.Context, id, text string) (Conversation, err
 		_ = db.Finish(ctx, id, err.Error(), a.now())
 		return Conversation{}, err
 	}
+	a.spawn(sc, db, id, func(run context.Context) (bool, error) { return a.turn(run, db, id) })
+	return c, nil
+}
 
+// spawn lance work en arrière-plan puis clôt le tour : en attente d'une
+// confirmation (paused), au repos, ou en échec.
+func (a *Assistant) spawn(sc tenancy.Scope, db Store, id string, work func(ctx context.Context) (paused bool, err error)) {
 	timeout := a.TurnTimeout
 	if timeout <= 0 {
 		timeout = DefaultTurnTimeout
 	}
+	// Les outils agissent au nom du user, et le journal le dit.
+	sc.Via = tenancy.ViaAssistant
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		// Détaché de la requête, mais avec sa portée : le tour survit à la
-		// page qui l'a lancé, et les outils agissent au nom du même user.
+		// page qui l'a lancé.
 		run, cancel := context.WithTimeout(tenancy.WithScope(context.Background(), sc), timeout)
 		defer cancel()
-		msg := ""
-		if err := a.turn(run, db, id); err != nil {
-			msg = err.Error()
-			a.logf("assistant: conversation %s : %v", id, err)
-		}
+		paused, err := work(run)
 		// La clôture ne dépend pas du délai du tour : c'est elle qui rend
 		// la conversation utilisable de nouveau.
 		closeCtx, cancelClose := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancelClose()
-		if err := db.Finish(closeCtx, id, msg, a.now()); err != nil {
+		switch {
+		case err != nil:
+			a.logf("assistant: conversation %s : %v", id, err)
+			err = db.Finish(closeCtx, id, err.Error(), a.now())
+		case paused:
+			err = db.Pause(closeCtx, id, a.now())
+		default:
+			err = db.Finish(closeCtx, id, "", a.now())
+		}
+		if err != nil {
 			a.logf("assistant: clôture de la conversation %s : %v", id, err)
 		}
 	}()
+}
+
+// pendingCalls : les appels du dernier message de l'assistant qui n'ont
+// pas encore de réponse.
+func pendingCalls(entries []Entry) []claudeapi.Call {
+	last := -1
+	for i, e := range entries {
+		if e.Role == RoleAssistant {
+			last = i
+		}
+	}
+	if last < 0 || len(entries[last].Calls) == 0 {
+		return nil
+	}
+	answered := map[string]bool{}
+	for _, e := range entries[last+1:] {
+		if e.Role != RoleTools {
+			break
+		}
+		for _, r := range e.Results {
+			answered[r.CallID] = true
+		}
+	}
+	var out []claudeapi.Call
+	for _, c := range entries[last].Calls {
+		if !answered[c.ID] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (a *Assistant) tool(name string) *Tool {
+	for i := range a.Tools {
+		if a.Tools[i].Name == name {
+			return &a.Tools[i]
+		}
+	}
+	return nil
+}
+
+// Pending : les actions de c qui attendent une réponse (aucune si la
+// conversation n'est pas en attente).
+func (a *Assistant) Pending(ctx context.Context, c Conversation) []PendingAction {
+	if c.Status != StatusWaiting {
+		return nil
+	}
+	ctx = tenancy.WithScope(ctx, a.scope(ctx))
+	var out []PendingAction
+	for _, call := range pendingCalls(c.Entries) {
+		p := PendingAction{CallID: call.ID, Tool: call.Name, Summary: call.Name, Input: call.Input}
+		if t := a.tool(call.Name); t != nil && t.Confirm != nil {
+			if s := strings.TrimSpace(t.Confirm(ctx, call.Input)); s != "" {
+				p.Summary = s
+			}
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// Decide répond à une demande de confirmation : approve exécute l'action,
+// sinon l'assistant apprend qu'elle est refusée. Le tour reprend en
+// arrière-plan (ou attend encore, s'il reste d'autres demandes).
+func (a *Assistant) Decide(ctx context.Context, id, callID string, approve bool) (Conversation, error) {
+	sc := a.scope(ctx)
+	db := a.Store.For(sc)
+	c, ok, err := db.Get(ctx, id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	if !ok {
+		return Conversation{}, fmt.Errorf("%w : conversation %s", ErrNotFound, id)
+	}
+	var call *claudeapi.Call
+	if c.Status == StatusWaiting {
+		for _, p := range pendingCalls(c.Entries) {
+			if p.ID == callID {
+				call = &p
+				break
+			}
+		}
+	}
+	if call == nil {
+		return Conversation{}, ErrNotPending
+	}
+	// Une seule écriture conditionnelle décide qui répond : un double clic
+	// n'exécute jamais l'action deux fois.
+	resumed, err := db.Resume(ctx, id, a.now())
+	if err != nil {
+		return Conversation{}, err
+	}
+	if !resumed {
+		return Conversation{}, ErrNotPending
+	}
+	c.Status = StatusRunning
+	a.spawn(sc, db, id, func(run context.Context) (bool, error) {
+		res := claudeapi.Result{CallID: call.ID, IsError: true,
+			Content: "action refusée par l'utilisateur : ne la retente pas, demande-lui ce qu'il préfère"}
+		if approve {
+			res = a.runTool(run, *call, true)
+		}
+		now := a.now()
+		if err := db.Append(run, id, now, Entry{Role: RoleTools, At: now, Results: []claudeapi.Result{res}}); err != nil {
+			return false, err
+		}
+		cur, ok, err := db.Get(run, id)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, fmt.Errorf("%w : conversation supprimée pendant la réponse", ErrNotFound)
+		}
+		if len(pendingCalls(cur.Entries)) > 0 {
+			return true, nil
+		}
+		return a.turn(run, db, id)
+	})
 	return c, nil
 }
 
@@ -190,16 +337,17 @@ func title(text string) string {
 	return string([]rune(line)[:titleLen-1]) + "…"
 }
 
-// turn : un tour complet — appeler le modèle, exécuter ses outils,
-// recommencer jusqu'à sa réponse.
-func (a *Assistant) turn(ctx context.Context, db Store, id string) error {
+// turn : appeler le modèle, exécuter ses outils, recommencer jusqu'à sa
+// réponse — ou jusqu'à une action qui demande une confirmation
+// (paused=true : le tour reprendra par Decide).
+func (a *Assistant) turn(ctx context.Context, db Store, id string) (paused bool, err error) {
 	maxSteps := a.MaxSteps
 	if maxSteps <= 0 {
 		maxSteps = DefaultMaxSteps
 	}
 	system, err := a.system(ctx, db)
 	if err != nil {
-		return err
+		return false, err
 	}
 	tools := make([]claudeapi.Tool, 0, len(a.Tools))
 	for _, t := range a.Tools {
@@ -210,22 +358,22 @@ func (a *Assistant) turn(ctx context.Context, db Store, id string) error {
 		if a.DailyTokens > 0 {
 			used, err := db.UsageOn(ctx, day)
 			if err != nil {
-				return err
+				return false, err
 			}
 			if used.Total() >= a.DailyTokens {
-				return fmt.Errorf("plafond quotidien atteint (%d jetons sur %d) — il se remet à zéro demain, ou se règle avec --assistant-daily-tokens", used.Total(), a.DailyTokens)
+				return false, fmt.Errorf("plafond quotidien atteint (%d jetons sur %d) — il se remet à zéro demain, ou se règle avec --assistant-daily-tokens", used.Total(), a.DailyTokens)
 			}
 		}
 		conv, ok, err := db.Get(ctx, id)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if !ok {
-			return fmt.Errorf("%w : conversation supprimée pendant la réponse", ErrNotFound)
+			return false, fmt.Errorf("%w : conversation supprimée pendant la réponse", ErrNotFound)
 		}
 		resp, err := a.Model.Complete(ctx, claudeapi.Request{System: system, Tools: tools, Messages: messages(conv.Entries)})
 		if err != nil {
-			return explain(err)
+			return false, explain(err)
 		}
 		if err := db.AddUsage(ctx, day, resp.Usage); err != nil {
 			a.logf("assistant: consommation non comptée : %v", err)
@@ -235,11 +383,11 @@ func (a *Assistant) turn(ctx context.Context, db Store, id string) error {
 			if cat == "" {
 				cat = "non précisée"
 			}
-			return fmt.Errorf("refus de Claude (catégorie : %s) — reformule, ou ouvre une nouvelle conversation", cat)
+			return false, fmt.Errorf("refus de Claude (catégorie : %s) — reformule, ou ouvre une nouvelle conversation", cat)
 		}
 		if resp.Stop == claudeapi.StopMaxTokens && len(resp.Calls) > 0 {
 			// Un appel d'outil coupé n'est ni exécutable ni rejouable.
-			return errors.New("réponse coupée au milieu d'un appel d'outil (limite de jetons de la réponse)")
+			return false, errors.New("réponse coupée au milieu d'un appel d'outil (limite de jetons de la réponse)")
 		}
 		now := a.now()
 		entry := Entry{Role: RoleAssistant, At: now, Text: resp.Text, Raw: resp.Raw, Calls: resp.Calls, Usage: resp.Usage, Model: resp.Model}
@@ -247,22 +395,35 @@ func (a *Assistant) turn(ctx context.Context, db Store, id string) error {
 			if resp.Stop == claudeapi.StopMaxTokens {
 				entry.Text += "\n\n[réponse coupée : limite de jetons atteinte]"
 			}
-			return db.Append(ctx, id, now, entry)
+			return false, db.Append(ctx, id, now, entry)
 		}
+		// Les lectures et écritures internes sont faites tout de suite ;
+		// une action attend la confirmation de l'utilisateur.
 		results := make([]claudeapi.Result, 0, len(resp.Calls))
+		waiting := 0
 		for _, c := range resp.Calls {
-			results = append(results, a.runTool(ctx, c))
+			if t := a.tool(c.Name); t != nil && t.Level == LevelAction {
+				waiting++
+				continue
+			}
+			results = append(results, a.runTool(ctx, c, false))
 		}
-		// L'appel et ses réponses s'écrivent ensemble : le fil ne contient
-		// jamais une demande d'outil sans réponse.
-		if err := db.Append(ctx, id, now, entry, Entry{Role: RoleTools, At: a.now(), Results: results}); err != nil {
-			return err
+		// L'appel et ses réponses s'écrivent ensemble.
+		entries := []Entry{entry}
+		if len(results) > 0 {
+			entries = append(entries, Entry{Role: RoleTools, At: a.now(), Results: results})
+		}
+		if err := db.Append(ctx, id, now, entries...); err != nil {
+			return false, err
+		}
+		if waiting > 0 {
+			return true, nil
 		}
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("réponse interrompue : %w", err)
+			return false, fmt.Errorf("réponse interrompue : %w", err)
 		}
 	}
-	return fmt.Errorf("pas de réponse après %d étapes — la demande est peut-être trop large, précise-la", maxSteps)
+	return false, fmt.Errorf("pas de réponse après %d étapes — la demande est peut-être trop large, précise-la", maxSteps)
 }
 
 // explain rend une erreur du modèle lisible par l'utilisateur.
@@ -282,22 +443,18 @@ func explain(err error) error {
 
 // runTool exécute un appel. Tout échec devient une réponse en erreur : le
 // modèle peut corriger son appel ou le dire à l'utilisateur.
-func (a *Assistant) runTool(ctx context.Context, c claudeapi.Call) (res claudeapi.Result) {
+func (a *Assistant) runTool(ctx context.Context, c claudeapi.Call, confirmed bool) (res claudeapi.Result) {
 	res.CallID = c.ID
 	fail := func(msg string) claudeapi.Result {
 		return claudeapi.Result{CallID: c.ID, Content: msg, IsError: true}
 	}
-	var tool *Tool
-	for i := range a.Tools {
-		if a.Tools[i].Name == c.Name {
-			tool = &a.Tools[i]
-		}
-	}
+	tool := a.tool(c.Name)
 	if tool == nil {
 		return fail("outil inconnu : " + c.Name)
 	}
-	if tool.Level == LevelAction {
-		return fail("action non exécutée : elle demande la confirmation de l'utilisateur, qui n'est pas encore disponible dans Jarvis. Dis-lui ce que tu aurais fait.")
+	if tool.Level == LevelAction && !confirmed {
+		// Garde-fou : turn ne passe jamais ici pour une action.
+		return fail("action non exécutée : elle demande la confirmation de l'utilisateur")
 	}
 	input := c.Input
 	if len(input) == 0 {
@@ -373,9 +530,11 @@ func messages(entries []Entry) []claudeapi.Message {
 			if len(e.Calls) == 0 {
 				continue
 			}
+			// Les réponses peuvent s'être écrites en plusieurs fois (une
+			// action confirmée après coup) : elles partent en un seul tour.
 			var given []claudeapi.Result
-			if i+1 < len(entries) && entries[i+1].Role == RoleTools {
-				given = entries[i+1].Results
+			for i+1 < len(entries) && entries[i+1].Role == RoleTools {
+				given = append(given, entries[i+1].Results...)
 				i++
 			}
 			results := make([]claudeapi.Result, 0, len(e.Calls))
@@ -384,6 +543,7 @@ func messages(entries []Entry) []claudeapi.Message {
 				for _, g := range given {
 					if g.CallID == c.ID {
 						r = g
+						break
 					}
 				}
 				results = append(results, r)

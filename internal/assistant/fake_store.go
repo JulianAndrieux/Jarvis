@@ -126,16 +126,30 @@ func (s *FakeStore) Append(ctx context.Context, id string, at time.Time, entries
 	})
 }
 
-func (s *FakeStore) Start(ctx context.Context, id string, at time.Time) (bool, error) {
-	started := false
+// transition : from → to, si la conversation est dans un des états from.
+func (s *FakeStore) transition(id string, at time.Time, to Status, from ...Status) (bool, error) {
+	done := false
 	err := s.update(id, func(c *Conversation) {
-		if c.Status == StatusRunning {
-			return
+		for _, f := range from {
+			if c.Status == f {
+				done = true
+				c.Status, c.Error, c.UpdatedAt = to, "", at
+			}
 		}
-		started = true
-		c.Status, c.Error, c.UpdatedAt = StatusRunning, "", at
 	})
-	return started, err
+	return done, err
+}
+
+func (s *FakeStore) Start(ctx context.Context, id string, at time.Time) (bool, error) {
+	return s.transition(id, at, StatusRunning, StatusIdle, StatusFailed)
+}
+
+func (s *FakeStore) Resume(ctx context.Context, id string, at time.Time) (bool, error) {
+	return s.transition(id, at, StatusRunning, StatusWaiting)
+}
+
+func (s *FakeStore) Pause(ctx context.Context, id string, at time.Time) error {
+	return s.update(id, func(c *Conversation) { c.Status, c.Error, c.UpdatedAt = StatusWaiting, "", at })
 }
 
 func (s *FakeStore) Finish(ctx context.Context, id string, errMsg string, at time.Time) error {

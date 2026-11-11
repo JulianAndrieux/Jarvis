@@ -60,7 +60,10 @@ type Op struct {
 	Env     tenancy.EnvID     `bson:"env_id"`
 	User    tenancy.UserID    `bson:"user_id"`
 	Session tenancy.SessionID `bson:"session_id"`
-	At      time.Time         `bson:"at"`
+	// Via : par quoi la modification est passée ("" : le user lui-même ;
+	// "assistant" : l'assistant, en son nom) — tenancy.Scope.Via.
+	Via string    `bson:"via,omitempty"`
+	At  time.Time `bson:"at"`
 
 	Kind   Kind   `bson:"kind"`
 	Target string `bson:"target"`

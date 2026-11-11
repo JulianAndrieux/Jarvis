@@ -239,6 +239,11 @@ templ Layout(title string, active string) {
 				.tool-step.tool-error summary { color: var(--danger); }
 				.tool-io { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16rem; overflow: auto; font-size: .78rem; background: var(--surface-2); border-radius: 8px; padding: .5rem .65rem; margin: .35rem 0 0; }
 				.thread-error { margin: 0; }
+				.confirm-card { align-self: stretch; max-width: 46rem; border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 14px; padding: .9rem 1rem; }
+				.confirm-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); }
+				.confirm-summary { font-weight: 600; margin: .3rem 0 .4rem; overflow-wrap: anywhere; }
+				.confirm-actions { display: flex; gap: .6rem; margin-top: .7rem; }
+				.confirm-actions button { min-width: 7rem; min-height: 2.6rem; }
 				.thinking { color: var(--muted); }
 				.dots i { display: inline-block; width: .38rem; height: .38rem; margin-right: .15rem; border-radius: 50%; background: var(--muted); animation: jarvis-dot 1.2s infinite ease-in-out; }
 				.dots i:nth-child(2) { animation-delay: .2s; }
