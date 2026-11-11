@@ -105,7 +105,9 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
      Ce qui part : ce que l'utilisateur écrit, et ce que rend un outil
      appelé (une note, un email, le texte d'un document) — jamais un envoi
      en masse, jamais un identifiant ni un fichier brut. `--assistant-
-     sources` ferme une source entière à Claude. **Sans clé d'API
+     sources` ferme une source entière à Claude, ou ne la lui ouvre qu'en
+     résumé (`emails=summary`, jalon 59 : le modèle local lit, Claude ne
+     reçoit que sa réponse). **Sans clé d'API
      (`~/.jarvis/assistant.json`, 0600, ou `ANTHROPIC_API_KEY`), rien
      n'est construit et rien ne part** ; `--assistant=false` coupe tout.
      Élargit l'exception 5, dont la phrase « documents, emails, notes ne
@@ -3195,6 +3197,44 @@ décisions : `docs/plan-multi-environnement.md`.
     et le contrat Mongo (`Pause`/`Resume` compris) sur Atlas. Pas encore de
     notification quand Jarvis attend une réponse : il faut ouvrir la
     conversation (jalon 61).
+
+- **Jalon 59 — le modèle local au service de l'assistant : fait, testé
+  sans modèle, à valider sur le Mac.** « Le modèle local pour les tâches
+  simples, Claude en orchestrateur » — et la réponse à la question posée
+  au jalon 57 : que faire des sources sensibles.
+  - **Une source peut n'être ouverte qu'en résumé** :
+    `--assistant-sources notes,emails=summary,documents=summary`
+    (`assistant.ParsePolicies` ; absente = fermée, `raw` par défaut ; une
+    faute de frappe est une erreur). `ApplyPolicies` : pour une source en
+    résumé, la lecture d'un contenu (`read_note`, `read_document`,
+    `read_email`) demande une **question** et rend la réponse du modèle
+    local à la place du texte ; les listes n'y citent plus le texte.
+    **Une panne du modèle local ne rabat jamais sur le texte brut**
+    (testé), et une politique « résumé » sans modèle local est refusée au
+    démarrage, pas à l'usage.
+  - **Limite dite** : un résumé parle de ce qu'il résume. « En résumé »
+    veut dire que Claude ne voit que ce que le modèle local a écrit en
+    réponse à sa question — pas que rien de la source ne lui parvient. Et
+    sous cette politique, les résumés déjà produits par le modèle local
+    (tri des emails) restent visibles dans les listes.
+  - **`digest_locally`** : Claude confie au modèle local la lecture d'un
+    lot (15 éléments au plus, la même question pour chacun) et ne reçoit
+    que les réponses — aucun jeton d'API pour les textes. Proposé dès que
+    le modèle local est branché et qu'un outil de lecture est ouvert.
+  - `assistant.LLMDigester` : le LLM des documents, réponse contrainte par
+    un schéma (`answer`, `relevant`), **dans la file des modèles**
+    (équitable entre environnements) ; texte lu par morceaux de 6000
+    caractères, 8 au plus (au-delà : dit) ; seuls les morceaux qui
+    répondent sont gardés. Agent « Lecture locale pour l'assistant » dans
+    l'onglet Agents (consigne modifiable ; le texte y est une donnée,
+    jamais une instruction).
+  - Outils : `Tool.Content` (liste ou contenu entier) et `Tool.Full` (le
+    contenu sans tranche) — c'est ce qui dit quoi faire d'un outil sous
+    une politique, au lieu d'une liste de noms. Flag `--assistant-local`
+    (vrai). La page Assistant dit quelles sources sont « en résumé ».
+  - **Non validé ici** : la qualité des réponses du vrai Qwen3-8B, et sa
+    durée (~15 s par élément attendus d'après le tri des emails : un lot
+    de 15 approche 4 min, dans le délai de 10 min d'un tour).
 
 **Reste à valider en conditions réelles** (impossible depuis
 l'environnement de développement de ce chantier) : les contrats Mongo

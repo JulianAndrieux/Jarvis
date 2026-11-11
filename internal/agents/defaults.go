@@ -22,6 +22,8 @@ const (
 	Development    = "development"
 	Review         = "review"
 	Assistant      = "assistant"
+	// AssistantDigest : le modèle local quand il lit pour l'assistant.
+	AssistantDigest = "assistant_digest"
 )
 
 // Models : modèles en service, lus dans les options de jarvisapp.
@@ -106,6 +108,13 @@ func Defaults(m Models) []Definition {
 			Tools:         m.AssistantTools,
 			DefaultPrompt: assistant.DefaultInstructions,
 			Appended:      "La date du jour et les faits retenus des conversations précédentes, puis la conversation.",
+		},
+		{
+			ID: AssistantDigest, Name: "Lecture locale pour l'assistant", Group: "Assistant",
+			Role:          "Le modèle local lit un contenu à la place de Claude et répond à sa question : pour un lot d'éléments (aucun jeton d'API), ou pour une source ouverte seulement en résumé (--assistant-sources emails=summary). Claude ne reçoit que cette réponse, jamais le texte.",
+			Model:         m.Documents,
+			DefaultPrompt: assistant.DefaultDigestPrompt,
+			Appended:      "La question de l'assistant, puis le texte (6000 caractères par appel) et le schéma JSON de la réponse.",
 		},
 	}
 }

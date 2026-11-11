@@ -270,11 +270,11 @@ func TestLoadAssistantKey(t *testing.T) {
 }
 
 func TestAssistantTools_SourcesOpenAndClose(t *testing.T) {
-	all, err := assistantTools(strings.Join(assistant.AllSources, ","), nil, nil, nil, nil, nil)
+	all, err := assistantTools(strings.Join(assistant.AllSources, ","), toolDeps{})
 	if err != nil || len(all) != 19 {
 		t.Fatalf("toutes les sources = %d outils, %v", len(all), err)
 	}
-	some, err := assistantTools("notes,memory", nil, nil, nil, nil, nil)
+	some, err := assistantTools("notes,memory", toolDeps{})
 	if err != nil || len(some) != 6 {
 		t.Fatalf("notes+mémoire = %d outils, %v", len(some), err)
 	}
@@ -283,10 +283,31 @@ func TestAssistantTools_SourcesOpenAndClose(t *testing.T) {
 			t.Errorf("outil %s d'une source fermée (%s)", tool.Name, tool.Source)
 		}
 	}
-	if _, err := assistantTools("notes,agenda", nil, nil, nil, nil, nil); err == nil {
+	if _, err := assistantTools("notes,agenda", toolDeps{}); err == nil {
 		t.Error("source inconnue acceptée")
 	}
-	if got := sourceLabels("notes,tasks,emails,memory"); strings.Join(got, ", ") != "notes, tâches, emails" {
+	// Jalon 59 : avec le modèle local, la lecture par lot s'ajoute ; une
+	// source en résumé sans lui est refusée au démarrage.
+	local := &assistant.LLMDigester{}
+	withLocal, err := assistantTools("notes,emails=summary", toolDeps{Local: local})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range withLocal {
+		names[tool.Name] = true
+	}
+	if !names["digest_locally"] || !names["read_email"] || names["search_documents"] {
+		t.Errorf("outils avec le modèle local = %v", names)
+	}
+	if _, err := assistantTools("emails=summary", toolDeps{}); err == nil {
+		t.Error("résumé sans modèle local accepté")
+	}
+	// Sans rien à lire, pas de lecture par lot.
+	if only, _ := assistantTools("memory", toolDeps{Local: local}); len(only) != 2 {
+		t.Errorf("mémoire seule = %d outils", len(only))
+	}
+	if got := sourceLabels("notes,tasks,emails=summary,memory"); strings.Join(got, ", ") != "notes, tâches, emails (en résumé)" {
 		t.Errorf("sourceLabels = %v", got)
 	}
 }

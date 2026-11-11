@@ -122,7 +122,8 @@ func main() {
 	assistantConfig := flag.String("assistant-config", defaultAssistantConfig(), "Clé d'API Anthropic de l'assistant : fichier local 0600 {\"api_key\": …, \"model\": …} ; absent, ANTHROPIC_API_KEY est lue ; ni l'un ni l'autre : assistant désactivé")
 	assistantModel := flag.String("assistant-model", claudeapi.DefaultModel, "Modèle Claude de l'assistant")
 	assistantEffort := flag.String("assistant-effort", "medium", "Effort de réflexion de l'assistant : low, medium, high, xhigh, max")
-	assistantSources := flag.String("assistant-sources", strings.Join(assistant.AllSources, ","), "Sources ouvertes à l'assistant, séparées par des virgules (notes, tasks, documents, emails, memory) : une source absente n'est jamais lue par Claude")
+	assistantSources := flag.String("assistant-sources", strings.Join(assistant.AllSources, ","), "Sources ouvertes à l'assistant, séparées par des virgules (notes, tasks, documents, emails, memory, tickets) : une source absente n'est jamais lue par Claude ; « emails=summary » : son contenu est lu par le modèle local, Claude n'en reçoit que la réponse à sa question")
+	assistantLocal := flag.Bool("assistant-local", true, "L'assistant peut confier des lectures au modèle local (jalon 59) : lecture par lot, et sources en résumé ; false = jamais")
 	assistantDailyTokens := flag.Int("assistant-daily-tokens", 2_000_000, "Plafond quotidien de jetons de l'assistant, par environnement (0 = aucun)")
 	assistantPrefix := flag.String("assistant-prefix", "assistant_", "Préfixe des collections MongoDB de l'assistant (conversations, mémoire, consommation)")
 	mailConfig := flag.String("mail-config", defaultMailConfig(), "Configuration de la boîte mail (serveur, adresse, mot de passe d'application — fichier local 0600, jamais dans Atlas, rempli depuis l'onglet Emails) ; vide = pas de relève ni de tri")
@@ -171,7 +172,7 @@ func main() {
 	agentRegistry, err := agents.NewRegistry(agentsCtx, agentStore, agents.Defaults(agents.Models{
 		Documents: strings.TrimSpace(*llmModel + " " + *llmVersion),
 		Tickets:   *agentModel,
-		Assistant: *assistantModel, AssistantTools: assistantToolNames(*assistantSources),
+		Assistant: *assistantModel, AssistantTools: assistantToolNames(*assistantSources, *assistantLocal),
 	}))
 	cancelAgents()
 	if err != nil {
@@ -599,7 +600,23 @@ func main() {
 			DefaultScope: tenancy.LocalScope(),
 			Logf:         log.Printf,
 		}
-		tools, err := assistantTools(*assistantSources, srv.Notes, jobs, mailService, ticketManager, a)
+		deps := toolDeps{Notes: srv.Notes, Docs: jobs, Mail: mailService, Tickets: ticketManager, Memory: a}
+		if *assistantLocal {
+			// Le modèle local lit dans la file des modèles, à son tour
+			// parmi les environnements (cf. jalon 50).
+			deps.Local = &assistant.LLMDigester{
+				LLM:    llmClient,
+				Prompt: agentRegistry.PromptFunc(agents.AssistantDigest),
+				Acquire: func(ctx context.Context) (func(), error) {
+					env := tenancy.Local
+					if sc, ok := tenancy.FromContext(ctx); ok {
+						env = sc.Env
+					}
+					return modelGate.AcquireFair(ctx, gate.Documents, env)
+				},
+			}
+		}
+		tools, err := assistantTools(*assistantSources, deps)
 		if err != nil {
 			log.Fatalf("jarvisapp: --assistant-sources : %v", err)
 		}

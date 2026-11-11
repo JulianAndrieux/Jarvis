@@ -386,29 +386,69 @@ func defaultAssistantConfig() string {
 	return filepath.Join(home, ".jarvis", "assistant.json")
 }
 
-// assistantTools : les outils des sources ouvertes (--assistant-sources).
-// Les services ne sont touchés qu'à l'appel d'un outil : la liste se
-// construit aussi sans eux, pour décrire l'agent.
-func assistantTools(sources string, notesSvc *notes.Service, docs assistant.Documents, box assistant.Mailbox, tix assistant.Tickets, a *assistant.Assistant) ([]assistant.Tool, error) {
+// toolDeps : les services dont les outils de l'assistant se servent. Ils
+// ne sont touchés qu'à l'appel d'un outil : la liste se construit aussi
+// sans eux, pour décrire l'agent.
+type toolDeps struct {
+	Notes   *notes.Service
+	Docs    assistant.Documents
+	Mail    assistant.Mailbox
+	Tickets assistant.Tickets
+	Memory  *assistant.Assistant
+	// Local : le modèle local (nil : pas de lecture locale, donc aucune
+	// source en résumé).
+	Local assistant.Digester
+}
+
+// assistantTools : les outils des sources ouvertes (--assistant-sources,
+// « emails=summary » pour une source lue par le modèle local seulement),
+// plus la lecture par lot quand le modèle local est branché.
+func assistantTools(sources string, d toolDeps) ([]assistant.Tool, error) {
+	policies, err := assistant.ParsePolicies(sources)
+	if err != nil {
+		return nil, err
+	}
 	var all []assistant.Tool
-	all = append(all, assistant.NotesTools(notesSvc)...)
-	all = append(all, assistant.TaskTools(notesSvc)...)
-	all = append(all, assistant.DocumentTools(docs)...)
-	all = append(all, assistant.MailTools(box)...)
-	all = append(all, assistant.MemoryTools(a)...)
-	all = append(all, assistant.TicketTools(tix)...)
-	return assistant.SelectSources(all, sources)
+	all = append(all, assistant.NotesTools(d.Notes)...)
+	all = append(all, assistant.TaskTools(d.Notes)...)
+	all = append(all, assistant.DocumentTools(d.Docs)...)
+	all = append(all, assistant.MailTools(d.Mail)...)
+	all = append(all, assistant.MemoryTools(d.Memory)...)
+	all = append(all, assistant.TicketTools(d.Tickets)...)
+	// Un nil typé dans une interface ne vaut pas nil : on ne le passe pas.
+	var local assistant.Digester
+	if d.Local != nil {
+		local = d.Local
+	}
+	tools, err := assistant.ApplyPolicies(all, policies, local)
+	if err != nil {
+		return nil, err
+	}
+	if digest := assistant.DigestTool(tools, local); digest != nil {
+		tools = append(tools, *digest)
+	}
+	return tools, nil
 }
 
 // sourceLabels : les sources ouvertes, dites à l'utilisateur (la mémoire
 // est celle de l'assistant, pas une donnée de l'utilisateur).
 func sourceLabels(sources string) []string {
 	labels := map[string]string{assistant.SourceNotes: "notes", assistant.SourceTasks: "tâches", assistant.SourceDocuments: "documents", assistant.SourceEmails: "emails"}
+	policies, err := assistant.ParsePolicies(sources)
+	if err != nil {
+		return nil
+	}
 	var out []string
-	for _, s := range strings.Split(sources, ",") {
-		if l, ok := labels[strings.TrimSpace(s)]; ok {
-			out = append(out, l)
+	for _, name := range assistant.AllSources {
+		policy, open := policies[name]
+		label, ok := labels[name]
+		if !open || !ok {
+			continue
 		}
+		if policy == assistant.PolicySummary {
+			label += " (en résumé)"
+		}
+		out = append(out, label)
 	}
 	return out
 }
@@ -416,8 +456,12 @@ func sourceLabels(sources string) []string {
 // assistantToolNames : les noms des outils des sources ouvertes, pour la
 // fiche de l'agent (une liste de sources invalide est signalée plus tard,
 // au câblage).
-func assistantToolNames(sources string) []string {
-	tools, err := assistantTools(sources, nil, nil, nil, nil, nil)
+func assistantToolNames(sources string, local bool) []string {
+	d := toolDeps{}
+	if local {
+		d.Local = &assistant.LLMDigester{}
+	}
+	tools, err := assistantTools(sources, d)
 	if err != nil {
 		return nil
 	}

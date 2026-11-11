@@ -45,10 +45,27 @@ type Tool struct {
 	// sortie est du texte lu par le modèle ; une erreur lui est rapportée
 	// (il peut corriger son appel), elle ne fait pas échouer le tour.
 	Run func(ctx context.Context, input json.RawMessage) (string, error)
+	// Content : ce que la sortie contient des données de la source —
+	// ContentList (une liste, avec des extraits) ou ContentFull (un contenu
+	// entier). Vide : rien du contenu (une écriture, un accusé). C'est ce
+	// qui dit quoi faire de l'outil quand sa source n'est ouverte qu'en
+	// résumé (ApplyPolicies).
+	Content ContentKind
+	// Full (ContentFull) : le contenu entier, sans tranche — ce que le
+	// modèle local lit à la place de Claude.
+	Full func(ctx context.Context, input json.RawMessage) (string, error)
 	// Confirm (LevelAction) : ce que l'action va faire, en une phrase lue
 	// par l'utilisateur avant de confirmer. nil : le nom de l'outil.
 	Confirm func(ctx context.Context, input json.RawMessage) string
 }
+
+// ContentKind : voir Tool.Content.
+type ContentKind string
+
+const (
+	ContentList ContentKind = "list"
+	ContentFull ContentKind = "full"
+)
 
 // PendingAction : une action que l'assistant veut faire et qui attend la
 // réponse de l'utilisateur.

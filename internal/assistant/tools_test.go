@@ -270,20 +270,6 @@ func TestMemoryTools(t *testing.T) {
 	}
 }
 
-func TestSelectSources(t *testing.T) {
-	tools := []Tool{{Name: "a", Source: SourceNotes}, {Name: "b", Source: SourceEmails}, {Name: "c", Source: SourceMemory}}
-	got, err := SelectSources(tools, "notes, memory")
-	if err != nil || len(got) != 2 || got[0].Name != "a" || got[1].Name != "c" {
-		t.Errorf("SelectSources = %+v, %v", got, err)
-	}
-	if _, err := SelectSources(tools, "notes,courriel"); err == nil || !strings.Contains(err.Error(), "courriel") {
-		t.Errorf("source inconnue = %v", err)
-	}
-	if got, _ := SelectSources(tools, ""); len(got) != 0 {
-		t.Errorf("aucune source = %+v", got)
-	}
-}
-
 // Deux outils du même nom : l'API refuserait la requête entière.
 func TestTools_NamesAreUniqueAndWellFormed(t *testing.T) {
 	a, _ := newAssistant(&claudeapi.FakeClient{})

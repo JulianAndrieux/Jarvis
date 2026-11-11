@@ -85,8 +85,10 @@ Les numéros 55 et 56 restent réservés à Polymarket
   redémarrage) ; les écritures de l'assistant sont signalées « via
   l'assistant » dans l'onglet Activité ; neuf outils de plus, dont deux
   actions à confirmer (`delete_task`, `create_ticket`).
-- **59 — Délégation au modèle local** : outils `summarize_locally`,
-  `extract`, `classify` ; politique par source (brut / résumé / jamais).
+- **59 — Délégation au modèle local** *(fait)* : `digest_locally` (lecture
+  d'un lot par le modèle local, sans jeton d'API) et politique par source —
+  `--assistant-sources emails=summary` : Claude ne reçoit que la réponse du
+  modèle local à sa question, jamais le texte.
 - **60 — Toujours allumé, à distance** : services `launchd`/`systemd` à la
   place du lanceur du Dock, Tailscale (`tailscale serve` donne le HTTPS que
   Google et les notifications exigent), authentification activée, PWA
@@ -103,8 +105,10 @@ Les numéros 55 et 56 restent réservés à Polymarket
 
 1. **Hôte** : la machine dédiée (i9, 64 Go) à la maison, comme supposé ici ?
    Le MacBook Air se met en veille : il ne peut pas être le 24 h/24.
-2. **Sources sensibles** : faut-il fermer certaines sources à Claude dès
-   maintenant (pièces d'identité, par exemple) en attendant la politique
-   par source du jalon 59 ?
+2. **Sources sensibles** : la politique par source existe (jalon 59).
+   Lesquelles passer en résumé — `emails=summary`, `documents=summary` ?
+   Par défaut tout est ouvert tel quel. La politique est par source, pas
+   par type de document : fermer les seules pièces d'identité demanderait
+   un réglage plus fin.
 3. **Clé d'API** : compte API Anthropic à créer (distinct de l'abonnement
    utilisé par le CLI des tickets).
