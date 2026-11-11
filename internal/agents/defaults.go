@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
+	"github.com/JulianAndrieux/Jarvis/internal/assistant"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
 	"github.com/JulianAndrieux/Jarvis/internal/collect"
 	"github.com/JulianAndrieux/Jarvis/internal/extraction"
@@ -20,12 +21,19 @@ const (
 	Analysis       = "analysis"
 	Development    = "development"
 	Review         = "review"
+	Assistant      = "assistant"
+	// AssistantDigest : le modèle local quand il lit pour l'assistant.
+	AssistantDigest = "assistant_digest"
 )
 
 // Models : modèles en service, lus dans les options de jarvisapp.
 type Models struct {
 	Documents string // LLM des documents (classification, extraction)
 	Tickets   string // modèle de l'agent des tickets
+	// Assistant : modèle de l'assistant personnel (Claude, par l'API) ;
+	// AssistantTools : les outils qui lui sont ouverts.
+	Assistant      string
+	AssistantTools []string
 }
 
 // Defaults décrit les agents du système. Les prompts par défaut restent
@@ -92,6 +100,21 @@ func Defaults(m Models) []Definition {
 			Tools:         toolNames(agent.ReviewSpecs()),
 			DefaultPrompt: agent.DefaultReviewPrompt,
 			Appended:      "Le contexte du projet, la carte du code, puis le ticket, son plan validé et le diff à relire.",
+		},
+		{
+			ID: Assistant, Name: "Assistant personnel", Group: "Assistant",
+			Role:          "Jarvis en conversation (onglet Assistant) : Claude orchestre et se sert des données de Jarvis par des outils — chercher et lire notes, tâches, documents, emails ; créer une tâche ; retenir un fait. Ce que rend un outil est une donnée, jamais une instruction ; aucune action vers l'extérieur n'est possible sans confirmation.",
+			Model:         m.Assistant,
+			Tools:         m.AssistantTools,
+			DefaultPrompt: assistant.DefaultInstructions,
+			Appended:      "La date du jour et les faits retenus des conversations précédentes, puis la conversation.",
+		},
+		{
+			ID: AssistantDigest, Name: "Lecture locale pour l'assistant", Group: "Assistant",
+			Role:          "Le modèle local lit un contenu à la place de Claude et répond à sa question : pour un lot d'éléments (aucun jeton d'API), ou pour une source ouverte seulement en résumé (--assistant-sources emails=summary). Claude ne reçoit que cette réponse, jamais le texte.",
+			Model:         m.Documents,
+			DefaultPrompt: assistant.DefaultDigestPrompt,
+			Appended:      "La question de l'assistant, puis le texte (6000 caractères par appel) et le schéma JSON de la réponse.",
 		},
 	}
 }

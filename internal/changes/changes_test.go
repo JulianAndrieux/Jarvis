@@ -152,3 +152,21 @@ func TestJSON(t *testing.T) {
 		t.Errorf("JSON(func) = %q, veut vide", got)
 	}
 }
+
+// Une modification faite par l'assistant au nom du user reste la sienne
+// (même user, même session), mais elle dit par quoi elle est passée.
+func TestRecorder_GardeLIntermediaire(t *testing.T) {
+	j := NewFakeJournal()
+	r := &Recorder{Journal: j}
+	sc := tenancy.Scope{Env: "env-1", User: "u-7", Session: "s-9", Via: tenancy.ViaAssistant}
+	r.Record(tenancy.WithScope(context.Background(), sc), Op{Kind: KindTask, Target: "t1", Action: Create})
+	r.Record(scoped("env-1", "u-7", "s-9"), Op{Kind: KindTask, Target: "t2", Action: Create})
+	ops, _ := j.List(context.Background(), Query{Env: "env-1"})
+	via := map[string]string{}
+	for _, o := range ops {
+		via[o.Target] = o.Via
+	}
+	if via["t1"] != "assistant" || via["t2"] != "" {
+		t.Errorf("via = %v", via)
+	}
+}

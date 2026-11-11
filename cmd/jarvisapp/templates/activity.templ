@@ -12,6 +12,8 @@ type ActivityEntry struct {
 	// Href : vers l'entité, si elle existe encore ("" sinon).
 	Href string
 	Mine bool
+	// ViaAssistant : faite par l'assistant, au nom de ce user.
+	ViaAssistant bool
 }
 
 // ActivityView : l'écran d'activité.
@@ -54,6 +56,9 @@ templ ActivityPage(v ActivityView) {
 									<strong>moi</strong>
 								} else {
 									{ e.Who }
+								}
+								if e.ViaAssistant {
+									<span class="muted">via l'assistant</span>
 								}
 							</td>
 							<td class="muted nowrap">{ e.Kind }</td>

@@ -95,6 +95,24 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
      cibles sont stockés dans Atlas, **globaux à l'instance** (données
      publiques, comme tickets et agents). `--collect=false` coupe la
      collecte, `--gdelt-url ""` GDELT seul.
+  9. **Assistant personnel (`internal/assistant`, `internal/claudeapi`,
+     jalon 57) : la conversation et le résultat des outils que Claude
+     demande partent à l'API d'Anthropic.** Demandé par l'utilisateur
+     (« Claude en orchestrateur, le modèle local pour les tâches
+     simples ») ; **le périmètre exact a été choisi sous sa délégation
+     (« je te donne toute la liberté ») et reste à confirmer** —
+     `docs/plan-assistant.md` liste chaque choix et comment le défaire.
+     Ce qui part : ce que l'utilisateur écrit, et ce que rend un outil
+     appelé (une note, un email, le texte d'un document) — jamais un envoi
+     en masse, jamais un identifiant ni un fichier brut. `--assistant-
+     sources` ferme une source entière à Claude, ou ne la lui ouvre qu'en
+     résumé (`emails=summary`, jalon 59 : le modèle local lit, Claude ne
+     reçoit que sa réponse). **Sans clé d'API
+     (`~/.jarvis/assistant.json`, 0600, ou `ANTHROPIC_API_KEY`), rien
+     n'est construit et rien ne part** ; `--assistant=false` coupe tout.
+     Élargit l'exception 5, dont la phrase « documents, emails, notes ne
+     lui sont jamais donnés » ne vaut plus que pour les tickets. Toute
+     inférence locale reste locale.
 - **L'inférence locale est une ressource de machine, partagée et
   sérialisée entre environnements** (jalon 50). Les modèles ne servent
   qu'un travail à la fois sur ce matériel et un document de cinq pages
@@ -301,7 +319,7 @@ anciens binaires `cmd/jarvisweb` (upload/suivi) et `cmd/codebrowser`
 (navigateur de code/tests), fusionnés sous une nav commune (Importer ·
 Documents · Tickets · Classes · Modèle · Tests · Architecture — renommée au jalon 22,
 Modèle ajouté au jalon 24, Tickets au jalon 26, Architecture au jalon 29 ; depuis
-le jalon 33, deux espaces : l'application — Importer, Documents, Emails (jalon 39), Notes, Tâches,
+le jalon 33, deux espaces : l'application — Assistant (jalon 57), Importer, Documents, Emails (jalon 39), Notes, Tâches,
 Tickets — et l'Admin sous /admin — Agents, Architecture, Classes, Modèle, Tests). Voir "État des jalons" plus bas pour le détail de la
 fusion, et "Atelier de code" pour le détail du navigateur de code/tests
 lui-même (moteurs inchangés par la fusion).
@@ -340,6 +358,11 @@ en attente de commit, onglet Changements ; vide = écritures directes),
 dans `--watch-dir`). La clé qui chiffre les identifiants de services tiers
 est `~/.jarvis/secret.key` (créée au premier démarrage, 0600) — la perdre
 rend le mot de passe de la boîte mail illisible, il faudra le ressaisir.
+
+Assistant personnel (jalon 57) : créer `~/.jarvis/assistant.json`
+(`{"api_key": "sk-ant-…"}`, `chmod 600`) puis relancer — sans ce fichier
+ni `ANTHROPIC_API_KEY`, l'onglet Assistant explique comment l'activer et
+rien ne part vers Anthropic.
 
 Flags utiles : `--mongo-uri` (**requis**, jalon 12 — les jobs, PDF source
 compris, sont persistés dans MongoDB), `--mongo-db`/`--mongo-collection`
@@ -3056,6 +3079,162 @@ décisions : `docs/plan-multi-environnement.md`.
     marché (agréments bancaires) — attendu, c'est le juge des annonces qui
     trie ; l'étude d'impact du jalon 55 mesurera combien d'annonces
     rattachées font réellement bouger un cours.
+
+- **Jalon 57 — cœur de l'assistant personnel : fait, testé sans clé ni
+  base, à valider avec une vraie clé d'API.** Demandé : « Jarvis doit être
+  mon assistant personnel […] modèle local pour les tâches simples, Claude
+  en orchestrateur […] 24 h/24, sur mon iPhone […] lui parler comme à un
+  humain », puis « écris le plan et commence, je te donne toute la
+  liberté ». Plan, jalons 57-63 et décisions prises sous cette délégation :
+  `docs/plan-assistant.md` (les numéros 55-56 restent à Polymarket).
+  - **`internal/claudeapi`** (nouveau) : port `Client.Complete` (consigne,
+    outils, conversation → texte, appels d'outils, jetons), `FakeClient`,
+    `SDKClient`. **Première dépendance au SDK officiel
+    (`anthropic-sdk-go/v2`)**, recommandation d'Anthropic, derrière le port
+    (remplaçable en un jour ; il tire OpenTelemetry en dépendance
+    indirecte). Modèle `claude-opus-5-5`, effort `medium`, cache du
+    préfixe, **repli côté serveur sur un refus** (bêta
+    `server-side-fallback`). **Le message de Claude est rejoué octet pour
+    octet** (`Response.Raw` → `Message.Assistant`), blocs de réflexion et
+    signature compris : l'API l'exige — testé contre un faux `/v1/messages`.
+    Erreurs rangées (clé refusée, débit, indisponible).
+  - **`internal/assistant`** (nouveau) : `Conversation` (fil **en ajout
+    seul**, privé à son user dans son environnement), `Fact` (mémoire),
+    consommation par jour. `FakeStore` et `MongoStore` (`assistant_
+    conversations`, `_facts`, `_usage`) sous **le même contrat**, contrat
+    d'isolation (autre user **ou** autre environnement : introuvable) et
+    norme « aucune méthode sans portée ». `Store.Start` est une écriture
+    conditionnelle : deux tours simultanés ne partent jamais tous les deux
+    (dix départs concurrents, un gagnant).
+    **La boucle** (`Assistant.Ask`) : le tour tourne en arrière-plan avec
+    la portée du user (il continue si le téléphone se déconnecte) ; appel
+    et réponses d'outils s'écrivent ensemble ; un outil inconnu, en erreur
+    ou qui panique devient une réponse en erreur lue par le modèle ; un
+    appel resté sans réponse (processus tué) est complété au rejeu ;
+    16 étapes, 10 min, sortie d'outil bornée (et dite coupée) ; **plafond
+    quotidien de jetons** vérifié avant chaque appel ; reprise des tours
+    orphelins au démarrage.
+  - **Niveaux d'outils** : lecture (libre), écriture interne (exécutée),
+    **action extérieure — jamais exécutée sans confirmation, et la
+    confirmation n'existe pas encore** (jalon 58) : la boucle la refuse,
+    et une norme interdit d'en déclarer une d'ici là.
+  - **Dix outils** : `search_notes`, `read_note`, `list_tasks`,
+    `add_task`, `search_documents`, `read_document`, `search_emails`,
+    `read_email`, `remember`, `forget`. Un texte long est rendu par
+    tranches de 8000 caractères avec l'offset de la suite, jamais coupé en
+    silence ; les valeurs extraites par le modèle local portent leur
+    confiance. `notes.Service.CreateTask` (champs explicites : le titre
+    n'est pas relu comme une saisie rapide). Écritures faites avec la
+    portée du user, donc journalisées et mises en attente comme les
+    siennes (une identité propre à l'assistant : jalon 58).
+  - **Ce que lit un outil est une donnée, jamais une instruction** (dit
+    dans la consigne). Tant qu'aucun outil n'agit vers l'extérieur, un
+    email piégé ne peut rien faire sortir.
+  - **UI** : onglet **Assistant** — fil en bulles, outils appelés
+    dépliables (entrée, sortie, erreur), réponse en Markdown **échappé**,
+    le fragment se sonde pendant le tour et plus du tout au repos (une
+    saisie n'est jamais effacée), conversations, mémoire (oublier),
+    modèle et consommation du jour. Désactivé : la page dit pourquoi et
+    comment l'activer. Agent « Assistant personnel » dans l'onglet Agents
+    (consigne modifiable).
+  - **Navigation sur une ligne qui défile** : avec onze onglets elle
+    passait à la ligne et recouvrait la page — sur un téléphone, tout
+    l'écran (le constat du ticket « filtre sur les documents », corrigé
+    ici parce qu'il rendait l'assistant inutilisable sur iPhone).
+  - Flags : `--assistant` (vrai), `--assistant-config`,
+    `--assistant-model`, `--assistant-effort`, `--assistant-sources`,
+    `--assistant-daily-tokens` (2 000 000), `--assistant-prefix`. L'essai
+    à blanc et la relecture visuelle n'appellent jamais l'API
+    (`--assistant=false`, test de garde).
+  - Validé : tests unitaires et HTTP (`-race`), captures de la page en
+    largeur bureau et iPhone sur une instance en mémoire (deux défauts vus
+    ainsi et corrigés : navigation, marges). **Non validé ici** (ni clé ni
+    base dans l'environnement de développement) : la vraie API — `go test
+    -tags=anthropic ./internal/claudeapi/` (payant, quelques centimes) —
+    et le contrat `MongoStore` sur Atlas (`-tags=integration`). Écrits en
+    même temps que leur test, pas vus rouges d'abord : `FakeStore`,
+    `loadAssistantKey`, `assistantTools`.
+
+- **Jalon 58 — confirmations, identité de l'assistant, outils d'écriture :
+  fait, testé sans clé ni base, à valider avec le jalon 57.** Suite du plan
+  (`docs/plan-assistant.md`), lancée sur « tu peux coder ».
+  - **Confirmation d'une action** : un outil `LevelAction` (agit hors de
+    Jarvis, ou ne se défait pas) n'est plus refusé, il **met le tour en
+    pause**. Les lectures demandées avec lui sont faites ; la conversation
+    passe à `waiting` et le fil affiche la question — ce que l'action va
+    faire, dit par l'outil (`Tool.Confirm`), Confirmer / Refuser.
+    `Assistant.Decide` : confirmée, l'action s'exécute ; refusée,
+    l'assistant l'apprend et ne la retente pas ; puis le tour reprend.
+    Plusieurs actions demandées ensemble ont chacune leur réponse, et le
+    modèle n'est rappelé qu'une fois toutes décidées (leurs résultats
+    partent en un seul tour, comme l'API l'exige). **Aucun processus ne
+    porte l'attente** : elle survit à un redémarrage (la reprise au
+    démarrage n'y touche pas). `Store.Resume` est une écriture
+    conditionnelle : un double clic n'exécute jamais deux fois (dix
+    réponses simultanées, une gagnante). Écrire autre chose pendant une
+    attente est refusé — on répond d'abord à la question.
+  - **Identité** : `tenancy.Scope.Via` (`ViaAssistant`) — ce que
+    l'assistant écrit reste écrit **au nom du user** (mêmes droits, même
+    cloisonnement, même changeset : « Jarvis propose, tu commites »), mais
+    le journal garde par quoi c'est passé (`changes.Op.Via`, Recorder et
+    Stager) et l'onglet Activité affiche « via l'assistant ».
+  - **Neuf outils de plus (19)** : `create_note`, `append_to_note`,
+    `update_task` (seuls les champs donnés changent), `complete_task` (ne
+    rouvre jamais une tâche faite), `set_document_tags`, `archive_email`,
+    `mark_email_paid` (rangements dans Jarvis : la vraie boîte n'est pas
+    touchée, rien n'est payé) ; et deux **actions à confirmer** :
+    `delete_task` (la confirmation nomme la tâche) et `create_ticket` —
+    un ticket fait écrire du code et, avec le pilote automatique, le
+    déploie : confirmation obligatoire, propriétaire de l'instance
+    seulement, source `tickets` (fermable par `--assistant-sources`).
+    Norme : une action déclare toujours sa phrase de confirmation, et elle
+    seule.
+  - **UI** : carte de confirmation dans le fil (échappée : la phrase vient
+    de données), « à confirmer » dans la liste des conversations ; pas de
+    saisie libre ni de sonde pendant l'attente.
+  - Validé : tests unitaires et HTTP (`-race`), capture de la carte en
+    largeur iPhone. **Non validé ici**, comme au jalon 57 : la vraie API
+    et le contrat Mongo (`Pause`/`Resume` compris) sur Atlas. Pas encore de
+    notification quand Jarvis attend une réponse : il faut ouvrir la
+    conversation (jalon 61).
+
+- **Jalon 59 — le modèle local au service de l'assistant : fait, testé
+  sans modèle, à valider sur le Mac.** « Le modèle local pour les tâches
+  simples, Claude en orchestrateur » — et la réponse à la question posée
+  au jalon 57 : que faire des sources sensibles.
+  - **Une source peut n'être ouverte qu'en résumé** :
+    `--assistant-sources notes,emails=summary,documents=summary`
+    (`assistant.ParsePolicies` ; absente = fermée, `raw` par défaut ; une
+    faute de frappe est une erreur). `ApplyPolicies` : pour une source en
+    résumé, la lecture d'un contenu (`read_note`, `read_document`,
+    `read_email`) demande une **question** et rend la réponse du modèle
+    local à la place du texte ; les listes n'y citent plus le texte.
+    **Une panne du modèle local ne rabat jamais sur le texte brut**
+    (testé), et une politique « résumé » sans modèle local est refusée au
+    démarrage, pas à l'usage.
+  - **Limite dite** : un résumé parle de ce qu'il résume. « En résumé »
+    veut dire que Claude ne voit que ce que le modèle local a écrit en
+    réponse à sa question — pas que rien de la source ne lui parvient. Et
+    sous cette politique, les résumés déjà produits par le modèle local
+    (tri des emails) restent visibles dans les listes.
+  - **`digest_locally`** : Claude confie au modèle local la lecture d'un
+    lot (15 éléments au plus, la même question pour chacun) et ne reçoit
+    que les réponses — aucun jeton d'API pour les textes. Proposé dès que
+    le modèle local est branché et qu'un outil de lecture est ouvert.
+  - `assistant.LLMDigester` : le LLM des documents, réponse contrainte par
+    un schéma (`answer`, `relevant`), **dans la file des modèles**
+    (équitable entre environnements) ; texte lu par morceaux de 6000
+    caractères, 8 au plus (au-delà : dit) ; seuls les morceaux qui
+    répondent sont gardés. Agent « Lecture locale pour l'assistant » dans
+    l'onglet Agents (consigne modifiable ; le texte y est une donnée,
+    jamais une instruction).
+  - Outils : `Tool.Content` (liste ou contenu entier) et `Tool.Full` (le
+    contenu sans tranche) — c'est ce qui dit quoi faire d'un outil sous
+    une politique, au lieu d'une liste de noms. Flag `--assistant-local`
+    (vrai). La page Assistant dit quelles sources sont « en résumé ».
+  - **Non validé ici** : la qualité des réponses du vrai Qwen3-8B, et sa
+    durée (~15 s par élément attendus d'après le tri des emails : un lot
+    de 15 approche 4 min, dans le délai de 10 min d'un tour).
 
 **Reste à valider en conditions réelles** (impossible depuis
 l'environnement de développement de ce chantier) : les contrats Mongo

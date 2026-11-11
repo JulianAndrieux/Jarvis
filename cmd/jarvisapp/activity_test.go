@@ -124,3 +124,24 @@ func TestDescribeOp(t *testing.T) {
 		t.Errorf("valeur vide = %q", got)
 	}
 }
+
+// Jalon 58 : une modification faite par l'assistant est signalée comme
+// telle — elle reste celle du user, mais on voit qu'il ne l'a pas tapée.
+func TestActivityPage_ViaAssistant(t *testing.T) {
+	s, _ := newTestServer(t, &blockingRunner{})
+	j := changes.NewFakeJournal()
+	s.Journal = j
+	at := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	_ = j.Append(context.Background(),
+		changes.Op{ID: "1", Env: tenancy.Local, User: tenancy.LocalUser, Session: tenancy.LocalSession, Via: tenancy.ViaAssistant, At: at,
+			Kind: changes.KindTask, Target: "t1", Label: "Payer le couvreur", Action: changes.Create},
+		changes.Op{ID: "2", Env: tenancy.Local, User: tenancy.LocalUser, Session: tenancy.LocalSession, At: at.Add(time.Minute),
+			Kind: changes.KindTask, Target: "t2", Label: "Tapée à la main", Action: changes.Create},
+	)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, httptest.NewRequest("GET", "http://127.0.0.1:8090/activity?tout=1", nil))
+	body := rec.Body.String()
+	if strings.Count(body, "via l'assistant") != 1 && strings.Count(body, "via l&#39;assistant") != 1 {
+		t.Errorf("une seule des deux lignes doit porter « via l'assistant » :\n%s", body)
+	}
+}

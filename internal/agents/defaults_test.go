@@ -1,8 +1,10 @@
 package agents
 
 import (
-	"github.com/JulianAndrieux/Jarvis/internal/collect"
 	"testing"
+
+	"github.com/JulianAndrieux/Jarvis/internal/assistant"
+	"github.com/JulianAndrieux/Jarvis/internal/collect"
 
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
 )
@@ -10,8 +12,8 @@ import (
 // Les agents du système, chacun avec un prompt par défaut valide (sinon il
 // serait refusé à la première modification) et ses outils.
 func TestDefaults_ValidAgents(t *testing.T) {
-	defs := Defaults(Models{Documents: "qwen3-8b Q5_K_M", Tickets: "qwen3-8b"})
-	ids := []string{Classification, Extraction, MailTriage, MailPayment, MarketKeywords, Analysis, Development, Review}
+	defs := Defaults(Models{Documents: "qwen3-8b Q5_K_M", Tickets: "qwen3-8b", Assistant: "claude-opus-5-5"})
+	ids := []string{Classification, Extraction, MailTriage, MailPayment, MarketKeywords, Analysis, Development, Review, Assistant, AssistantDigest}
 	if len(defs) != len(ids) {
 		t.Fatalf("defs = %d, want %d", len(defs), len(ids))
 	}
@@ -59,4 +61,17 @@ func TestDefaults_IncludesMarketKeywords(t *testing.T) {
 		}
 	}
 	t.Fatal("no market keywords agent")
+}
+
+// L'assistant personnel (jalon 57) : sa consigne se règle comme les autres.
+func TestDefaults_IncludesAssistant(t *testing.T) {
+	for _, d := range Defaults(Models{Assistant: "claude-opus-5-5", AssistantTools: []string{"search_notes", "add_task"}}) {
+		if d.ID == Assistant {
+			if d.DefaultPrompt != assistant.DefaultInstructions || d.Group != "Assistant" || d.Model != "claude-opus-5-5" || len(d.Tools) != 2 {
+				t.Errorf("assistant = %+v", d)
+			}
+			return
+		}
+	}
+	t.Fatal("no assistant agent")
 }

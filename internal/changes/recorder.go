@@ -69,6 +69,7 @@ func (r *Recorder) Record(ctx context.Context, ops ...Op) {
 		}
 		o.ID = id
 		o.Env, o.User, o.Session = scope.Env, scope.User, scope.Session
+		o.Via = scope.Via
 		if o.At.IsZero() {
 			o.At = now
 		}
