@@ -1,0 +1,177 @@
+package templates
+
+import "strings"
+
+templ AssistantPage(v AssistantView) {
+	@Layout("Assistant", "assistant") {
+		<div class="page-wide assistant-layout">
+			<section class="assistant-main">
+				if v.Disabled != "" {
+					<div class="page-title"><h2>Assistant</h2></div>
+					<div class="card">
+						<p><strong>L'assistant n'est pas en service.</strong> { v.Disabled }</p>
+						<p class="muted">
+							Pour l'activer : crée une clé d'API Anthropic, puis écris-la dans
+							<code>~/.jarvis/assistant.json</code> — <code>{ `{"api_key": "sk-ant-…"}` }</code>,
+							droits 0600 — et relance Jarvis. Tant que ce fichier n'existe pas, rien ne
+							part vers Anthropic.
+						</p>
+					</div>
+				} else if v.Thread != nil {
+					<div class="page-title">
+						<h2>{ v.Thread.Title }</h2>
+						<form method="post" action={ templ.SafeURL("/assistant/" + v.Thread.ID + "/delete") } onsubmit="return confirm('Supprimer cette conversation ?')">
+							<button type="submit" class="button-ghost" title="Supprimer la conversation">🗑</button>
+						</form>
+					</div>
+					@AssistantThread(*v.Thread)
+				} else {
+					<div class="page-title"><h2>Assistant</h2></div>
+					<p class="muted">
+						Parle à Jarvis comme à un collaborateur. Il cherche dans tes
+						{ strings.Join(v.Sources, ", ") } avant de répondre, peut créer une tâche ou retenir
+						un fait, et ne fait rien vers l'extérieur.
+					</p>
+					if v.Error != "" {
+						<p class="error">{ v.Error }</p>
+					}
+					<form class="chat-form card" method="post" action="/assistant">
+						<textarea name="text" rows="3" required autofocus placeholder="Qu'ai-je à faire cette semaine ? Retrouve la facture du couvreur…">{ v.Draft }</textarea>
+						<button type="submit" class="button-primary">Envoyer</button>
+					</form>
+				}
+			</section>
+			<aside class="assistant-side">
+				if v.Disabled == "" {
+					<a href="/assistant" class="button button-ghost assistant-new">＋ Nouvelle conversation</a>
+				}
+				if len(v.Conversations) > 0 {
+					<h3>Conversations</h3>
+					<ul class="conversation-list">
+						for _, c := range v.Conversations {
+							<li class={ templ.KV("active", c.Active) }>
+								<a href={ templ.SafeURL("/assistant/" + c.ID) }>
+									<span class="conversation-title">{ c.Title }</span>
+									<span class="muted">
+										{ c.When }
+										if c.Running {
+											· en cours…
+										}
+										if c.Failed {
+											· ⚠
+										}
+									</span>
+								</a>
+							</li>
+						}
+					</ul>
+				}
+				if len(v.Facts) > 0 {
+					<h3>Ce que Jarvis a retenu</h3>
+					<ul class="fact-list">
+						for _, f := range v.Facts {
+							<li>
+								<span>{ f.Text }</span>
+								<form method="post" action={ templ.SafeURL("/assistant/memory/" + f.ID + "/forget") }>
+									<button type="submit" class="button-ghost" title="Oublier">✕</button>
+								</form>
+							</li>
+						}
+					</ul>
+				}
+				if v.Disabled == "" {
+					<p class="muted assistant-meta">
+						Modèle : { v.Model }
+						<br/>
+						{ v.Usage }
+					</p>
+				}
+			</aside>
+		</div>
+		<script>
+			(function () {
+				function bottom() { var e = document.getElementById("thread-end"); if (e) { e.scrollIntoView({ block: "end" }); } }
+				document.body.addEventListener("htmx:afterSettle", bottom);
+				bottom();
+				// Entrée envoie (Maj+Entrée : nouvelle ligne) — pas sur un écran
+				// tactile, où Entrée doit rester un retour à la ligne.
+				document.body.addEventListener("keydown", function (ev) {
+					if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing) { return; }
+					var t = ev.target;
+					if (!t || t.tagName !== "TEXTAREA" || !t.form || !t.form.classList.contains("chat-form")) { return; }
+					if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) { return; }
+					ev.preventDefault();
+					t.form.requestSubmit();
+				});
+			})();
+		</script>
+	}
+}
+
+// AssistantThread : le fil et sa zone de saisie. Pendant que l'assistant
+// travaille, le fragment se sonde lui-même et la saisie est remplacée par
+// l'indicateur ; au repos, plus aucune sonde (la saisie n'est jamais
+// effacée par un rafraîchissement).
+templ AssistantThread(t ThreadView) {
+	<div
+		id="thread"
+		class="thread"
+		if t.Running {
+			hx-get={ "/assistant/" + t.ID + "/thread" }
+			hx-trigger="every 1500ms"
+			hx-swap="outerHTML"
+		}
+	>
+		for _, m := range t.Messages {
+			if m.FromUser {
+				<div class="bubble bubble-user">
+					<div class="bubble-text">{ m.Text }</div>
+					<div class="bubble-meta">{ m.When }</div>
+				</div>
+			} else {
+				<div class="bubble bubble-assistant">
+					if m.HTML != "" {
+						<div class="markdown">
+							@templ.Raw(m.HTML)
+						</div>
+					}
+					for _, s := range m.Steps {
+						<details class={ "tool-step", templ.KV("tool-error", s.IsError) }>
+							<summary>
+								if s.IsError {
+									⚠
+								} else {
+									🔧
+								}
+								{ s.Label }
+								if s.Pending {
+									<span class="muted">…</span>
+								}
+							</summary>
+							<pre class="tool-io">{ s.Input }</pre>
+							if s.Output != "" {
+								<pre class="tool-io">{ s.Output }</pre>
+							}
+						</details>
+					}
+					<div class="bubble-meta">{ m.When }</div>
+				</div>
+			}
+		}
+		if t.Error != "" {
+			<p class="error thread-error">⚠ { t.Error }</p>
+		}
+		if t.Notice != "" {
+			<p class="error thread-error">{ t.Notice }</p>
+		}
+		if t.Running {
+			<div class="bubble bubble-assistant thinking"><span class="dots"><i></i><i></i><i></i></span> Jarvis réfléchit…</div>
+		} else {
+			<form class="chat-form" hx-post={ "/assistant/" + t.ID + "/messages" } hx-target="#thread" hx-swap="outerHTML">
+				<textarea name="text" rows="2" required placeholder="Écris à Jarvis…">{ t.Draft }</textarea>
+				<button type="submit" class="button-primary">Envoyer</button>
+			</form>
+		}
+		<div id="thread-end"></div>
+	</div>
+}

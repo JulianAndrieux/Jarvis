@@ -14,7 +14,7 @@ func TestVisualArgs_Isolated(t *testing.T) {
 		"--mail-config", "/home/x/.jarvis/mail.json", "--mail-collection", "emails",
 		"--notes-collection", "notes", "--tasks-collection", "tasks"}
 	got := strings.Join(visualArgs(current, "127.0.0.1:9999", "jobs", "tickets"), " ")
-	for _, want := range []string{"127.0.0.1:9999", "jobs_visualcheck", "tickets_visualcheck", "--models-file=", "--watch-dir=", "--out-dir=", "--agent-dev=false", "--deploy=false", "--mail-config=", "--mail-collection=emails_check", "--ticket-pickup=0", "--notes-collection=notes_check", "--tasks-collection=tasks_check", "--markets-collection=market_watches_check", "--collect=false", "--market-data-prefix=market_check_"} {
+	for _, want := range []string{"127.0.0.1:9999", "jobs_visualcheck", "tickets_visualcheck", "--models-file=", "--watch-dir=", "--out-dir=", "--agent-dev=false", "--deploy=false", "--mail-config=", "--mail-collection=emails_check", "--ticket-pickup=0", "--notes-collection=notes_check", "--tasks-collection=tasks_check", "--markets-collection=market_watches_check", "--collect=false", "--market-data-prefix=market_check_", "--assistant=false", "--assistant-config=", "--assistant-prefix=assistant_check_"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("args lack %q: %s", want, got)
 		}
@@ -35,7 +35,7 @@ func TestSmokeArgs_Isolated(t *testing.T) {
 		"--models-file", "/home/x/.jarvis/models.json", "--mail-config", "/home/x/.jarvis/mail.json", "--mail-collection", "emails",
 		"--notes-collection", "notes", "--tasks-collection", "tasks"}
 	got := strings.Join(smokeArgs(current, "127.0.0.1:9999", "jobs", "tickets"), " ")
-	for _, want := range []string{"127.0.0.1:9999", "jobs_deploycheck", "tickets_deploycheck", "--models-file=", "--mail-config=", "--mail-collection=emails_check", "--watch-dir=", "--ticket-pickup=0", "--notes-collection=notes_check", "--tasks-collection=tasks_check", "--markets-collection=market_watches_check", "--collect=false", "--market-data-prefix=market_check_"} {
+	for _, want := range []string{"127.0.0.1:9999", "jobs_deploycheck", "tickets_deploycheck", "--models-file=", "--mail-config=", "--mail-collection=emails_check", "--watch-dir=", "--ticket-pickup=0", "--notes-collection=notes_check", "--tasks-collection=tasks_check", "--markets-collection=market_watches_check", "--collect=false", "--market-data-prefix=market_check_", "--assistant=false", "--assistant-config=", "--assistant-prefix=assistant_check_"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("args lack %q: %s", want, got)
 		}
@@ -65,11 +65,13 @@ func TestCheckIsolation_NeTouchePasAuReel(t *testing.T) {
 				"--changeset-collection", "changeset",
 				"--accounts-prefix", "accounts_",
 				"--mail-config", "/Users/julian/.jarvis/mail.json",
+				"--assistant-config", "/Users/julian/.jarvis/assistant.json",
 			}, "127.0.0.1:9999", "jobs", "tickets")
 			joined := strings.Join(got, " ")
 			for _, forbidden := range []string{
 				"/Users/julian/.jarvis/oauth.json",
 				"/Users/julian/.jarvis/mail.json",
+				"/Users/julian/.jarvis/assistant.json",
 			} {
 				if strings.Contains(joined, forbidden) {
 					t.Errorf("les options contiennent encore %q :\n%s", forbidden, joined)
@@ -81,6 +83,9 @@ func TestCheckIsolation_NeTouchePasAuReel(t *testing.T) {
 				"changeset_check",
 				"accounts_check_",
 				"emails_check",
+				// Jamais d'appel à l'API d'Anthropic depuis une instance de contrôle.
+				"--assistant=false",
+				"assistant_check_",
 			} {
 				if !strings.Contains(joined, want) {
 					t.Errorf("les options doivent contenir %q :\n%s", want, joined)

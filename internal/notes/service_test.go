@@ -166,3 +166,28 @@ func setBody(t *testing.T, svc *Service, ctx context.Context, noteID, text strin
 		t.Fatalf("SaveBlock: %v", err)
 	}
 }
+
+// CreateTask : création à champs explicites (l'assistant) — le titre n'est
+// jamais relu comme une saisie rapide.
+func TestService_CreateTask(t *testing.T) {
+	s, store, _ := newTestService()
+	ctx := context.Background()
+	task, err := s.CreateTask(ctx, "  Rappeler Paul demain !  ", "2026-10-02", "haute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.ID == "" || task.Title != "Rappeler Paul demain !" || task.Due != "2026-10-02" || task.Priority != High || !task.CreatedAt.Equal(wednesday) {
+		t.Errorf("CreateTask = %+v", task)
+	}
+	if got, ok, _ := store.GetTask(ctx, task.ID); !ok || got.Title != task.Title {
+		t.Errorf("tâche non enregistrée : %+v", got)
+	}
+	if plain, err := s.CreateTask(ctx, "Sans date", "", ""); err != nil || plain.Due != "" || plain.Priority != Normal {
+		t.Errorf("CreateTask sans échéance = %+v, %v", plain, err)
+	}
+	for _, bad := range [][2]string{{"  ", ""}, {"x", "demain"}, {"x", "2026-02-31"}, {"x", "02/10/2026"}} {
+		if _, err := s.CreateTask(ctx, bad[0], bad[1], ""); err == nil {
+			t.Errorf("CreateTask(%q, %q) accepté", bad[0], bad[1])
+		}
+	}
+}

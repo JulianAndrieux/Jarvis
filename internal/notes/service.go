@@ -275,6 +275,32 @@ func (s *Service) AddTask(ctx context.Context, input, noteID, docID string) (Tas
 	return t, nil
 }
 
+// CreateTask crée une tâche à champs explicites (l'assistant) : le titre
+// est gardé tel quel, jamais relu comme une saisie rapide. due :
+// "AAAA-MM-JJ" ou "".
+func (s *Service) CreateTask(ctx context.Context, title, due, priority string) (Task, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return Task{}, fmt.Errorf("la tâche est vide")
+	}
+	if due != "" {
+		d, err := time.Parse("2006-01-02", due)
+		if err != nil || isoDate(d) != due {
+			return Task{}, fmt.Errorf("échéance invalide %q (AAAA-MM-JJ attendu)", due)
+		}
+	}
+	id, err := newID()
+	if err != nil {
+		return Task{}, err
+	}
+	t := Task{ID: id, Title: title, Due: due, Priority: ParsePriority(priority), CreatedAt: s.now()}
+	if err := s.db(ctx).CreateTask(ctx, t); err != nil {
+		return Task{}, err
+	}
+	s.Changes.Record(ctx, taskOp(t, "", changes.Create))
+	return t, nil
+}
+
 // AddMailTask crée une tâche depuis un email (saisie rapide, cf.
 // ParseQuickAdd), liée à cet email.
 func (s *Service) AddMailTask(ctx context.Context, input, mailID string) (Task, error) {

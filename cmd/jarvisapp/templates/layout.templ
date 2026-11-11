@@ -207,6 +207,47 @@ templ Layout(title string, active string) {
 				.inline-form { display: inline; margin: 0; }
 				.link-list { list-style: none; padding: 0; margin: 0 0 .6rem; }
 				.link-list li { display: flex; align-items: center; gap: .4rem; padding: .2rem 0; }
+				/* Navigation sur une ligne, quelle que soit la largeur (jalon 57) :
+				   avec onze onglets elle passait à la ligne et recouvrait la page —
+				   sur un téléphone, tout l'écran. Elle défile maintenant de côté. */
+				.app-header .app-nav { flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+				.app-header .app-nav::-webkit-scrollbar { display: none; }
+				.app-header .app-nav a { white-space: nowrap; flex: none; }
+				@media (max-width: 1500px) { html.theme-user .app-nav .nav-icon { display: none; } html.theme-user .app-nav a { padding: .45rem .7rem; } .app-header { gap: 1rem; } }
+				@media (max-width: 760px) { .app-header { gap: .6rem; padding: 0 .75rem; } .app-header .sidebar-toggle { display: none; } .app-header .space-link { margin-left: 0; padding: .3rem .5rem; } .main-col .page-wide { margin-top: 1rem; padding-left: .9rem; padding-right: .9rem; } }
+				/* Assistant (jalon 57) : fil de discussion, lisible sur téléphone */
+				.assistant-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 1.5rem; align-items: start; }
+				.assistant-side h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 1.2rem 0 .4rem; }
+				.assistant-new { display: block; text-align: center; }
+				.conversation-list, .fact-list { list-style: none; margin: 0; padding: 0; }
+				.conversation-list a { display: block; padding: .45rem .6rem; border-radius: 8px; color: var(--text); }
+				.conversation-list li.active a, .conversation-list a:hover { background: var(--accent-soft); }
+				.conversation-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 550; }
+				.fact-list li { display: flex; gap: .4rem; align-items: flex-start; justify-content: space-between; font-size: .88rem; padding: .25rem 0; border-bottom: 1px solid var(--border); }
+				.fact-list button { padding: 0 .35rem; }
+				.assistant-meta { margin-top: 1.2rem; }
+				.thread { display: flex; flex-direction: column; gap: .8rem; }
+				.bubble { max-width: min(46rem, 92%); padding: .7rem .95rem; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); overflow-wrap: anywhere; }
+				.bubble-user { align-self: flex-end; background: var(--accent-soft); border-color: transparent; }
+				.bubble-user .bubble-text { white-space: pre-wrap; }
+				.bubble-assistant { align-self: flex-start; }
+				.bubble .markdown > :first-child { margin-top: 0; }
+				.bubble .markdown > :last-child { margin-bottom: 0; }
+				.bubble-meta { font-size: .72rem; color: var(--muted); margin-top: .35rem; }
+				.tool-step { font-size: .85rem; color: var(--text-2); margin: .35rem 0; }
+				.tool-step summary { cursor: pointer; }
+				.tool-step.tool-error summary { color: var(--danger); }
+				.tool-io { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16rem; overflow: auto; font-size: .78rem; background: var(--surface-2); border-radius: 8px; padding: .5rem .65rem; margin: .35rem 0 0; }
+				.thread-error { margin: 0; }
+				.thinking { color: var(--muted); }
+				.dots i { display: inline-block; width: .38rem; height: .38rem; margin-right: .15rem; border-radius: 50%; background: var(--muted); animation: jarvis-dot 1.2s infinite ease-in-out; }
+				.dots i:nth-child(2) { animation-delay: .2s; }
+				.dots i:nth-child(3) { animation-delay: .4s; }
+				@keyframes jarvis-dot { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+				.chat-form { display: flex; gap: .6rem; align-items: flex-end; position: sticky; bottom: 0; background: var(--bg); padding: .6rem 0; }
+				.chat-form.card { position: static; background: var(--surface); padding: 1rem; }
+				.chat-form textarea { flex: 1; min-width: 0; font-size: 1rem; }
+				@media (max-width: 900px) { .assistant-layout { grid-template-columns: minmax(0, 1fr); } .bubble { max-width: 100%; } }
 				/* Marchés Polymarket (jalon 53) */
 				.markets-table { width: 100%; border-collapse: collapse; }
 				.markets-table td, .markets-table th { padding: .45rem .5rem; vertical-align: top; }
@@ -701,6 +742,12 @@ templ Layout(title string, active string) {
 				try {
 					if (localStorage.getItem("jarvis.sidebarHidden")) { document.documentElement.classList.add("sidebar-hidden"); }
 				} catch (e) {}
+				// La navigation défile de côté sur un écran étroit : l'onglet
+				// courant doit y être visible.
+				document.addEventListener("DOMContentLoaded", function () {
+					var a = document.querySelector(".app-header .app-nav a.active");
+					if (a && a.scrollIntoView) { a.scrollIntoView({ inline: "center", block: "nearest" }); }
+				});
 			</script>
 			<header class="app-header">
 				if isAdmin(active) {
@@ -722,6 +769,7 @@ templ Layout(title string, active string) {
 					<a href="/" class="brand"><span class="brand-mark">J</span>Jarvis</a>
 					<nav class="app-nav">
 						<a href="/" class={ templ.KV("active", active == "dashboard") }><span class="nav-icon">📊</span>Tableau de bord</a>
+						<a href="/assistant" class={ templ.KV("active", active == "assistant") }><span class="nav-icon">🤖</span>Assistant</a>
 						<a href="/notes" class={ templ.KV("active", active == "notes") }><span class="nav-icon">📝</span>Notes</a>
 						<a href="/emails" class={ templ.KV("active", active == "emails") }><span class="nav-icon">📧</span>Emails</a>
 						<a href="/documents" class={ templ.KV("active", active == "documents") }><span class="nav-icon">📄</span>Documents</a>

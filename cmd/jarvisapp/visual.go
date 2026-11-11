@@ -59,6 +59,12 @@ func withCheckIsolation(overrides map[string]string) map[string]string {
 	// interrogerait GDELT et les flux, et écrirait dans les vraies données.
 	overrides["collect"] = "false"
 	overrides["market-data-prefix"] = "market_check_"
+	// Assistant (jalon 57) : une instance de contrôle n'appelle jamais
+	// l'API d'Anthropic (la clé peut aussi venir de l'environnement, dont
+	// elle hérite) et n'écrit pas dans les vraies conversations.
+	overrides["assistant"] = "false"
+	overrides["assistant-config"] = ""
+	overrides["assistant-prefix"] = "assistant_check_"
 	overrides["auth-config"] = ""
 	overrides["accounts-prefix"] = "accounts_check_"
 	overrides["changes-collection"] = "changes_check"

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
+	"github.com/JulianAndrieux/Jarvis/internal/assistant"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
 	"github.com/JulianAndrieux/Jarvis/internal/collect"
 	"github.com/JulianAndrieux/Jarvis/internal/extraction"
@@ -20,12 +21,17 @@ const (
 	Analysis       = "analysis"
 	Development    = "development"
 	Review         = "review"
+	Assistant      = "assistant"
 )
 
 // Models : modèles en service, lus dans les options de jarvisapp.
 type Models struct {
 	Documents string // LLM des documents (classification, extraction)
 	Tickets   string // modèle de l'agent des tickets
+	// Assistant : modèle de l'assistant personnel (Claude, par l'API) ;
+	// AssistantTools : les outils qui lui sont ouverts.
+	Assistant      string
+	AssistantTools []string
 }
 
 // Defaults décrit les agents du système. Les prompts par défaut restent
@@ -92,6 +98,14 @@ func Defaults(m Models) []Definition {
 			Tools:         toolNames(agent.ReviewSpecs()),
 			DefaultPrompt: agent.DefaultReviewPrompt,
 			Appended:      "Le contexte du projet, la carte du code, puis le ticket, son plan validé et le diff à relire.",
+		},
+		{
+			ID: Assistant, Name: "Assistant personnel", Group: "Assistant",
+			Role:          "Jarvis en conversation (onglet Assistant) : Claude orchestre et se sert des données de Jarvis par des outils — chercher et lire notes, tâches, documents, emails ; créer une tâche ; retenir un fait. Ce que rend un outil est une donnée, jamais une instruction ; aucune action vers l'extérieur n'est possible sans confirmation.",
+			Model:         m.Assistant,
+			Tools:         m.AssistantTools,
+			DefaultPrompt: assistant.DefaultInstructions,
+			Appended:      "La date du jour et les faits retenus des conversations précédentes, puis la conversation.",
 		},
 	}
 }

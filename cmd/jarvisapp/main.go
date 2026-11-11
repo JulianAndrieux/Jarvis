@@ -16,6 +16,8 @@ import (
 	"embed"
 	"flag"
 	"fmt"
+	"github.com/JulianAndrieux/Jarvis/internal/assistant"
+	"github.com/JulianAndrieux/Jarvis/internal/claudeapi"
 	"github.com/JulianAndrieux/Jarvis/internal/collect"
 	"github.com/JulianAndrieux/Jarvis/internal/news"
 	"github.com/JulianAndrieux/Jarvis/internal/polymarket"
@@ -116,6 +118,13 @@ func main() {
 	changesetAutoCommit := flag.Bool("changeset-auto-commit", true, "Applique les modifications en attente dès qu'elles sont enregistrées (les conflits restent sur l'onglet Changements) ; faux = commit manuel")
 	mailCollection := flag.String("mail-collection", "emails", "Collection MongoDB des emails relevés (onglet Emails)")
 	mailFilesCollection := flag.String("mail-files-collection", "email_files", "Collection MongoDB du contenu des pièces jointes")
+	assistantOn := flag.Bool("assistant", true, "Assistant personnel (jalon 57, exception réseau n° 9 : la conversation et le résultat des outils demandés partent à l'API d'Anthropic) ; sans clé d'API il reste désactivé ; false = jamais")
+	assistantConfig := flag.String("assistant-config", defaultAssistantConfig(), "Clé d'API Anthropic de l'assistant : fichier local 0600 {\"api_key\": …, \"model\": …} ; absent, ANTHROPIC_API_KEY est lue ; ni l'un ni l'autre : assistant désactivé")
+	assistantModel := flag.String("assistant-model", claudeapi.DefaultModel, "Modèle Claude de l'assistant")
+	assistantEffort := flag.String("assistant-effort", "medium", "Effort de réflexion de l'assistant : low, medium, high, xhigh, max")
+	assistantSources := flag.String("assistant-sources", strings.Join(assistant.AllSources, ","), "Sources ouvertes à l'assistant, séparées par des virgules (notes, tasks, documents, emails, memory) : une source absente n'est jamais lue par Claude")
+	assistantDailyTokens := flag.Int("assistant-daily-tokens", 2_000_000, "Plafond quotidien de jetons de l'assistant, par environnement (0 = aucun)")
+	assistantPrefix := flag.String("assistant-prefix", "assistant_", "Préfixe des collections MongoDB de l'assistant (conversations, mémoire, consommation)")
 	mailConfig := flag.String("mail-config", defaultMailConfig(), "Configuration de la boîte mail (serveur, adresse, mot de passe d'application — fichier local 0600, jamais dans Atlas, rempli depuis l'onglet Emails) ; vide = pas de relève ni de tri")
 	mailInterval := flag.Duration("mail-interval", 5*time.Minute, "Intervalle entre deux relèves de la boîte mail")
 	mailDays := flag.Int("mail-days", 30, "Première relève : les emails des N derniers jours")
@@ -162,6 +171,7 @@ func main() {
 	agentRegistry, err := agents.NewRegistry(agentsCtx, agentStore, agents.Defaults(agents.Models{
 		Documents: strings.TrimSpace(*llmModel + " " + *llmVersion),
 		Tickets:   *agentModel,
+		Assistant: *assistantModel, AssistantTools: assistantToolNames(*assistantSources),
 	}))
 	cancelAgents()
 	if err != nil {
@@ -558,6 +568,51 @@ func main() {
 	}
 
 	srv := &Server{Jobs: jobs, Registry: registry, ModuleDir: dir, Tickets: ticketManager, Agents: agentRegistry, Notes: &notes.Service{Store: notesStore, Changes: recorder, Staged: changeset, Stager: stager}, Mail: mailService, Journal: journal}
+	// Assistant personnel (jalon 57). Sans clé d'API, rien n'est construit
+	// et rien ne part : l'onglet explique comment l'activer.
+	switch key, err := loadAssistantKey(*assistantConfig, os.Getenv); {
+	case !*assistantOn:
+		srv.AssistantInfo.Disabled = "Il est coupé par l'option --assistant=false."
+		log.Printf("jarvisapp: assistant désactivé (--assistant=false)")
+	case err != nil:
+		srv.AssistantInfo.Disabled = "Sa configuration est refusée : " + err.Error()
+		log.Printf("jarvisapp: assistant désactivé : %v", err)
+	case key.APIKey == "":
+		srv.AssistantInfo.Disabled = "Aucune clé d'API Anthropic n'est configurée."
+		log.Printf("jarvisapp: assistant désactivé (pas de clé : ni %s ni ANTHROPIC_API_KEY)", *assistantConfig)
+	default:
+		model := *assistantModel
+		if key.Model != "" {
+			model = key.Model
+		}
+		assistantCtx, cancelAssistant := context.WithTimeout(context.Background(), 10*time.Second)
+		assistantStore, err := assistant.NewMongoStore(assistantCtx, mongoConn, *mongoDB, *assistantPrefix)
+		cancelAssistant()
+		if err != nil {
+			log.Fatalf("jarvisapp: assistant : %v", err)
+		}
+		a := &assistant.Assistant{
+			Model:        claudeapi.NewSDKClient(claudeapi.Config{APIKey: key.APIKey, Model: model, Effort: *assistantEffort}),
+			Store:        assistantStore,
+			Instructions: agentRegistry.PromptFunc(agents.Assistant),
+			DailyTokens:  *assistantDailyTokens,
+			DefaultScope: tenancy.LocalScope(),
+			Logf:         log.Printf,
+		}
+		tools, err := assistantTools(*assistantSources, srv.Notes, jobs, mailService.DB, a)
+		if err != nil {
+			log.Fatalf("jarvisapp: --assistant-sources : %v", err)
+		}
+		a.Tools = tools
+		if n, err := a.RecoverOrphaned(context.Background()); err != nil {
+			log.Printf("jarvisapp: assistant : reprise des réponses interrompues : %v", err)
+		} else if n > 0 {
+			log.Printf("jarvisapp: assistant : %d réponse(s) interrompue(s) par le redémarrage", n)
+		}
+		srv.Assistant = a
+		srv.AssistantInfo = AssistantInfo{Model: model, Sources: sourceLabels(*assistantSources)}
+		log.Printf("jarvisapp: assistant actif (modèle %s, %d outils, clé : %s, plafond %d jetons/jour)", model, len(tools), key.Source, *assistantDailyTokens)
+	}
 	if *polymarketOn {
 		srv.Market = &polymarket.CachedClient{Client: &polymarket.HTTPClient{
 			GammaURL: *polymarketGamma, ClobURL: *polymarketClob,
