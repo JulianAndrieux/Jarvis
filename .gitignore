@@ -21,3 +21,6 @@
 /jarvisapp
 /jarvis-launcher
 /codebrowser
+
+# Secrets du déploiement hébergé (deploy/cloud/.env.example est le modèle)
+/deploy/cloud/.env

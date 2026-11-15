@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -61,7 +62,17 @@ type Manager struct {
 	// déploiement seulement si la vérification de Jarvis et la relecture
 	// ont réussi ; sinon le diff attend sa validation.
 	Autopilot bool
+
+	// Passive : cette instance crée, lit et commente les tickets, mais
+	// n'y travaille jamais (rôle « cloud ») — ni analyse, ni
+	// développement, ni déploiement, ni relève, ni reprise au démarrage.
+	// Une autre instance, sur la même collection, les prend : celle qui a
+	// le dépôt git, les agents et de quoi se redéployer.
+	Passive bool
 }
+
+// ErrPassive : action refusée sur une instance passive.
+var ErrPassive = errors.New("tickets: cette instance ne travaille pas sur les tickets — l'action se fait sur l'instance qui les développe (le Mac) ; un brouillon créé ici est pris par sa relève automatique")
 
 // agents : les agents du ticket t (ceux du modèle local, ou Claude).
 func (m *Manager) agents(t Ticket) AgentSet {
@@ -78,6 +89,9 @@ func (m *Manager) agents(t Ticket) AgentSet {
 // de l'utilisateur). Un échec est consigné dans le fil, pas renvoyé : le
 // ticket reste déployé et le push peut être retenté.
 func (m *Manager) Push(ctx context.Context, id string) error {
+	if m.Passive {
+		return ErrPassive
+	}
 	if m.Pusher == nil {
 		return fmt.Errorf("tickets: le push vers GitHub n'est pas configuré")
 	}
@@ -147,6 +161,11 @@ func (m *Manager) checkAgent(agent AgentKind) (AgentKind, error) {
 	case "", AgentLocal:
 		return AgentLocal, nil
 	case AgentClaude:
+		if m.Passive {
+			// L'agent travaille sur une autre instance : c'est elle qui a
+			// (ou non) Claude Code.
+			return AgentClaude, nil
+		}
 		if m.Claude == nil {
 			return "", fmt.Errorf("tickets: Claude Code n'est pas configuré sur cette instance")
 		}
@@ -186,6 +205,9 @@ func (m *Manager) SetAgent(ctx context.Context, id string, agent AgentKind) erro
 // en cours (analyse, développement, déploiement) — la relève automatique.
 // Retourne l'identifiant du ticket lancé ("" : rien à faire).
 func (m *Manager) PickUp(ctx context.Context) (string, error) {
+	if m.Passive {
+		return "", nil
+	}
 	all, err := m.Store.List(ctx, "")
 	if err != nil {
 		return "", err
@@ -251,6 +273,9 @@ func (m *Manager) StartAnalysis(ctx context.Context, id string) error {
 }
 
 func (m *Manager) startAnalysis(ctx context.Context, id, label string) error {
+	if m.Passive {
+		return ErrPassive
+	}
 	t, err := m.transition(ctx, id, Analyzing, label)
 	if err != nil {
 		return err
@@ -262,6 +287,9 @@ func (m *Manager) startAnalysis(ctx context.Context, id, label string) error {
 // RequestRevision renvoie le plan à l'agent avec les commentaires de
 // l'utilisateur (feedback, plus ceux écrits depuis le plan).
 func (m *Manager) RequestRevision(ctx context.Context, id, feedback string) error {
+	if m.Passive {
+		return ErrPassive
+	}
 	if err := m.Comment(ctx, id, feedback); err != nil {
 		return err
 	}
@@ -281,6 +309,9 @@ func (m *Manager) ApprovePlan(ctx context.Context, id string) error {
 }
 
 func (m *Manager) approvePlan(ctx context.Context, id, label string) error {
+	if m.Passive {
+		return ErrPassive
+	}
 	t, err := m.transition(ctx, id, PlanApproved, label)
 	if err != nil {
 		return err
@@ -298,6 +329,9 @@ func (m *Manager) canDevelop(t Ticket) bool {
 // StartDevelopment lance (ou relance) le développement d'un ticket au
 // plan validé ; feedback (facultatif) est transmis à l'agent.
 func (m *Manager) StartDevelopment(ctx context.Context, id, feedback string) error {
+	if m.Passive {
+		return ErrPassive
+	}
 	current, ok, err := m.Store.Get(ctx, id)
 	if err != nil {
 		return err
@@ -319,6 +353,9 @@ func (m *Manager) StartDevelopment(ctx context.Context, id, feedback string) err
 // RequestChanges renvoie le diff à l'agent avec le retour de
 // l'utilisateur (seconde validation refusée).
 func (m *Manager) RequestChanges(ctx context.Context, id, feedback string) error {
+	if m.Passive {
+		return ErrPassive
+	}
 	if err := m.Comment(ctx, id, feedback); err != nil {
 		return err
 	}
@@ -328,6 +365,9 @@ func (m *Manager) RequestChanges(ctx context.Context, id, feedback string) error
 // AcceptChanges valide le diff (seconde validation humaine) et, si le
 // déploiement est configuré, le lance.
 func (m *Manager) AcceptChanges(ctx context.Context, id string) error {
+	if m.Passive {
+		return ErrPassive
+	}
 	if m.Deployer == nil {
 		_, err := m.transition(ctx, id, Accepted, "Diff accepté")
 		return err
@@ -338,6 +378,9 @@ func (m *Manager) AcceptChanges(ctx context.Context, id string) error {
 // StartDeployment déploie un ticket déjà accepté (sans déploiement à
 // l'époque).
 func (m *Manager) StartDeployment(ctx context.Context, id string) error {
+	if m.Passive {
+		return ErrPassive
+	}
 	if m.Deployer == nil {
 		return fmt.Errorf("tickets: le déploiement n'est pas configuré")
 	}
@@ -345,6 +388,9 @@ func (m *Manager) StartDeployment(ctx context.Context, id string) error {
 }
 
 func (m *Manager) startDeployment(ctx context.Context, id, label string) error {
+	if m.Passive {
+		return ErrPassive
+	}
 	t, err := m.transition(ctx, id, Deploying, label)
 	if err != nil {
 		return err
@@ -459,6 +505,18 @@ func (m *Manager) DeploymentRolledBack(ctx context.Context, id, reason string) e
 
 // Cancel clôt le ticket ; sa copie de travail éventuelle est supprimée.
 func (m *Manager) Cancel(ctx context.Context, id string) error {
+	if m.Passive {
+		// Un ticket qu'un agent a touché a une copie de travail, ou un
+		// travail en cours, sur l'instance qui les mène : c'est à elle de
+		// l'annuler.
+		t, ok, err := m.Store.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if ok && t.Status != Draft {
+			return ErrPassive
+		}
+	}
 	t, err := m.transition(ctx, id, Cancelled, "Ticket annulé")
 	if err != nil {
 		return err
@@ -501,6 +559,11 @@ func (m *Manager) Resurrect(ctx context.Context, id string) error {
 // avec le process), et renvoie en revue un déploiement interrompu. À
 // appeler après la confirmation d'un déploiement (marqueur).
 func (m *Manager) RecoverOrphaned(ctx context.Context) (int, error) {
+	// Passive : les tickets en cours sont menés par une autre instance —
+	// les marquer interrompus ici casserait son travail.
+	if m.Passive {
+		return 0, nil
+	}
 	deploying, err := m.Store.List(ctx, Deploying)
 	if err != nil {
 		return 0, err

@@ -52,6 +52,11 @@ type Config struct {
 	CodePort       int    `json:"code_port,omitempty"`
 	ModelsFile     string `json:"models_file,omitempty"`
 
+	// Role : rôle transmis à jarvisapp (--role). Vide : une seule instance
+	// qui fait tout. "worker" : ce Mac ne garde que le cycle des tickets, à
+	// côté d'une instance hébergée (cf. docs/deploiement-cloud.md).
+	Role string `json:"role,omitempty"`
+
 	MongoURI        string `json:"mongo_uri"`
 	MongoDB         string `json:"mongo_db"`
 	MongoCollection string `json:"mongo_collection"`

@@ -131,6 +131,9 @@ type TicketsView struct {
 	Agents []AgentOption
 	// Autopilot : plan et déploiement sans validation humaine.
 	Autopilot bool
+	// Passive : cette instance ne travaille pas sur les tickets (rôle
+	// cloud) — ils sont pris par l'instance du Mac.
+	Passive bool
 }
 
 type TicketActions struct {
@@ -138,6 +141,8 @@ type TicketActions struct {
 	Agents []AgentOption
 	// Autopilot : pilote automatique activé.
 	Autopilot bool
+	// Passive : aucune action de travail n'est proposée ici.
+	Passive bool
 	// Deploy : déploiement automatique configuré.
 	Deploy bool
 	// Push : push vers GitHub depuis l'application configuré ; Unpushed :

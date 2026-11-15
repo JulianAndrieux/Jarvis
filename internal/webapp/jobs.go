@@ -161,6 +161,12 @@ type JobManager struct {
 	// file partagée avec l'agent des tickets (jalon 27) : documents et
 	// tickets n'appellent jamais les modèles en même temps.
 	Gate *gate.Gate
+	// WaitModels, s'il est donné, bloque jusqu'à ce que les modèles
+	// répondent — pour une instance hébergée dont les modèles sont servis
+	// par une autre machine qui peut être éteinte : le document reste en
+	// attente au lieu d'échouer. Une erreur fait échouer le job avec sa
+	// raison.
+	WaitModels func(ctx context.Context) error
 
 	// Renderer rend la première page en PNG pour les miniatures (jalon
 	// 22) — le même port que l'étage Parsing (PdftoppmRenderer en
@@ -276,6 +282,15 @@ func (m *JobManager) process(job Job, run runFunc) {
 		env = m.DefaultScope.Env
 	}
 	ctx := tenancy.WithScope(context.Background(), tenancy.System(env))
+	if m.WaitModels != nil && familyOf(job).Pipeline() {
+		// Avant la file, pas dedans : attendre des modèles absents ne doit
+		// pas retenir ce qui n'en a pas besoin (un fichier seulement stocké).
+		if err := m.WaitModels(ctx); err != nil {
+			job.StartedAt = time.Now()
+			m.finish(ctx, job, pipeline.Result{}, fmt.Errorf("modèles de documents indisponibles : %w", err))
+			return
+		}
+	}
 	release, err := m.acquire(ctx)
 	if err != nil {
 		// Bascule vers les modèles de documents impossible (jalon 37) :

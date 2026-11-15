@@ -1189,3 +1189,46 @@ func TestJob_VersionMonteAChaqueEcriture(t *testing.T) {
 		last = got.Version
 	}
 }
+
+// Instance hébergée, modèles servis par une autre machine (le Mac) qui
+// peut être éteinte : un document attend le retour des modèles au lieu
+// d'échouer sur une connexion refusée.
+func TestJobManager_WaitModels_DocumentWaitsUntilModelsAnswer(t *testing.T) {
+	store := NewFakeStore()
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	back := make(chan struct{})
+	m.WaitModels = func(ctx context.Context) error { <-back; return nil }
+
+	job, _ := m.Submit(context.Background(), "a.pdf", []byte("%PDF"))
+	time.Sleep(50 * time.Millisecond)
+	if got, _, _ := store.Get(context.Background(), job.ID); got.Status != StatusPending {
+		t.Errorf("status while the models are away = %s, want pending", got.Status)
+	}
+	close(back)
+	waitStatus(t, store, job.ID, StatusDone)
+}
+
+// Un fichier seulement stocké n'a besoin d'aucun modèle : il n'attend pas.
+func TestJobManager_WaitModels_StoredFileDoesNotWait(t *testing.T) {
+	store := NewFakeStore()
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	m.WaitModels = func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
+
+	job, _ := m.Submit(context.Background(), "archive.zip", []byte("PK\x03\x04"))
+	waitStatus(t, store, job.ID, StatusDone)
+}
+
+func TestJobManager_WaitModels_ErrorFailsTheJobWithTheReason(t *testing.T) {
+	store := NewFakeStore()
+	m := NewJobManager(store, &fakeRunner{})
+	m.WorkDir = t.TempDir()
+	m.WaitModels = func(ctx context.Context) error { return errors.New("adresse des modèles invalide") }
+
+	job, _ := m.Submit(context.Background(), "a.pdf", []byte("%PDF"))
+	failed := waitStatus(t, store, job.ID, StatusFailed)
+	if !strings.Contains(failed.Err, "adresse des modèles invalide") {
+		t.Errorf("Err = %q, want the reason", failed.Err)
+	}
+}

@@ -95,6 +95,21 @@ provenance (page + bbox + extrait source) pour chaque valeur extraite.
      cibles sont stockés dans Atlas, **globaux à l'instance** (données
      publiques, comme tickets et agents). `--collect=false` coupe la
      collecte, `--gdelt-url ""` GDELT seul.
+  9. **Hébergement (`--role cloud`, `deploy/cloud/`) : Jarvis peut tourner
+     sur un serveur loué en Europe**, joignable uniquement par le réseau
+     privé Tailscale. Décisions explicites de l'utilisateur (questions
+     posées : VPS + Docker ; le Mac reste le serveur de modèles ; accès
+     par Tailscale seulement ; tickets en lecture et création seulement
+     côté serveur). Ce qui change : **le serveur voit les documents**
+     (réception, conversion — fichiers temporaires en mémoire —, lecture
+     dans Atlas) et garde sur son disque `secret.key` et la configuration
+     de la boîte mail (mot de passe chiffré), l'URI MongoDB et la clé
+     Tailscale dans `.env`. Ce qui ne change pas : **l'inférence reste sur
+     le Mac** (les pages y partent par le tunnel chiffré), aucun port
+     n'est ouvert sur Internet, et l'application n'écoute toujours que sur
+     `127.0.0.1` (dans l'espace réseau du conteneur Tailscale). Le cycle
+     des tickets (code, agents, déploiement) reste sur le Mac. Détail :
+     `docs/deploiement-cloud.md`.
 - **L'inférence locale est une ressource de machine, partagée et
   sérialisée entre environnements** (jalon 50). Les modèles ne servent
   qu'un travail à la fois sur ce matériel et un document de cinq pages
@@ -3056,6 +3071,56 @@ décisions : `docs/plan-multi-environnement.md`.
     marché (agréments bancaires) — attendu, c'est le juge des annonces qui
     trie ; l'étude d'impact du jalon 55 mesurera combien d'annonces
     rattachées font réellement bouger un cours.
+
+- **Hébergement (hors numérotation des jalons) : préparé, vérifié sous
+  Linux sans le Mac ni Tailscale, à valider en conditions réelles.**
+  Demandé : « déplacer Jarvis dans le cloud pour m'y connecter quand j'en
+  ai besoin ». Décisions de l'utilisateur : cf. contraintes, exception 9.
+  Guide : `docs/deploiement-cloud.md`.
+  - **`--role`** (`cmd/jarvisapp/role.go`) : `full` (défaut, une instance
+    fait tout), `cloud` (le serveur : tout sauf le travail sur les
+    tickets ; modèles distants) et `worker` (le Mac : seulement les
+    tickets). Deux instances partagent la même base ; chaque travail de
+    fond (reprise des documents au démarrage, emails, collecte, dossier
+    surveillé, tickets) appartient à **exactement une** des deux — norme
+    testée. Sans cela : relève et collecte faites deux fois, et surtout la
+    reprise au démarrage d'une instance marquerait « interrompus » les
+    travaux en cours de l'autre. Lanceur : `"role"` dans `launcher.json`.
+  - **`tickets.Manager.Passive`** : création, lecture, commentaire, choix
+    de l'agent, annulation d'un brouillon ; toute action de travail rend
+    `ErrPassive` (409 dans l'interface, qui ne propose plus ces boutons et
+    dit où le travail se fait) ; ni relève ni reprise au démarrage. Un
+    brouillon créé sur le serveur est pris par la relève du Mac ; la page
+    du ticket suit son travail en direct (même collection).
+  - **`models.Remote` + `JobManager.WaitModels`** : modèles servis par une
+    machine qui peut être éteinte — un document attend qu'ils répondent
+    (`/health`, sonde toutes les 30 s, dit une fois dans le journal) au
+    lieu d'échouer ; **avant** la file, pour ne pas retenir un fichier
+    seulement stocké.
+  - **Images sous Linux** (`internal/formats`) : `sips` n'existe que sur
+    macOS. ImageMagick normalise (mêmes dimensions que sips, vérifié :
+    290,46 × 410,93 pt sur le corpus), et **Jarvis enveloppe lui-même le
+    JPEG en PDF** (`jpegToPDF`, cinq objets, sans réencodage) — ImageMagick
+    refuse d'écrire du PDF sous Debian (politique de sécurité), et aucune
+    dépendance ne se justifiait pour si peu. sips reste employé là où il
+    existe.
+  - **`Dockerfile`, `deploy/cloud/`** : image à une étape qui garde le
+    source et la chaîne Go (l'Admin analyse le module et lit git),
+    utilisateur non root, `HOME=/data` sur un volume ; `compose.yaml` :
+    conteneur Tailscale (HTTPS `https://jarvis.<tailnet>.ts.net`) dont
+    jarvis partage l'espace réseau, `/tmp` en mémoire.
+  - Vérifié (Linux, vrai MongoDB, faux serveurs de modèles) : pages,
+    import modèles absents → en attente, reprise à leur retour (PDF natif,
+    HEIC par ImageMagick puis VLM), zip stocké sans attendre, ticket créé
+    en brouillon ; les 16 formats convertis sans sips. **Pas vérifié** :
+    construction de l'image (miroir Debian bloqué dans l'environnement de
+    développement), Tailscale, parcours réel avec le Mac. `models.Remote`
+    écrit en même temps que ses tests (pas vu rouge d'abord).
+  - Limites dites dans le guide : redémarrage du serveur = documents en
+    attente à relancer ; prompts des agents en mémoire par instance ;
+    ticket au modèle local = modèles de documents non rechargés sur le
+    worker ; authentification Google non utilisable derrière Tailscale
+    (redirection `127.0.0.1`).
 
 **Reste à valider en conditions réelles** (impossible depuis
 l'environnement de développement de ce chantier) : les contrats Mongo

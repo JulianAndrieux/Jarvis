@@ -1,0 +1,13 @@
+# .git reste dans l'image : la page Architecture lit l'historique.
+bin/
+dist/
+data/
+jarvis
+jarvisapp
+jarvis-launcher
+codebrowser
+*.test
+*.out
+.DS_Store
+.claude/
+deploy/cloud/.env

@@ -132,7 +132,20 @@ func main() {
 	authConfig := flag.String("auth-config", defaultAuthConfig(), "Fournisseur d'identité (client OAuth Google + propriétaire de l'instance) — fichier local 0600, jamais une option de ligne de commande (un secret en argument est lisible dans ps) ; fichier absent = authentification désactivée, comportement mono-utilisateur d'avant le jalon 45")
 	accountsPrefix := flag.String("accounts-prefix", "accounts_", "Préfixe des collections MongoDB des comptes (users, envs, memberships, sessions)")
 	deployMarker := flag.String("deploy-marker", "", "Marqueur du déploiement en attente de confirmation ; vide = ~/.jarvis/deploy.json (le lanceur lit le même)")
+	roleFlag := flag.String("role", "full", "Rôle de l'instance : full (tout, une seule instance), cloud (serveur hébergé : tout sauf le travail sur les tickets, modèles servis par une autre machine et attendus s'ils sont absents) ou worker (le Mac à côté d'une instance cloud : seulement le cycle des tickets) — cf. docs/deploiement-cloud.md")
 	flag.Parse()
+
+	inst, err := roleSettings(*roleFlag)
+	if err != nil {
+		log.Fatalf("jarvisapp: %v", err)
+	}
+	if !inst.TicketWork {
+		// Ni copie de travail, ni déploiement, ni relève : une autre
+		// instance mène les tickets.
+		*agentDev, *deployOn, *ticketPickup = false, false, 0
+		*modelsFile = ""
+	}
+	log.Printf("jarvisapp: rôle %s", inst.Name)
 
 	if *vlmURL == "" || *vlmModel == "" {
 		log.Fatal("jarvisapp: --vlm-url et --vlm-model sont requis")
@@ -316,13 +329,23 @@ func main() {
 	// construction jamais aboutir, cf. CLAUDE.md jalon 20 (incident réel
 	// : un job restait bloqué "running" pour toujours après un
 	// redémarrage pendant son traitement).
-	if n, err := jobs.RecoverOrphaned(context.Background()); err != nil {
+	if !inst.RecoverJobs {
+		log.Printf("jarvisapp: rôle %s : les documents en cours sont laissés à l'instance qui les traite", inst.Name)
+	} else if n, err := jobs.RecoverOrphaned(context.Background()); err != nil {
 		log.Printf("jarvisapp: récupération des jobs orphelins : %v", err)
 	} else if n > 0 {
 		log.Printf("jarvisapp: %d job(s) laissé(s) en cours par un précédent démarrage, marqué(s) en échec", n)
 	}
 
-	if *watchDir != "" {
+	if inst.WaitModels {
+		// Modèles servis par une autre machine (le Mac, par le réseau
+		// privé) : éteinte ou en veille, les documents attendent son retour.
+		remote := models.Remote{URLs: []string{*vlmURL, *llmURL}, Log: log.Printf}
+		jobs.WaitModels = remote.Wait
+		log.Printf("jarvisapp: modèles distants (%s, %s) : un document attend qu'ils répondent", *vlmURL, *llmURL)
+	}
+
+	if *watchDir != "" && inst.Watch {
 		w := &watch.Watcher{
 			Dir:      *watchDir,
 			Interval: *watchInterval,
@@ -416,7 +439,9 @@ func main() {
 		Interval:   *mailInterval,
 		Log:        log.Printf,
 	}
-	if *mailConfig != "" {
+	if *mailConfig != "" && !inst.Mail {
+		log.Printf("jarvisapp: emails : rôle %s, relève et tri faits par l'autre instance", inst.Name)
+	} else if *mailConfig != "" {
 		go mailService.Run(context.Background())
 		log.Printf("jarvisapp: emails : relève toutes les %s (configuration %s)", *mailInterval, *mailConfig)
 	} else {
@@ -435,8 +460,9 @@ func main() {
 	brief := agent.ProjectBrief(string(claudeMD), 2500)
 	codeMap := agent.PackageMap(dir, 3000)
 	ticketManager := &tickets.Manager{
-		Store: ticketStore,
-		Gate:  modelGate,
+		Store:   ticketStore,
+		Gate:    modelGate,
+		Passive: !inst.TicketWork,
 		Analyst: &agent.Analyzer{
 			Model:           agent.HTTPModel{BaseURL: *agentURL, Model: *agentModel, HTTP: &http.Client{Timeout: *agentTimeout}, MaxTokens: *agentMaxTokens, Temperature: *agentTemperature},
 			Tools:           agent.Tools{Root: dir},
@@ -531,7 +557,12 @@ func main() {
 	log.Printf("jarvisapp: agent des tickets -> %s (%s)", *agentURL, *agentModel)
 	// Claude Code (jalon 41) : mêmes étapes, même vérification par Jarvis,
 	// mais le travail d'agent part à Claude plutôt qu'au modèle local.
-	if bin, err := findClaude(*claudeBin); err == nil {
+	if !inst.TicketWork {
+		// L'agent proposé à la création est celui de l'instance qui
+		// travaille ; ici, on ne fait qu'enregistrer le choix.
+		ticketManager.DefaultAgent = tickets.AgentKind(*ticketAgent)
+		log.Printf("jarvisapp: tickets en lecture et création seulement (rôle %s) : ils sont pris par l'instance worker", inst.Name)
+	} else if bin, err := findClaude(*claudeBin); err == nil {
 		cli := claudecode.CLI{Binary: bin, Model: *claudeModel, Timeout: *claudeTimeout}
 		snapRoot := *worktreesDir
 		if snapRoot == "" {
@@ -553,7 +584,7 @@ func main() {
 		log.Printf("jarvisapp: Claude Code introuvable (%v) : tickets au modèle local seulement", err)
 	}
 	ticketManager.Autopilot = *ticketAutopilot
-	if *ticketAutopilot {
+	if *ticketAutopilot && inst.TicketWork {
 		log.Printf("jarvisapp: pilote automatique des tickets activé (déploiement si vérification et relecture réussies)")
 	}
 
@@ -565,7 +596,9 @@ func main() {
 		}}
 		srv.Trading = tradingStore
 		log.Printf("jarvisapp: onglet Marchés actif (lecture seule de %s et %s)", *polymarketGamma, *polymarketClob)
-		if *collectOn {
+		if *collectOn && !inst.Collect {
+			log.Printf("jarvisapp: collecte des marchés : rôle %s, faite par l'autre instance", inst.Name)
+		} else if *collectOn {
 			feeds, err := news.ParseFeedList(*newsFeeds)
 			if err != nil {
 				log.Fatalf("jarvisapp: --news-feeds : %v", err)
@@ -703,7 +736,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("jarvisapp: %v", err)
 	}
-	if msg, err := settleDeployment(context.Background(), *deployMarker, ticketManager, git); err != nil {
+	if !inst.TicketWork {
+		// Pas de déploiement ici : rien à confirmer ni à défaire.
+	} else if msg, err := settleDeployment(context.Background(), *deployMarker, ticketManager, git); err != nil {
 		log.Printf("jarvisapp: déploiement en attente : %v", err)
 	} else if msg != "" {
 		log.Printf("jarvisapp: %s", msg)

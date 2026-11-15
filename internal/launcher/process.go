@@ -102,6 +102,9 @@ func ArgsForJarvisApp(cfg Config) []string {
 		"--addr", cfg.Addr,
 		"--module-dir", cfg.RepoDir,
 	}
+	if cfg.Role != "" {
+		args = append(args, "--role", cfg.Role)
+	}
 	if cfg.CodeEnabled() {
 		// Réglages mesurés sur le ticket d'exemple (Devstral) : l'agent voit
 		// bien plus que les 3000 caractères calibrés pour Qwen3-8B à 8k.

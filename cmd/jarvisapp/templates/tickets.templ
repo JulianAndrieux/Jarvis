@@ -17,7 +17,9 @@ templ TicketsPage(v TicketsView) {
 					<span class="muted">Décris un changement ; l'agent l'analyse et propose un plan à valider.</span>
 				}
 			</div>
-			if v.Autopilot {
+			if v.Passive {
+				<p class="warn-box">Cette instance crée et suit les tickets ; ils sont pris par l'instance du Mac (relève automatique), qui les analyse, les développe et se redéploie. Mac éteint : le ticket attend en brouillon.</p>
+			} else if v.Autopilot {
 				<p class="warn-box">Pilote automatique : les brouillons sont pris d'eux-mêmes, un à la fois ; le plan est validé sans toi et le diff part en service si la vérification de Jarvis (gofmt, vet, tests) et la relecture réussissent — sinon il attend ta validation.</p>
 			}
 			<div class="tickets-layout">
@@ -108,6 +110,20 @@ templ ticketPanelBody(t tickets.Ticket, a TicketActions) {
 			</form>
 		}
 	</div>
+	if a.Passive {
+		<div class="ticket-actions">
+			<p class="muted">Le travail sur les tickets se fait sur l'instance du Mac : cette page le suit en direct. Valider, relancer ou déployer se fait là-bas.</p>
+			if t.Status == tickets.Draft {
+				<button class="button-ghost" hx-post={ "/tickets/" + t.ID + "/cancel" } hx-target="#ticket-panel" hx-swap="outerHTML">Annuler le ticket</button>
+			}
+		</div>
+	} else {
+		@ticketWorkActions(t, a)
+	}
+	@ticketPanelDetails(t)
+}
+
+templ ticketWorkActions(t tickets.Ticket, a TicketActions) {
 	<div class="ticket-actions">
 		switch t.Status {
 			case tickets.Draft:
@@ -157,6 +173,9 @@ templ ticketPanelBody(t tickets.Ticket, a TicketActions) {
 			<button class="button-ghost" hx-post={ "/tickets/" + t.ID + "/cancel" } hx-target="#ticket-panel" hx-swap="outerHTML">Annuler le ticket</button>
 		}
 	</div>
+}
+
+templ ticketPanelDetails(t tickets.Ticket) {
 	if t.Review != nil {
 		@reviewBlock(*t.Review)
 	}

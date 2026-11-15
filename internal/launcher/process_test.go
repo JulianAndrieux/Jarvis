@@ -211,3 +211,26 @@ func TestArgsForJarvisApp_CodeModelWiring(t *testing.T) {
 		}
 	}
 }
+
+// À côté d'une instance hébergée, le Mac ne garde que le cycle des
+// tickets : le rôle est transmis à jarvisapp ; sans rôle, rien n'est
+// ajouté (comportement d'avant).
+func TestArgsForJarvisApp_Role(t *testing.T) {
+	cfg := DefaultConfig("/home/u", "/repo")
+	for _, a := range ArgsForJarvisApp(cfg) {
+		if a == "--role" {
+			t.Fatalf("--role passed although no role is configured")
+		}
+	}
+	cfg.Role = "worker"
+	args := ArgsForJarvisApp(cfg)
+	found := false
+	for i, a := range args {
+		if a == "--role" && i+1 < len(args) && args[i+1] == "worker" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("args = %v, want --role worker", args)
+	}
+}

@@ -162,3 +162,42 @@ func TestLocalConverter_CorruptFileFailsWithAClearError(t *testing.T) {
 		t.Errorf("error = %v, want it to name libreoffice and carry its message", err)
 	}
 }
+
+// Même contrat sous Linux (instance hébergée) : ImageMagick normalise,
+// Jarvis enveloppe en PDF. Nécessite ImageMagick (convert), pdftotext et
+// pdfinfo.
+func TestLocalConverter_ImagesViaImageMagick(t *testing.T) {
+	bin := ""
+	for _, name := range []string{"magick", "convert"} {
+		if _, err := exec.LookPath(name); err == nil {
+			bin = name
+			break
+		}
+	}
+	if bin == "" {
+		t.Skip("ImageMagick absent")
+	}
+	c := &LocalConverter{Magick: bin}
+	for _, tc := range []struct {
+		file        string
+		wantPreview bool
+	}{
+		{"scan.jpg", false}, {"scan.png", false}, {"scan.heic", true}, {"scan.tiff", true},
+	} {
+		r, err := c.Convert(context.Background(), Detect(tc.file, nil), fixture(t, tc.file))
+		if err != nil {
+			t.Fatalf("Convert(%s) error = %v", tc.file, err)
+		}
+		if strings.TrimSpace(pdfText(t, r.PDF)) != "" {
+			t.Errorf("%s: PDF has a text layer, want an image-only page", tc.file)
+		}
+		size := pdfPageSize(t, r.PDF)
+		if strings.Contains(size, "1170") {
+			t.Errorf("%s: page size %s, want the image normalised (not 1 px = 1 pt)", tc.file, size)
+		}
+		t.Logf("%s: page %s", tc.file, size)
+		if gotPreview := r.PreviewMIME == "image/jpeg" && len(r.Preview) > 0; gotPreview != tc.wantPreview {
+			t.Errorf("%s: JPEG preview = %v, want %v", tc.file, gotPreview, tc.wantPreview)
+		}
+	}
+}

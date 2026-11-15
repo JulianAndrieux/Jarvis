@@ -78,7 +78,7 @@ func (s *Server) handleTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	v := templates.TicketsView{List: list, Agents: s.agentOptions(s.Tickets.DefaultAgent), Autopilot: s.Tickets.Autopilot}
+	v := templates.TicketsView{List: list, Agents: s.agentOptions(s.Tickets.DefaultAgent), Autopilot: s.Tickets.Autopilot, Passive: s.Tickets.Passive}
 	if err := templates.TicketsPage(v).Render(r.Context(), w); err != nil {
 		fmt.Fprintf(os.Stderr, "jarvisapp: render tickets: %v\n", err)
 	}
@@ -178,7 +178,9 @@ func (s *Server) handleTicketDelete(w http.ResponseWriter, r *http.Request) {
 // agentOptions : le choix entre Claude Code et le modèle local, selected
 // présélectionné ; vide si Claude Code n'est pas configuré.
 func (s *Server) agentOptions(selected tickets.AgentKind) []templates.AgentOption {
-	if s.Tickets.Claude == nil {
+	// Instance passive : le choix est enregistré pour l'instance qui
+	// travaille, c'est elle qui a (ou non) Claude Code.
+	if s.Tickets.Claude == nil && !s.Tickets.Passive {
 		return nil
 	}
 	if selected == "" {
@@ -192,7 +194,7 @@ func (s *Server) agentOptions(selected tickets.AgentKind) []templates.AgentOptio
 }
 
 func (s *Server) ticketActions(ctx context.Context, t tickets.Ticket) templates.TicketActions {
-	a := templates.TicketActions{Deploy: s.Tickets.Deployer != nil, Push: s.Tickets.Pusher != nil, Agents: s.agentOptions(t.Agent), Autopilot: s.Tickets.Autopilot}
+	a := templates.TicketActions{Passive: s.Tickets.Passive, Deploy: s.Tickets.Deployer != nil, Push: s.Tickets.Pusher != nil, Agents: s.agentOptions(t.Agent), Autopilot: s.Tickets.Autopilot}
 	if t.Status == tickets.Deployed && s.Unpushed != nil {
 		a.PushKnown = true
 		pending, err := s.Unpushed(ctx)

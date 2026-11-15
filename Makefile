@@ -63,3 +63,9 @@ fmt:
 
 vet:
 	go vet ./...
+
+# Image de l'instance hébergée (rôle cloud) — cf. docs/deploiement-cloud.md.
+# Le déploiement lui-même : cd deploy/cloud && docker compose up -d --build
+.PHONY: docker-build
+docker-build:
+	docker build -t jarvis:latest .

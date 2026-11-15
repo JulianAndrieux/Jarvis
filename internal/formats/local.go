@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,12 +19,16 @@ import (
 
 // LocalConverter convertit localement, sans rien envoyer hors de la
 // machine : LibreOffice (soffice) pour les documents bureautiques, le
-// texte et les tableaux, sips (macOS) pour les images.
+// texte et les tableaux, sips (macOS) ou ImageMagick (Linux) pour les
+// images.
 type LocalConverter struct {
 	// Soffice et Sips surchargent le chemin des binaires ("" : "soffice",
 	// "sips" sur le PATH).
 	Soffice string
 	Sips    string
+	// Magick : ImageMagick, employé pour les images là où sips n'existe
+	// pas (Linux) ; "" : "magick" ou "convert" sur le PATH.
+	Magick string
 	// ProfileDir est le profil LibreOffice dédié à Jarvis ("" : un
 	// dossier "jarvis-libreoffice" dans le répertoire temporaire). Sans
 	// profil dédié, une conversion échoue silencieusement si l'utilisateur
@@ -182,22 +187,40 @@ func (c *LocalConverter) htmlToPDF(ctx context.Context, work, page string) ([]by
 // l'enverra au VLM comme un scan. Le JPEG sert aussi d'aperçu pour les
 // formats que les navigateurs n'affichent pas (HEIC, TIFF, BMP).
 func (c *LocalConverter) convertImage(ctx context.Context, work string, f Format, src string) (Rendition, error) {
-	bin := c.Sips
-	if bin == "" {
-		bin = "sips"
-	}
 	jpg := filepath.Join(work, "image.jpg")
-	if err := run(ctx, bin, "-s", "format", "jpeg", "-s", "formatOptions", "90", "-Z", imageLongSide,
-		"-s", "dpiWidth", imageDPI, "-s", "dpiHeight", imageDPI, src, "--out", jpg); err != nil {
-		return Rendition{}, fmt.Errorf("formats: sips jpeg: %w", err)
-	}
-	pdfPath := filepath.Join(work, "image.pdf")
-	if err := run(ctx, bin, "-s", "format", "pdf", jpg, "--out", pdfPath); err != nil {
-		return Rendition{}, fmt.Errorf("formats: sips pdf: %w", err)
-	}
-	pdf, err := os.ReadFile(pdfPath)
-	if err != nil {
-		return Rendition{}, fmt.Errorf("formats: read image pdf: %w", err)
+	var pdf []byte
+	if bin, magick := c.imageTool(exec.LookPath); magick {
+		// Hors macOS (instance hébergée) : ImageMagick normalise l'image,
+		// Jarvis l'enveloppe lui-même en PDF (cf. jpegToPDF). [0] : la
+		// première image d'un TIFF multipage ou d'un GIF animé ; fond blanc
+		// sous la transparence (un JPEG n'en a pas) ; sRGB (pas de CMJN) ;
+		// "2400x2400>" ne fait que réduire, comme sips -Z.
+		if err := run(ctx, bin, src+"[0]", "-auto-orient", "-background", "white", "-alpha", "remove", "-alpha", "off",
+			"-colorspace", "sRGB", "-resize", imageLongSide+"x"+imageLongSide+">",
+			"-units", "PixelsPerInch", "-density", imageDPI, "-quality", "90", jpg); err != nil {
+			return Rendition{}, fmt.Errorf("formats: imagemagick jpeg: %w", err)
+		}
+		data, err := os.ReadFile(jpg)
+		if err != nil {
+			return Rendition{}, fmt.Errorf("formats: read normalised image: %w", err)
+		}
+		dpi, _ := strconv.ParseFloat(imageDPI, 64)
+		if pdf, err = jpegToPDF(data, dpi); err != nil {
+			return Rendition{}, err
+		}
+	} else {
+		if err := run(ctx, bin, "-s", "format", "jpeg", "-s", "formatOptions", "90", "-Z", imageLongSide,
+			"-s", "dpiWidth", imageDPI, "-s", "dpiHeight", imageDPI, src, "--out", jpg); err != nil {
+			return Rendition{}, fmt.Errorf("formats: sips jpeg: %w", err)
+		}
+		pdfPath := filepath.Join(work, "image.pdf")
+		if err := run(ctx, bin, "-s", "format", "pdf", jpg, "--out", pdfPath); err != nil {
+			return Rendition{}, fmt.Errorf("formats: sips pdf: %w", err)
+		}
+		var err error
+		if pdf, err = os.ReadFile(pdfPath); err != nil {
+			return Rendition{}, fmt.Errorf("formats: read image pdf: %w", err)
+		}
 	}
 	r := Rendition{PDF: pdf}
 	if !BrowserDisplayable(f.MIME) {
@@ -206,6 +229,29 @@ func (c *LocalConverter) convertImage(ctx context.Context, work string, f Format
 		}
 	}
 	return r, nil
+}
+
+// imageTool choisit l'outil de conversion des images : celui imposé par
+// la configuration, sinon sips s'il existe (macOS), sinon ImageMagick
+// ("magick" en version 7, "convert" en version 6). magick dit lequel des
+// deux jeux d'arguments employer. Sans aucun outil, "sips" : l'erreur de
+// lancement le nommera.
+func (c *LocalConverter) imageTool(lookPath func(string) (string, error)) (bin string, magick bool) {
+	if c.Sips != "" {
+		return c.Sips, false
+	}
+	if c.Magick != "" {
+		return c.Magick, true
+	}
+	if _, err := lookPath("sips"); err == nil {
+		return "sips", false
+	}
+	for _, name := range []string{"magick", "convert"} {
+		if _, err := lookPath(name); err == nil {
+			return name, true
+		}
+	}
+	return "sips", false
 }
 
 // BrowserDisplayable indique si un navigateur affiche ce type d'image
