@@ -2,6 +2,7 @@ package agents
 
 import (
 	"github.com/JulianAndrieux/Jarvis/internal/collect"
+	"strings"
 	"testing"
 
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
@@ -11,7 +12,7 @@ import (
 // serait refusé à la première modification) et ses outils.
 func TestDefaults_ValidAgents(t *testing.T) {
 	defs := Defaults(Models{Documents: "qwen3-8b Q5_K_M", Tickets: "qwen3-8b"})
-	ids := []string{Classification, Extraction, MailTriage, MailPayment, MarketKeywords, Analysis, Development, Review}
+	ids := []string{Classification, Extraction, MailTriage, MailPayment, MarketKeywords, Analysis, Development, Review, Assistant}
 	if len(defs) != len(ids) {
 		t.Fatalf("defs = %d, want %d", len(defs), len(ids))
 	}
@@ -59,4 +60,30 @@ func TestDefaults_IncludesMarketKeywords(t *testing.T) {
 		}
 	}
 	t.Fatal("no market keywords agent")
+}
+
+// L'assistant (jalon 55) : consignes modifiables, date obligatoire, et la
+// liste de ses outils — sans aucun outil de suppression.
+func TestDefaults_IncludesAssistant(t *testing.T) {
+	for _, d := range Defaults(Models{Documents: "m", Tickets: "t"}) {
+		if d.ID != Assistant {
+			continue
+		}
+		if d.Group != "Assistant" || !strings.Contains(d.Model, "Claude") || len(d.Tools) < 12 {
+			t.Errorf("assistant = %+v", d)
+		}
+		if len(d.Placeholders) != 1 || d.Placeholders[0].Name != "date" {
+			t.Errorf("repères = %+v", d.Placeholders)
+		}
+		if err := Validate(d, "Consignes sans la date"); err == nil {
+			t.Error("consignes sans {{date}} acceptées")
+		}
+		for _, tool := range d.Tools {
+			if strings.Contains(tool, "delete") {
+				t.Errorf("outil de suppression : %s", tool)
+			}
+		}
+		return
+	}
+	t.Fatal("agent assistant absent")
 }

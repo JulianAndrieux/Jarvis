@@ -1,0 +1,308 @@
+package templates
+
+import "fmt"
+
+// Jalon 55 : l'assistant. Le texte de Claude est rendu en Markdown échappé
+// (c'est la sortie d'un modèle qui a lu des emails et des documents) ; la
+// question de l'utilisateur est affichée telle quelle, comme du texte.
+
+// AssistantStep : une chose que l'assistant a faite pendant une réponse.
+type AssistantStep struct {
+	Summary string
+	// Link : où voir le résultat (chemin local), "" : nulle part.
+	Link   string
+	Action bool
+	Failed bool
+	Error  string
+}
+
+// AssistantMessage : un tour de la conversation.
+type AssistantMessage struct {
+	User  bool
+	Text  string
+	Error string
+	Steps []AssistantStep
+	When  string
+	// Cost : coût rapporté par Claude Code pour cette réponse ("" : inconnu).
+	Cost string
+}
+
+// AssistantThread : une conversation, prête à afficher.
+type AssistantThread struct {
+	ID       string
+	Title    string
+	Messages []AssistantMessage
+	// Running : une réponse est en préparation ; Live : ce que l'assistant
+	// a déjà fait pour elle ; Since : depuis quand.
+	Running bool
+	Live    []AssistantStep
+	Since   string
+	// Error : la dernière question a été refusée ; Draft : sa saisie, rendue.
+	Error string
+	Draft string
+}
+
+// AssistantConvRow : une conversation dans la liste.
+type AssistantConvRow struct {
+	ID      string
+	Title   string
+	When    string
+	Running bool
+}
+
+// AssistantView : la page d'accueil de l'assistant.
+type AssistantView struct {
+	Conversations []AssistantConvRow
+	Error         string
+	Draft         string
+}
+
+templ assistantStyle() {
+	<style>
+		.assistant-ask textarea {
+			min-height: 5.5rem;
+			font-size: 1rem;
+		}
+		.page-title a {
+			white-space: nowrap;
+		}
+		.assistant-ask .row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 1rem;
+			margin-top: 0.6rem;
+		}
+		.assistant-list {
+			list-style: none;
+			padding: 0;
+			margin: 0;
+		}
+		.assistant-list li {
+			display: flex;
+			align-items: center;
+			gap: 0.75rem;
+			padding: 0.55rem 0;
+			border-bottom: 1px solid var(--border);
+		}
+		.assistant-list li:last-child {
+			border-bottom: 0;
+		}
+		.assistant-list a.title {
+			flex: 1;
+			font-weight: 550;
+		}
+		.assistant-msg {
+			margin: 1rem 0;
+			max-width: 52rem;
+		}
+		.assistant-msg.user {
+			margin-left: auto;
+			background: var(--accent-soft);
+			border-radius: var(--radius);
+			padding: 0.7rem 1rem;
+			white-space: pre-wrap;
+			width: fit-content;
+		}
+		.assistant-msg.reply {
+			background: var(--surface);
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			padding: 0.9rem 1.1rem;
+			box-shadow: var(--shadow);
+		}
+		.assistant-msg.reply > :first-child {
+			margin-top: 0;
+		}
+		.assistant-msg .when {
+			font-size: 0.75rem;
+			color: var(--muted);
+			margin-top: 0.5rem;
+		}
+		.assistant-steps {
+			list-style: none;
+			padding: 0;
+			margin: 0.7rem 0 0;
+			font-size: 0.85rem;
+		}
+		.assistant-steps li {
+			padding: 0.15rem 0;
+			color: var(--text-2);
+		}
+		.assistant-steps li.action {
+			color: var(--text);
+			font-weight: 550;
+		}
+		.assistant-steps li.failed {
+			color: var(--danger, #b42318);
+		}
+		.assistant-steps details summary {
+			cursor: pointer;
+			color: var(--muted);
+		}
+	</style>
+}
+
+templ AssistantPage(v AssistantView) {
+	@Layout("Assistant", "assistant") {
+		@assistantStyle()
+		<div class="page-wide">
+			<div class="page-title"><h2>Assistant</h2></div>
+			<p class="muted">
+				Pose une question sur tes documents, tes emails, tes notes et tes tâches, ou demande une action :
+				créer une tâche ou une note, taguer un document, archiver un email. L'assistant est Claude :
+				ce qu'il lit pour répondre part à l'API d'Anthropic. Il ne peut ni supprimer, ni envoyer un email, ni payer.
+			</p>
+			<form class="card assistant-ask" method="post" action="/assistant">
+				if v.Error != "" {
+					<p class="error">{ v.Error }</p>
+				}
+				<textarea name="text" placeholder="Qu'ai-je à payer cette semaine ? · Quelle est la franchise de mon assurance habitation ? · Crée une tâche pour rappeler le plombier lundi." required autofocus>{ v.Draft }</textarea>
+				<div class="row">
+					<span class="muted">Une nouvelle conversation à chaque question posée ici.</span>
+					<button type="submit" class="button-primary">Demander</button>
+				</div>
+			</form>
+			<section>
+				<h3>Conversations <span class="count">{ fmt.Sprint(len(v.Conversations)) }</span></h3>
+				if len(v.Conversations) == 0 {
+					<p class="muted">Aucune conversation pour l'instant.</p>
+				} else {
+					<ul class="assistant-list card">
+						for _, c := range v.Conversations {
+							<li>
+								<a class="title" href={ templ.SafeURL("/assistant/" + c.ID) }>{ c.Title }</a>
+								if c.Running {
+									<span class="chip">réponse en cours…</span>
+								}
+								<span class="muted">{ c.When }</span>
+								<form method="post" action={ templ.SafeURL("/assistant/" + c.ID + "/delete") } onsubmit="return confirm('Supprimer cette conversation ?')">
+									<button type="submit" class="button-ghost" title="Supprimer la conversation">✕</button>
+								</form>
+							</li>
+						}
+					</ul>
+				}
+			</section>
+		</div>
+	}
+}
+
+templ AssistantConversationPage(t AssistantThread) {
+	@Layout(t.Title, "assistant") {
+		@assistantStyle()
+		<div class="page-wide">
+			<div class="page-title">
+				<h2>{ t.Title }</h2>
+				<a href="/assistant">← Toutes les conversations</a>
+			</div>
+			@AssistantThreadFragment(t)
+		</div>
+	}
+}
+
+// AssistantThreadFragment : le fil et sa zone de saisie. Pendant une
+// réponse, il se recharge lui-même ; une fois la réponse là, il ne porte
+// plus de déclencheur et la saisie redevient possible.
+templ AssistantThreadFragment(t AssistantThread) {
+	<div
+		id="assistant-thread"
+		if t.Running {
+			hx-get={ "/assistant/" + t.ID + "/thread" }
+			hx-trigger="load delay:2s"
+			hx-swap="outerHTML"
+		}
+	>
+		for _, m := range t.Messages {
+			if m.User {
+				<div class="assistant-msg user">{ m.Text }</div>
+			} else {
+				<div class="assistant-msg reply">
+					if m.Error != "" {
+						<p class="error">La réponse n'a pas abouti : { m.Error }</p>
+					} else {
+						@markdown(m.Text)
+					}
+					@assistantSteps(m.Steps)
+					<div class="when">
+						{ m.When }
+						if m.Cost != "" {
+							· { m.Cost }
+						}
+					</div>
+				</div>
+			}
+		}
+		if t.Running {
+			<div class="assistant-msg reply" id="assistant-running">
+				<p class="muted">L'assistant cherche… (depuis { t.Since })</p>
+				@assistantLive(t.Live)
+			</div>
+		} else {
+			<form class="card assistant-ask" method="post" action={ templ.SafeURL("/assistant/" + t.ID + "/messages") }>
+				if t.Error != "" {
+					<p class="error">{ t.Error }</p>
+				}
+				<textarea name="text" placeholder="Poursuivre la conversation…" required>{ t.Draft }</textarea>
+				<div class="row">
+					<span></span>
+					<button type="submit" class="button-primary">Envoyer</button>
+				</div>
+			</form>
+		}
+	</div>
+}
+
+// assistantSteps : sous une réponse — ce qui a été modifié reste visible,
+// les lectures sont repliées.
+templ assistantSteps(steps []AssistantStep) {
+	if len(actionSteps(steps)) > 0 {
+		<ul class="assistant-steps">
+			for _, s := range actionSteps(steps) {
+				@assistantStep(s)
+			}
+		</ul>
+	}
+	if len(readSteps(steps)) > 0 {
+		<ul class="assistant-steps">
+			<li>
+				<details>
+					<summary>{ fmt.Sprintf("%d lecture(s) pour répondre", len(readSteps(steps))) }</summary>
+					<ul class="assistant-steps">
+						for _, s := range readSteps(steps) {
+							@assistantStep(s)
+						}
+					</ul>
+				</details>
+			</li>
+		</ul>
+	}
+}
+
+// assistantLive : pendant la réponse, tout dans l'ordre.
+templ assistantLive(steps []AssistantStep) {
+	if len(steps) > 0 {
+		<ul class="assistant-steps">
+			for _, s := range steps {
+				@assistantStep(s)
+			}
+		</ul>
+	}
+}
+
+templ assistantStep(s AssistantStep) {
+	<li class={ templ.KV("action", s.Action && !s.Failed), templ.KV("failed", s.Failed) }>
+		if s.Failed {
+			⚠ { s.Summary } : { s.Error }
+		} else {
+			if s.Action {
+				✓ 
+			}
+			if s.Link != "" {
+				<a href={ templ.SafeURL(s.Link) }>{ s.Summary }</a>
+			} else {
+				{ s.Summary }
+			}
+		}
+	</li>
+}

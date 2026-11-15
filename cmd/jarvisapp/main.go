@@ -33,6 +33,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/accounts"
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
 	"github.com/JulianAndrieux/Jarvis/internal/agents"
+	"github.com/JulianAndrieux/Jarvis/internal/assistant"
 	"github.com/JulianAndrieux/Jarvis/internal/bbox"
 	"github.com/JulianAndrieux/Jarvis/internal/changes"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
@@ -44,6 +45,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/internal/googleauth"
 	"github.com/JulianAndrieux/Jarvis/internal/llm"
 	"github.com/JulianAndrieux/Jarvis/internal/mail"
+	"github.com/JulianAndrieux/Jarvis/internal/mcp"
 	"github.com/JulianAndrieux/Jarvis/internal/models"
 	"github.com/JulianAndrieux/Jarvis/internal/notes"
 	"github.com/JulianAndrieux/Jarvis/internal/parsing"
@@ -123,6 +125,9 @@ func main() {
 	claudeBin := flag.String("claude-bin", "", "Claude Code (CLI claude) pour les tickets confiés à Claude (jalon 41) ; vide = cherché sur le PATH ; introuvable = tickets au modèle local seulement")
 	claudeModel := flag.String("claude-model", "", "Modèle de Claude Code pour les tickets ; vide = celui par défaut du CLI")
 	claudeTimeout := flag.Duration("claude-timeout", time.Hour, "Durée maximale d'une session de Claude Code (analyse, développement ou relecture)")
+	assistantOn := flag.Bool("assistant", true, "Onglet Assistant : Claude cherche et agit dans les données de Jarvis par ses outils (jalon 55, exception n° 9 : ce qu'il lit part à l'API d'Anthropic) ; false = désactivé ; sans effet si Claude Code est introuvable")
+	assistantCollection := flag.String("assistant-collection", "assistant_conversations", "Collection MongoDB des conversations avec l'assistant")
+	assistantTimeout := flag.Duration("assistant-timeout", assistant.DefaultTimeout, "Durée maximale d'une réponse de l'assistant")
 	ticketAgent := flag.String("ticket-default-agent", "claude", "Agent proposé par défaut à la création d'un ticket : claude ou local (local si Claude Code est introuvable)")
 	ticketAutopilot := flag.Bool("ticket-autopilot", true, "Pilote automatique des tickets : plan validé sans l'utilisateur, diff déployé si la vérification et la relecture réussissent (sinon il attend la validation)")
 	ticketPickup := flag.Duration("ticket-pickup", 5*time.Minute, "Intervalle de la relève des tickets en brouillon (analyse lancée d'elle-même, un ticket à la fois) ; 0 = désactivée")
@@ -601,6 +606,36 @@ func main() {
 			go collector.Run(context.Background())
 			log.Printf("jarvisapp: collecte des marchés active (%d flux, GDELT %s, catégories %s)", len(feeds), *gdeltURL, *collectTags)
 		}
+	}
+	// Assistant (jalon 55) : Claude, sans aucun outil intégré, avec les
+	// seuls outils de Jarvis — servis sur une adresse locale à part, derrière
+	// un jeton valable le temps d'une réponse.
+	if !*assistantOn {
+		log.Printf("jarvisapp: assistant désactivé (--assistant=false)")
+	} else if bin, err := findClaude(*claudeBin); err != nil {
+		log.Printf("jarvisapp: assistant désactivé : Claude Code introuvable (%v)", err)
+	} else {
+		asstCtx, cancelAsst := context.WithTimeout(context.Background(), 10*time.Second)
+		convStore, err := assistant.NewMongoStore(asstCtx, mongoConn, *mongoDB, *assistantCollection)
+		cancelAsst()
+		if err != nil {
+			log.Fatalf("jarvisapp: assistant : %v", err)
+		}
+		hub := mcp.NewHub()
+		toolsURL, err := hub.Listen(context.Background())
+		if err != nil {
+			log.Fatalf("jarvisapp: assistant : %v", err)
+		}
+		srv.Assistant = &assistant.Service{
+			Store:        convStore,
+			Runner:       claudecode.Assistant{Runner: claudecode.CLI{Binary: bin, Model: *claudeModel, Timeout: *assistantTimeout}, Hub: hub, URL: toolsURL},
+			Tools:        &assistant.Toolbox{Notes: srv.Notes, Mail: mailService, Jobs: jobs},
+			Instructions: agentRegistry.PromptFunc(agents.Assistant),
+			Timeout:      *assistantTimeout,
+			Log:          log.Printf,
+			DefaultScope: tenancy.LocalScope(),
+		}
+		log.Printf("jarvisapp: assistant activé (Claude Code %s, outils sur %s)", bin, toolsURL)
 	}
 	if changeset != nil {
 		// Un seul commit pour tous les genres d'entités : chaque paquet

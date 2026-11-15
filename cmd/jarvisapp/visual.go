@@ -59,6 +59,10 @@ func withCheckIsolation(overrides map[string]string) map[string]string {
 	// interrogerait GDELT et les flux, et écrirait dans les vraies données.
 	overrides["collect"] = "false"
 	overrides["market-data-prefix"] = "market_check_"
+	// Assistant (jalon 55) : jamais depuis une instance de contrôle — il
+	// lancerait Claude et agirait sur des données.
+	overrides["assistant"] = "false"
+	overrides["assistant-collection"] = "assistant_check"
 	overrides["auth-config"] = ""
 	overrides["accounts-prefix"] = "accounts_check_"
 	overrides["changes-collection"] = "changes_check"

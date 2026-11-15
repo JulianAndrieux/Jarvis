@@ -26,6 +26,7 @@ import (
 	"github.com/JulianAndrieux/Jarvis/cmd/jarvisapp/templates"
 	"github.com/JulianAndrieux/Jarvis/internal/accounts"
 	"github.com/JulianAndrieux/Jarvis/internal/agents"
+	"github.com/JulianAndrieux/Jarvis/internal/assistant"
 	"github.com/JulianAndrieux/Jarvis/internal/changes"
 	"github.com/JulianAndrieux/Jarvis/internal/codemap"
 	"github.com/JulianAndrieux/Jarvis/internal/diagram"
@@ -62,6 +63,9 @@ type Server struct {
 	// Mail : la boîte de réception relevée et triée (jalon 39) ; nil
 	// désactive l'onglet.
 	Mail *mail.Service
+	// Assistant : la conversation avec Claude, qui cherche et agit dans les
+	// données de Jarvis (jalon 55) ; nil désactive l'onglet.
+	Assistant *assistant.Service
 	// Market et Trading : marchés Polymarket en lecture seule et liste de
 	// suivi (jalon 53) ; l'un ou l'autre nil désactive l'onglet Marchés.
 	Market  polymarket.Client
@@ -212,6 +216,7 @@ func (s *Server) Routes() chi.Router {
 	s.notesRoutes(r)
 	s.emailRoutes(r)
 	s.marketRoutes(r)
+	s.assistantRoutes(r)
 	r.Get("/sidebar", s.handleSidebar)
 	r.Post("/sidebar/tasks/{id}/toggle", s.handleSidebarToggle)
 	r.Get("/admin/tests", s.handleTests)

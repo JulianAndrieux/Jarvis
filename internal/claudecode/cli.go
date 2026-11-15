@@ -36,6 +36,20 @@ type Request struct {
 	Edit bool
 	// Schema : la réponse finale suit ce schéma JSON (Result.Structured).
 	Schema json.RawMessage
+	// SystemPrompt remplace le prompt système de Claude Code (au lieu de
+	// s'y ajouter comme System) — pour un agent qui n'est pas un
+	// développeur (l'assistant, jalon 55).
+	SystemPrompt string
+	// NoBuiltins retire tous les outils intégrés (fichiers, terminal,
+	// web) : ne restent que ceux des serveurs de MCPConfig.
+	NoBuiltins bool
+	// MCPConfig : fichier de configuration des serveurs d'outils offerts
+	// à cette session ("" : aucun).
+	MCPConfig string
+	// PromptOnStdin : le prompt passe par l'entrée standard plutôt qu'en
+	// argument — un argument se lit dans la liste des processus, et la
+	// demande de l'assistant porte la conversation de l'utilisateur.
+	PromptOnStdin bool
 }
 
 // Result : la fin d'une session.
@@ -64,8 +78,11 @@ func (c CLI) args(req Request) []string {
 	if req.Edit {
 		mode = "acceptEdits"
 	}
-	args := []string{
-		"-p", req.Prompt,
+	args := []string{"-p"}
+	if !req.PromptOnStdin {
+		args = append(args, req.Prompt)
+	}
+	args = append(args,
 		"--output-format", "stream-json", "--verbose",
 		"--no-session-persistence",
 		// Les serveurs MCP de l'utilisateur (Gmail, Drive…) n'ont rien à
@@ -73,6 +90,15 @@ func (c CLI) args(req Request) []string {
 		"--strict-mcp-config",
 		"--permission-mode", mode,
 		"--allowedTools", strings.Join(req.Tools, ","),
+	)
+	if req.NoBuiltins {
+		args = append(args, "--tools", "")
+	}
+	if req.MCPConfig != "" {
+		args = append(args, "--mcp-config", req.MCPConfig)
+	}
+	if req.SystemPrompt != "" {
+		args = append(args, "--system-prompt", req.SystemPrompt)
 	}
 	if req.System != "" {
 		args = append(args, "--append-system-prompt", req.System)
@@ -100,6 +126,9 @@ func (c CLI) Run(ctx context.Context, req Request, onStep func(tickets.AgentStep
 	}
 	cmd := exec.CommandContext(ctx, bin, c.args(req)...)
 	cmd.Dir = req.Dir
+	if req.PromptOnStdin {
+		cmd.Stdin = strings.NewReader(req.Prompt)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
