@@ -275,6 +275,51 @@ func (s *Service) AddTask(ctx context.Context, input, noteID, docID string) (Tas
 	return t, nil
 }
 
+// TaskInput : les champs d'une tâche créée sans saisie rapide.
+type TaskInput struct {
+	Title    string
+	Due      string // "AAAA-MM-JJ" ou ""
+	Priority string // "haute", "basse", sinon normale
+	NoteID   string
+	DocID    string
+	MailID   string
+}
+
+// validDue : une échéance est une vraie date "AAAA-MM-JJ" (ou vide).
+func validDue(due string) error {
+	if due == "" {
+		return nil
+	}
+	d, err := time.Parse("2006-01-02", due)
+	if err != nil || isoDate(d) != due {
+		return fmt.Errorf("échéance invalide %q (AAAA-MM-JJ attendu)", due)
+	}
+	return nil
+}
+
+// NewTask crée une tâche à partir de champs explicites — pour un appelant
+// qui connaît déjà l'échéance et la priorité (l'assistant, jalon 55) : le
+// titre n'est pas relu par la saisie rapide, un « demain » final y reste.
+func (s *Service) NewTask(ctx context.Context, in TaskInput) (Task, error) {
+	title := strings.TrimSpace(in.Title)
+	if title == "" {
+		return Task{}, fmt.Errorf("le titre est vide")
+	}
+	if err := validDue(in.Due); err != nil {
+		return Task{}, err
+	}
+	id, err := newID()
+	if err != nil {
+		return Task{}, err
+	}
+	t := Task{ID: id, Title: title, Due: in.Due, Priority: ParsePriority(in.Priority), NoteID: in.NoteID, DocID: in.DocID, MailID: in.MailID, CreatedAt: s.now()}
+	if err := s.db(ctx).CreateTask(ctx, t); err != nil {
+		return Task{}, err
+	}
+	s.Changes.Record(ctx, taskOp(t, "", changes.Create))
+	return t, nil
+}
+
 // AddMailTask crée une tâche depuis un email (saisie rapide, cf.
 // ParseQuickAdd), liée à cet email.
 func (s *Service) AddMailTask(ctx context.Context, input, mailID string) (Task, error) {
@@ -347,11 +392,8 @@ func (s *Service) SaveTask(ctx context.Context, id, title, due, priority, noteID
 	if t.Title = strings.TrimSpace(title); t.Title == "" {
 		return Task{}, fmt.Errorf("le titre est vide")
 	}
-	if due != "" {
-		d, err := time.Parse("2006-01-02", due)
-		if err != nil || isoDate(d) != due {
-			return Task{}, fmt.Errorf("échéance invalide %q (AAAA-MM-JJ attendu)", due)
-		}
+	if err := validDue(due); err != nil {
+		return Task{}, err
 	}
 	before := t
 	t.Due, t.Priority, t.NoteID, t.DocID = due, ParsePriority(priority), noteID, docID

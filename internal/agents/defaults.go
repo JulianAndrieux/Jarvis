@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/JulianAndrieux/Jarvis/internal/agent"
+	"github.com/JulianAndrieux/Jarvis/internal/assistant"
 	"github.com/JulianAndrieux/Jarvis/internal/classify"
 	"github.com/JulianAndrieux/Jarvis/internal/collect"
 	"github.com/JulianAndrieux/Jarvis/internal/extraction"
@@ -20,6 +21,7 @@ const (
 	Analysis       = "analysis"
 	Development    = "development"
 	Review         = "review"
+	Assistant      = "assistant"
 )
 
 // Models : modèles en service, lus dans les options de jarvisapp.
@@ -92,6 +94,15 @@ func Defaults(m Models) []Definition {
 			Tools:         toolNames(agent.ReviewSpecs()),
 			DefaultPrompt: agent.DefaultReviewPrompt,
 			Appended:      "Le contexte du projet, la carte du code, puis le ticket, son plan validé et le diff à relire.",
+		},
+		{
+			ID: Assistant, Name: "Assistant", Group: "Assistant",
+			Role:          "Répond aux questions de l'utilisateur sur ses documents, ses emails, ses notes et ses tâches, et agit par les outils de Jarvis (créer ou modifier une tâche ou une note, taguer ou commenter un document, archiver un email, marquer un paiement). Il n'a aucun autre outil : ni fichier, ni terminal, ni Internet, et rien pour supprimer, envoyer un email, payer ou créer un ticket. Ce qu'il lit pour répondre part à l'API d'Anthropic.",
+			Model:         "Claude (Claude Code)",
+			Tools:         assistant.ToolNames(),
+			DefaultPrompt: assistant.DefaultInstructions,
+			Placeholders:  []Placeholder{{Name: "date", Meaning: "la date du jour, en toutes lettres"}},
+			Appended:      "La conversation passée (ses tours les plus récents, avec les actions déjà faites) puis la dernière question. Les consignes utilisées sont conservées avec chaque réponse.",
 		},
 	}
 }

@@ -127,3 +127,46 @@ func TestToolSummary_RelativeThroughSymlinks(t *testing.T) {
 		t.Errorf("summary = %q", got)
 	}
 }
+
+// Une session d'assistant : aucun outil intégré, les outils d'un serveur,
+// un prompt système qui remplace celui de Claude Code, et la demande hors
+// de la ligne de commande.
+func TestCLI_Args_ToolServerSession(t *testing.T) {
+	args := CLI{}.args(Request{Prompt: "question privée", SystemPrompt: "consignes", NoBuiltins: true,
+		MCPConfig: "/tmp/x/mcp.json", PromptOnStdin: true, Tools: []string{"mcp__jarvis__*"}})
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"--mcp-config /tmp/x/mcp.json", "--system-prompt consignes", "--allowedTools mcp__jarvis__*", "--strict-mcp-config"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("args lack %q: %q", want, joined)
+		}
+	}
+	if i := slices.Index(args, "--tools"); i < 0 || args[i+1] != "" {
+		t.Errorf("outils intégrés pas retirés : %q", args)
+	}
+	if strings.Contains(joined, "question privée") {
+		t.Errorf("la demande est sur la ligne de commande : %q", joined)
+	}
+	if strings.Contains(joined, "--append-system-prompt") {
+		t.Errorf("prompt système ajouté au lieu de remplacé : %q", joined)
+	}
+	// Une session de ticket n'en porte rien.
+	plain := strings.Join(CLI{}.args(Request{Prompt: "x", Tools: []string{"Read"}}), " ")
+	for _, unwanted := range []string{"--tools", "--mcp-config", "--system-prompt"} {
+		if strings.Contains(plain, unwanted) {
+			t.Errorf("session de ticket avec %q : %q", unwanted, plain)
+		}
+	}
+}
+
+// La demande arrive au binaire par son entrée standard.
+func TestCLI_PromptOnStdinReachesTheBinary(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "claude")
+	script := "#!/bin/sh\n" + `printf '{"type":"result","subtype":"success","is_error":false,"result":"%s"}\n' "$(cat)"` + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, err := CLI{Binary: bin}.Run(context.Background(), Request{Dir: t.TempDir(), Prompt: "bonjour", PromptOnStdin: true}, func(tickets.AgentStep) {})
+	if err != nil || res.Text != "bonjour" {
+		t.Errorf("Run = %+v, %v", res, err)
+	}
+}

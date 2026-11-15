@@ -722,6 +722,7 @@ templ Layout(title string, active string) {
 					<a href="/" class="brand"><span class="brand-mark">J</span>Jarvis</a>
 					<nav class="app-nav">
 						<a href="/" class={ templ.KV("active", active == "dashboard") }><span class="nav-icon">📊</span>Tableau de bord</a>
+						<a href="/assistant" class={ templ.KV("active", active == "assistant") }><span class="nav-icon">💬</span>Assistant</a>
 						<a href="/notes" class={ templ.KV("active", active == "notes") }><span class="nav-icon">📝</span>Notes</a>
 						<a href="/emails" class={ templ.KV("active", active == "emails") }><span class="nav-icon">📧</span>Emails</a>
 						<a href="/documents" class={ templ.KV("active", active == "documents") }><span class="nav-icon">📄</span>Documents</a>
