@@ -168,6 +168,12 @@ pour les tests. **Aucun test ne doit nécessiter de GPU.**
   est validé par l'utilisateur avant de passer au suivant.
 - TDD strict : tests écrits avant l'implémentation pour chaque paquet
   (rouge → vert), commit + push à chaque jalon terminé.
+- **Une seule branche de code : `main`** (décision de l'utilisateur,
+  15/11/2026). Un jalon terminé est fusionné dans `main` aussitôt, pas
+  laissé sur une branche qui attend. Un morceau de code nouveau ou
+  inachevé se gère par une **option d'activation** (`--assistant`,
+  `--polymarket`, `--collect`…), pas par une branche longue : le code est
+  dans `main`, l'option décide s'il tourne.
 
 ## État des jalons
 - **Jalon 1 — squelette CLI + étage Triage : fait.**
