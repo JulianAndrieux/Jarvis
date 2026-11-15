@@ -174,10 +174,13 @@ jamais seul.
 
 Vérifié sous Linux, dans l'environnement de développement : le rôle
 `cloud` contre un vrai MongoDB (pages, import pendant que les modèles sont
-absents → en attente, reprise à leur retour, ticket créé en brouillon) ; la
-conversion des 16 formats et des images (HEIC compris) sans `sips` ; la
-syntaxe du `Dockerfile` et de `compose.yaml`.
+absents → en attente, reprise à leur retour, ticket créé en brouillon) ;
+**l'image construite puis lancée** (utilisateur non root, `/tmp` en
+mémoire) : démarrage, pages de l'application et de l'Admin, et les 22
+fichiers du corpus `testdata/formats` importés et traités sans échec
+(Word, Excel, PowerPoint, e-mail, images HEIC comprises), avec de faux
+serveurs de modèles ; la syntaxe de `compose.yaml`.
 
-**Pas vérifié** : la construction de l'image (le miroir Debian est bloqué
-dans cet environnement), le conteneur Tailscale et son HTTPS, l'exposition
-des modèles par `tailscale serve`, et le parcours réel avec le Mac.
+**Pas vérifié** : le conteneur Tailscale et son HTTPS, l'exposition des
+modèles par `tailscale serve`, les vrais modèles à travers le tunnel, et
+le parcours réel avec le Mac et Atlas.

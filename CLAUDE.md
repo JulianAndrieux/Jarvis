@@ -3112,9 +3112,10 @@ décisions : `docs/plan-multi-environnement.md`.
   - Vérifié (Linux, vrai MongoDB, faux serveurs de modèles) : pages,
     import modèles absents → en attente, reprise à leur retour (PDF natif,
     HEIC par ImageMagick puis VLM), zip stocké sans attendre, ticket créé
-    en brouillon ; les 16 formats convertis sans sips. **Pas vérifié** :
-    construction de l'image (miroir Debian bloqué dans l'environnement de
-    développement), Tailscale, parcours réel avec le Mac. `models.Remote`
+    en brouillon ; **image construite et lancée** (non root) : les 22
+    fichiers de `testdata/formats` importés et traités sans échec.
+    **Pas vérifié** : Tailscale (conteneur, HTTPS, `tailscale serve`),
+    les vrais modèles à travers le tunnel, parcours réel avec le Mac. `models.Remote`
     écrit en même temps que ses tests (pas vu rouge d'abord).
   - Limites dites dans le guide : redémarrage du serveur = documents en
     attente à relancer ; prompts des agents en mémoire par instance ;
